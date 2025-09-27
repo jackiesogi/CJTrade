@@ -1,0 +1,27 @@
+[project]
+name = "cjtrade"
+version = "0.1.0"
+description = "CJ Trading System"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.6",
+    "mpl-finance>=0.10.1",
+    "mplfinance>=0.12.10b0",
+    "pandas-datareader>=0.10.0",
+    "python-dotenv>=1.1.1",
+    "seaborn>=0.13.2",
+    "shioaji>=1.2.8",
+    "ta-lib>=0.6.7",
+    "yfinance>=0.2.66",
+]
+
+
+[project.scripts]
+cjtrade = "cjtrade:main"
+main = "cjtrade:main"
+
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
