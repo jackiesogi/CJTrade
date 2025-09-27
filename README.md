@@ -9,8 +9,32 @@ CJ Trade is a trading system for `TWSE`. It comes with multiple great, out-of-th
 - Robust technical analysis
 - Feedback-driven, dynamic strategy.
 
----
-> Below is for developer in this project.
+### :warning: Below is for developer in this project.
+
+## Project Status
+
+### FY25_W38_PROJ_W1
+
+Currently we have built the overall architecture for this project, and we need to stub every modules and functions (print every steps) to verify they are working and the logic is correct! 
+
+#### Stubbing Phase 1 (Only try to meet the main loop's needs)
+- [ ] Stub `news` module
+- [ ] Stub `llm` module
+- [ ] Stub `analysis` module
+- [x] Stub `stockdata` module
+- [ ] Stub `ui` module
+- [x] Stub `account` module
+- [x] Stub `candidate` module
+
+### FY25_W39_PROJ_W2
+
+#### Main Loop Correcting Phase 1
+- [ ] Locate the section of the loop where errors or inefficiencies occur
+- [ ] Try to add the logic of `shioaji` real-time price data (separated from the `yfinance` snapshot)
+- [ ] Think of how to compress the real-time data into day-candlestick after market close
+- [ ] Align the true execution flow
+
+## Information for Devs
 
 ### Background Worker
 

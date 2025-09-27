@@ -18,8 +18,8 @@ dependencies = [
 
 
 [project.scripts]
-cjtrade = "cjtrade:main"
-main = "cjtrade:main"
+cjtrade = "cjtrade:cli"
+main = "cjtrade:cli"
 
 
 [build-system]
