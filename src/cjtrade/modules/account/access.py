@@ -1,4 +1,6 @@
 import logging
+import shioaji as sj
+import os
 from dataclasses import dataclass
 
 log = logging.getLogger("cjtrade.modules.account.access")
@@ -13,23 +15,41 @@ class InventoryItem:
         self.symbol = symbol
         self.volume = 100
         self.avg_price = avg_price
+        
 
 
-@dataclass
 class Inventory:
-    inventory: list
-
-class AccountAccess:
     def __init__(self):
-        pass
-    
+        self.inventory = []  # list of inventory item
 
-    def Login(self) -> bool:
-        log.info('Login successful')
+    def ToSymbolList(self):
+        result = []
+        for inv_item in self.inventory:
+            result.append(inv_item.symbol)
+        return result
+    
+class AccountAccessObject:
+    def __init__(self, keyobj, simulation):
+        self.__sj__ = self.Login(keyobj, simulation)
+
+
+    def Healthcheck(self) -> bool:
         return True
 
 
+    def Login(self, keyobj, simulation) -> sj.Shioaji:
+        # api = sj.Shioaji(simulation=simulation)
+        # accounts = api.login(
+        #     api_key=keyobj.api_key,
+        #     secret_key=keyobj.secret_key
+        # )
+        # log.info('Login successful')
+        # return api
+        return None
+
+
     def Logout(self) -> bool:
+        # self.__sj__.logout()
         log.info('Logout successful')
         return True
     

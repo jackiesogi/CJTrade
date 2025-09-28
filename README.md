@@ -18,8 +18,9 @@ CJ Trade is a trading system for `TWSE`. It comes with multiple great, out-of-th
 Currently we have built the overall architecture for this project, and we need to stub every modules and functions (print every steps) to verify they are working and the logic is correct! 
 
 #### Stubbing Phase 1 (Only try to meet the main loop's needs)
-- [ ] Stub `news` module
-- [ ] Stub `llm` module
+- [x] Stub `news` module
+- [x] Stub `database` module
+- [x] Stub `llm` module (But haven't weave it into the logic)
 - [ ] Stub `analysis` module
 - [x] Stub `stockdata` module
 - [ ] Stub `ui` module
@@ -29,6 +30,7 @@ Currently we have built the overall architecture for this project, and we need t
 ### FY25_W39_PROJ_W2
 
 #### Main Loop Correcting Phase 1
+- [ ] Finish `news` and `llm` abstraction and consider to wrap them into an `AppContext` class
 - [ ] Locate the section of the loop where errors or inefficiencies occur
 - [ ] Try to add the logic of `shioaji` real-time price data (separated from the `yfinance` snapshot)
 - [ ] Think of how to compress the real-time data into day-candlestick after market close

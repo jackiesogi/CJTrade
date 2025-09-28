@@ -2,15 +2,20 @@
 import asyncio
 import signal
 import logging
+import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
-import cjtrade.modules.analysis as analysis
-import cjtrade.modules.account as account
-import cjtrade.modules.stockdata as data
-from cjtrade.modules.stockdata import fetch_data as fetch
-from cjtrade.modules.candidate import candidate_manager as cand
+import cjtrade.modules.analysis as ANALYSIS
+import cjtrade.modules.account as ACCOUNT
+import cjtrade.modules.database as DATABASE
+import cjtrade.modules.stockdata as STOCK
+import cjtrade.modules.candidate as CAND
+
+# from cjtrade.modules.stockdata import fetch_data as fetch
+# from cjtrade.modules.candidate import candidate_manager as cand
+
 # from cjtrade.modules.llm import suggestions as AISugg
-
 # from cjtrade.modules.executor import executor as Executor
 # from cjtrade.modules.db import database as DB
 # from cjtrade.modules.notification import notifier as Notifier
@@ -63,14 +68,17 @@ order_staging_queue = asyncio.Queue()          # for Executor
 # graceful shutdown flag
 SHUTDOWN = False
 
-async def price_fetcher_loop():
+async def price_fetcher_loop(database, fetcher, candidate_manager):
     """Periodic fetch price snapshots and push to price_queue and DB."""
     while not SHUTDOWN:
         try:
-            symbols = cand.GetTrackedSymbols()  # inventory + candidate pool
-            for symbol in symbols:
-                snapshot = fetch.GetPriceData(symbol)          # should be quick; if heavy, make async
-                data.database.SaveSnapshot(snapshot)
+            symbols = candidate_manager.GetTrackedSymbols(database)      # inventory + candidate pool
+            
+            for source, symlist in symbols.items():
+                # print(f"Source: {source}")
+                for sym in symlist:
+                    snapshot = fetcher.GetPriceData(sym)          # should be quick; if heavy, make async
+                    database.SaveSnapshot(snapshot)
 
             # push to queue non-blocking
             try:
@@ -81,6 +89,7 @@ async def price_fetcher_loop():
             log.exception("price_fetcher error: %s", e)
             # Notifier.alert("price_fetcher error", str(e))
         await asyncio.sleep(PRICE_INTERVAL_SECONDS)
+
 
 # async def strategy_loop():
 #     """Consume price snapshots, generate strategy signals."""
@@ -125,30 +134,33 @@ async def price_fetcher_loop():
 #             log.exception("decision_fusion error: %s", e)
 #             await asyncio.sleep(1)
 
-async def inventory_update_loop():
+
+async def inventory_update_loop(database, account):
     """Periodically refresh inventory from broker (event-driven preferred)."""
     while not SHUTDOWN:
         try:
-            inventory = account.access.FetchInventory()  # sync or async depending on your wrapper
+            inventory = account.FetchInventory()  # sync or async depending on your wrapper
             for inv in inventory:
-                data.database.SaveInventory(inv)
+                database.SaveInventory(inv)
         except Exception as e:
             log.exception("inventory_update error: %s", e)
             # Notifier.alert("inventory_update error", str(e))
         await asyncio.sleep(INVENTORY_UPDATE_SECONDS)
 
-async def healthcheck_loop():
+
+async def healthcheck_loop(database, bank):
     while not SHUTDOWN:
         # check heartbeats, DB connection, broker connection
         try:
             # healthy = DB.healthcheck() and AA.is_connected()
-            healthy = data.database.Healthcheck() # and AA.is_connected()
+            healthy = database.Healthcheck() and bank.Healthcheck()
             if not healthy:
                 print('DB not healthy')
                 # Notifier.alert("Healthcheck failed")
         except Exception as e:
             log.exception("healthcheck error: %s", e)
         await asyncio.sleep(HEALTHCHECK_INTERVAL_SECONDS)
+
 
 # async def schedule_aicrawl():
 #     """Run AISuggestion tasks at scheduled times (pre/post market) in background worker."""
@@ -167,7 +179,25 @@ def _signal_handler(sig):
     log.info("received signal %s, shutting down...", sig)
     SHUTDOWN = True
 
+
+DB_PATH = "cjtrade-stock.db"
+
+
 async def main():
+
+    load_dotenv()
+    keyobj = ACCOUNT.KeyObject(
+        api_key=os.environ["API_KEY"],
+        secret_key=os.environ["SECRET_KEY"],
+        ca_path=os.environ["CA_CERT_PATH"],
+        ca_password=os.environ["CA_PASSWORD"]
+    )
+    bank = ACCOUNT.AccountAccess(keyobj, simulation=True)
+
+    database = DATABASE.DatabaseConnection(DB_PATH)
+    fetcher = STOCK.PriceFetcher()
+    cand_manager = CAND.CandidateManager(bank)
+    
     # register signal handlers
     loop = asyncio.get_running_loop()
     for s in (signal.SIGINT, signal.SIGTERM):
@@ -175,11 +205,11 @@ async def main():
 
     # start background tasks
     tasks = [
-        asyncio.create_task(price_fetcher_loop(), name="price_fetcher"),
+        asyncio.create_task(price_fetcher_loop(database, fetcher, cand_manager), name="price_fetcher"),
         # asyncio.create_task(strategy_loop(), name="strategy"),
         # asyncio.create_task(decision_fusion_loop(), name="decision_fusion"),
-        asyncio.create_task(inventory_update_loop(), name="inventory_update"),
-        asyncio.create_task(healthcheck_loop(), name="healthcheck"),
+        asyncio.create_task(inventory_update_loop(database, bank), name="inventory_update"),
+        asyncio.create_task(healthcheck_loop(database, bank), name="healthcheck"),
         # asyncio.create_task(schedule_aicrawl(), name="scheduler_aicrawl"),
     ]
 
@@ -192,6 +222,6 @@ async def main():
         t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     # final flush and logout
-    data.database.Close()
-    account.access.Logout()
+    database.Close()
+    bank.Logout()
     log.info("shutdown complete")
