@@ -19,8 +19,7 @@ log = logging.getLogger("cjtrade.main")
 
 logging.basicConfig(
     level=logging.DEBUG,
-    # format="%(asctime)s %(levelname)s: %(name)s: %(message)s"
-    format="[%(asctime)s] %(levelname)s:  %(message)s"
+    format="[%(asctime)s] %(levelname)-8s:  %(message)s"
 )
 
 
@@ -31,8 +30,34 @@ INVENTORY_UPDATE_SECONDS = 300     # update holdings backup
 HEALTHCHECK_INTERVAL_SECONDS = 15
 
 # queues for intra-process communication
-price_queue = asyncio.Queue(maxsize=100)       # snapshots from PA -> consumed by Strategy
+# SnapshotBatch = {
+#     "ts": datetime,
+#     "snapshots": { "2330": snapshot_obj, "0050": snapshot_obj, ... },
+#     "provider": "broker" | "yahoo"
+# }
+price_queue = asyncio.Queue(maxsize=100)       # snapshots from fetch_data -> consumed by Strategy
+
+# Signal = {
+#     "symbol": "2330",
+#     "side": "buy" or "sell",
+#     "qty": 100,
+#     "price": 123.4,         # optional: limit price
+#     "ts": datetime,
+#     "tech_score": 0.72,
+#     "reason": "turtle breakout"
+# }
 signal_queue = asyncio.Queue(maxsize=100)      # signals from Strategy -> DecisionFusion
+
+# StagingOrder = {
+#     "staging_id": int,   # 對 DB 的 reference
+#     "symbol": "2330",
+#     "side": "buy",
+#     "qty": 100,
+#     "price": 123.4,
+#     "final_score": 0.82,
+#     "created_by": "fusion" or "ui",
+#     "auto": False
+# }
 order_staging_queue = asyncio.Queue()          # for Executor
 
 # graceful shutdown flag
@@ -65,7 +90,7 @@ async def price_fetcher_loop():
 #             # for each snapshot run technical rules
 #             signals = []
 #             for sym, snap in snapshots.items():
-#                 sig = Analysis.run_technical_rules(sym, snap)  # returns None or dict(signal)
+#                 sig = analysis.RunTechnicalRules(sym, snap, method=auto)  # returns None or dict(signal)
 #                 if sig:
 #                     signals.append(sig)
 #             # push signals to fusion queue
