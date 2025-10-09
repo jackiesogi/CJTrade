@@ -2,7 +2,9 @@
 import asyncio
 import signal
 import logging
+import random
 import os
+from threading import Thread
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -11,14 +13,8 @@ import cjtrade.modules.account as ACCOUNT
 import cjtrade.modules.database as DATABASE
 import cjtrade.modules.stockdata as STOCK
 import cjtrade.modules.candidate as CAND
+import cjtrade.modules.ui.web as WEB
 
-# from cjtrade.modules.stockdata import fetch_data as fetch
-# from cjtrade.modules.candidate import candidate_manager as cand
-
-# from cjtrade.modules.llm import suggestions as AISugg
-# from cjtrade.modules.executor import executor as Executor
-# from cjtrade.modules.db import database as DB
-# from cjtrade.modules.notification import notifier as Notifier
 
 log = logging.getLogger("cjtrade.main")
 
@@ -33,6 +29,19 @@ PRICE_INTERVAL_SECONDS = 60        # price fetch interval (for daily/1min strate
 DECISION_INTERVAL_SECONDS = 30     # fusion / staging interval
 INVENTORY_UPDATE_SECONDS = 300     # update holdings backup
 HEALTHCHECK_INTERVAL_SECONDS = 15
+DB_PATH = "cjtrade-stock.db"
+SHUTDOWN = False                   # for graceful shutdown
+
+# App context object
+# class AppContext:
+#     def __init__(self):
+#         self.db = None
+#         self.account = None
+#         self.fetcher = None
+#         self.candidate_manager = None
+#         self.analysis_module = None
+#         self.ui = None
+
 
 # queues for intra-process communication
 # SnapshotBatch = {
@@ -65,11 +74,12 @@ signal_queue = asyncio.Queue(maxsize=100)      # signals from Strategy -> Decisi
 # }
 order_staging_queue = asyncio.Queue()          # for Executor
 
-# graceful shutdown flag
-SHUTDOWN = False
 
-async def price_fetcher_loop(database, fetcher, candidate_manager):
+async def price_fetcher_thread(database, fetcher, candidate_manager):
     """Periodic fetch price snapshots and push to price_queue and DB."""
+
+    global price_fetcher_thread_alive
+
     while not SHUTDOWN:
         try:
             symbols = candidate_manager.GetTrackedSymbols(database)      # inventory + candidate pool
@@ -134,9 +144,10 @@ async def price_fetcher_loop(database, fetcher, candidate_manager):
 #             log.exception("decision_fusion error: %s", e)
 #             await asyncio.sleep(1)
 
-
-async def inventory_update_loop(database, account):
-    """Periodically refresh inventory from broker (event-driven preferred)."""
+# TODO: Consider event-driven update (Buy / Sell / Dividend / Corporate Action)
+async def inventory_update_thread(database, account):
+    """Periodically refresh inventory from 永豐"""
+    global inventory_update_thread_alive
     while not SHUTDOWN:
         try:
             inventory = account.FetchInventory()  # sync or async depending on your wrapper
@@ -148,7 +159,7 @@ async def inventory_update_loop(database, account):
         await asyncio.sleep(INVENTORY_UPDATE_SECONDS)
 
 
-async def healthcheck_loop(database, bank):
+async def healthcheck_thread(database, bank):
     while not SHUTDOWN:
         # check heartbeats, DB connection, broker connection
         try:
@@ -180,7 +191,6 @@ def _signal_handler(sig):
     SHUTDOWN = True
 
 
-DB_PATH = "cjtrade-stock.db"
 
 
 async def main():
@@ -202,16 +212,22 @@ async def main():
     loop = asyncio.get_running_loop()
     for s in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(s, lambda s=s: _signal_handler(s))
-
+        
     # start background tasks
     tasks = [
-        asyncio.create_task(price_fetcher_loop(database, fetcher, cand_manager), name="price_fetcher"),
+        asyncio.create_task(price_fetcher_thread(database, fetcher, cand_manager), name="price_fetcher"),
         # asyncio.create_task(strategy_loop(), name="strategy"),
         # asyncio.create_task(decision_fusion_loop(), name="decision_fusion"),
-        asyncio.create_task(inventory_update_loop(database, bank), name="inventory_update"),
-        asyncio.create_task(healthcheck_loop(database, bank), name="healthcheck"),
+        asyncio.create_task(inventory_update_thread(database, bank), name="inventory_update"),
+        asyncio.create_task(healthcheck_thread(database, bank), name="healthcheck"),
         # asyncio.create_task(schedule_aicrawl(), name="scheduler_aicrawl"),
     ]
+
+    ## Start Flask in separate thread (Uncomment when all stub is done) ##
+    #flask_thread = Thread(target=WEB.run_flask, kwargs={'host': '0.0.0.0', 'port': 5000}, daemon=True)
+    #flask_thread.start()
+    ######################################################################
+
 
     # wait until shutdown requested
     while not SHUTDOWN:

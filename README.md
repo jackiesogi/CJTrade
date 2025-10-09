@@ -21,9 +21,9 @@ Currently we have built the overall architecture for this project, and we need t
 - [x] Stub `news` module
 - [x] Stub `database` module
 - [x] Stub `llm` module (But haven't weave it into the logic)
-- [ ] Stub `analysis` module
+- [ ] Stub `analysis` module **(depends on 3 queues, hence skip)**
 - [x] Stub `stockdata` module
-- [ ] Stub `ui` module
+- [x] Stub `ui` module
 - [x] Stub `account` module
 - [x] Stub `candidate` module
 
@@ -35,6 +35,20 @@ Currently we have built the overall architecture for this project, and we need t
 - [ ] Try to add the logic of `shioaji` real-time price data (separated from the `yfinance` snapshot)
 - [ ] Think of how to compress the real-time data into day-candlestick after market close
 - [ ] Align the true execution flow
+
+### FY25_W40_PROJ_W3
+
+#### Stubbing Phase 2
+- [ ] Stub `price` / `signal` / `order` queue operations
+- [ ] Stub `analysis` module
+- [ ] Realize the `database` interaction (Inventory part)
+
+### FY25_W41_PROJ_W4
+
+#### Main Loop Correcting Phase 2
+- [ ] Design and differentiate the `pre` / `undergo` / `post` mode
+- [ ] Store `historical-win-ratio` for different technical rules for choosing the most suitable rule
+
 
 ## Information for Devs
 
