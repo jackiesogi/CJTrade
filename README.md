@@ -13,9 +13,11 @@ CJ Trade is a trading system for `TWSE`. It comes with multiple great, out-of-th
 
 ## Project Status
 
-### FY25_W38_PROJ_W1
+### FY25_W38_PROJ_W1 (9/22 - 9/28)
 
-Currently we have built the overall architecture for this project, and we need to stub every modules and functions (print every steps) to verify they are working and the logic is correct! 
+Current Project Status: Already stub most of the important modules (except for `analysis`). And will be more focus on modulizing task creation logic, aiming for:
+1. Create user-defined phase (e.g. `POST_MARKET` phase is occurred every 2PM to 6PM, from Mon. to Fri.)
+2. Create user-defined phase handler (e.g. When it's `POST_MARKET` phase, run user-defined sequence of tasks)
 
 #### Stubbing Phase 1 (Only try to meet the main loop's needs)
 - [x] Stub `news` module
@@ -27,27 +29,29 @@ Currently we have built the overall architecture for this project, and we need t
 - [x] Stub `account` module
 - [x] Stub `candidate` module
 
-### FY25_W39_PROJ_W2
+### FY25_W39_PROJ_W2 (9/29 - 10/5)
 
 #### Main Loop Correcting Phase 1
-- [ ] Finish `news` and `llm` abstraction and consider to wrap them into an `AppContext` class
-- [ ] Locate the section of the loop where errors or inefficiencies occur
+- [x] Finish `news` and `llm` first-stage abstraction
+- [x] Consider to wrap them into an `AppContext` class **(Not going to apply)**
+- [x] Locate the section of the loop where errors or inefficiencies occur **(Need to separate task creation logic)**
 - [ ] Try to add the logic of `shioaji` real-time price data (separated from the `yfinance` snapshot)
 - [ ] Think of how to compress the real-time data into day-candlestick after market close
 - [ ] Align the true execution flow
 
-### FY25_W40_PROJ_W3
+### FY25_W40_PROJ_W3 (10/6 - 10/12)
 
 #### Stubbing Phase 2
 - [ ] Stub `price` / `signal` / `order` queue operations
 - [ ] Stub `analysis` module
 - [ ] Realize the `database` interaction (Inventory part)
 
-### FY25_W41_PROJ_W4
+### FY25_W41_PROJ_W4 (10/13 - 10/19)
 
 #### Main Loop Correcting Phase 2
-- [ ] Design and differentiate the `pre` / `undergo` / `post` mode
 - [ ] Store `historical-win-ratio` for different technical rules for choosing the most suitable rule
+- [ ] Add `TaskGroup` for user to create their specific handler
+- [ ] Finish `PhaseScheduler` to able to call `pre` / `undergo` / `post` phase handler
 
 
 ## Information for Devs

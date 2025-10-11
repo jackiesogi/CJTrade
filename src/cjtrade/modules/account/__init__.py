@@ -9,9 +9,5 @@ class KeyObject:
     ca_path: str
     ca_password: str
 
-
 def AccountAccess(keyobj, simulation):
     return AC.AccountAccessObject(keyobj, simulation)
-
-
-# access = AC.AccountAccess()

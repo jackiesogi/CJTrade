@@ -4,6 +4,7 @@ import signal
 import logging
 import random
 import os
+import cjtrade.tasks
 from threading import Thread
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -16,15 +17,13 @@ import cjtrade.modules.candidate as CAND
 import cjtrade.modules.ui.web as WEB
 
 
+# CONFIG (tune these)
 log = logging.getLogger("cjtrade.main")
-
 logging.basicConfig(
     level=logging.DEBUG,
     format="[%(asctime)s] %(levelname)-8s:  %(message)s"
 )
 
-
-# CONFIG (tune these)
 PRICE_INTERVAL_SECONDS = 60        # price fetch interval (for daily/1min strategies set larger)
 DECISION_INTERVAL_SECONDS = 30     # fusion / staging interval
 INVENTORY_UPDATE_SECONDS = 300     # update holdings backup
@@ -32,15 +31,18 @@ HEALTHCHECK_INTERVAL_SECONDS = 15
 DB_PATH = "cjtrade-stock.db"
 SHUTDOWN = False                   # for graceful shutdown
 
-# App context object
-# class AppContext:
-#     def __init__(self):
-#         self.db = None
-#         self.account = None
-#         self.fetcher = None
-#         self.candidate_manager = None
-#         self.analysis_module = None
-#         self.ui = None
+load_dotenv()
+keyobj = ACCOUNT.KeyObject(
+    api_key=os.environ["API_KEY"],
+    secret_key=os.environ["SECRET_KEY"],
+    ca_path=os.environ["CA_CERT_PATH"],
+    ca_password=os.environ["CA_PASSWORD"]
+)
+
+bank = ACCOUNT.AccountAccess(keyobj, simulation=True)
+database = DATABASE.DatabaseConnection(DB_PATH)
+fetcher = STOCK.PriceFetcher()
+cand_manager = CAND.CandidateManager(bank)
 
 
 # queues for intra-process communication
@@ -195,19 +197,6 @@ def _signal_handler(sig):
 
 async def main():
 
-    load_dotenv()
-    keyobj = ACCOUNT.KeyObject(
-        api_key=os.environ["API_KEY"],
-        secret_key=os.environ["SECRET_KEY"],
-        ca_path=os.environ["CA_CERT_PATH"],
-        ca_password=os.environ["CA_PASSWORD"]
-    )
-    bank = ACCOUNT.AccountAccess(keyobj, simulation=True)
-
-    database = DATABASE.DatabaseConnection(DB_PATH)
-    fetcher = STOCK.PriceFetcher()
-    cand_manager = CAND.CandidateManager(bank)
-    
     # register signal handlers
     loop = asyncio.get_running_loop()
     for s in (signal.SIGINT, signal.SIGTERM):
