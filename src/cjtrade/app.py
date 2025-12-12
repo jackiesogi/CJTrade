@@ -4,7 +4,7 @@ import signal
 import logging
 import random
 import os
-import cjtrade.tasks
+#import cjtrade.tasks
 from threading import Thread
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -85,7 +85,7 @@ async def price_fetcher_thread(database, fetcher, candidate_manager):
     while not SHUTDOWN:
         try:
             symbols = candidate_manager.GetTrackedSymbols(database)      # inventory + candidate pool
-            
+
             for source, symlist in symbols.items():
                 # print(f"Source: {source}")
                 for sym in symlist:
@@ -201,7 +201,7 @@ async def main():
     loop = asyncio.get_running_loop()
     for s in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(s, lambda s=s: _signal_handler(s))
-        
+
     # start background tasks
     tasks = [
         asyncio.create_task(price_fetcher_thread(database, fetcher, cand_manager), name="price_fetcher"),
