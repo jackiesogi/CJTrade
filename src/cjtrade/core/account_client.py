@@ -1,6 +1,13 @@
-from typing import Dict, Any, List
+import uuid
 from enum import Enum
-from .brokers.broker_base import BrokerInterface, Position, Quote, OrderResult
+from typing import Any, Dict, List
+
+from cjtrade.brokers.broker_base import *
+from cjtrade.models.order import *
+from cjtrade.models.position import *
+from cjtrade.models.product import *
+from cjtrade.models.quote import *
+
 
 class BrokerType(Enum):
     SINOPAC = "sinopac"  # 永豐金
@@ -17,13 +24,13 @@ class AccountClient:
 
     def _create_broker(self, broker_type: BrokerType, **config) -> BrokerInterface:
         if broker_type == BrokerType.SINOPAC:
-            from .brokers.sinopac import SinopacBroker
+            from cjtrade.brokers.sinopac.sinopac import SinopacBroker
             return SinopacBroker(**config)
         elif broker_type == BrokerType.YUANTA:
-            from .brokers.yuanta import YuantaBroker
+            from cjtrade.brokers.yuanta.yuanta import YuantaBroker
             return YuantaBroker(**config)
         elif broker_type == BrokerType.CATHAY:
-            from .brokers.cathay import CathayBroker
+            from cjtrade.brokers.cathay.cathay import CathayBroker
             return CathayBroker(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
@@ -43,11 +50,14 @@ class AccountClient:
     def get_balance(self) -> float:
         return self.broker.get_balance()
 
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
+        return self.broker.get_bid_ask(product, intraday_odd)
+
     def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         return self.broker.get_quotes(symbols)
 
-    def place_order(self, symbol: str, action: str, quantity: int, price: float) -> OrderResult:
-        return self.broker.place_order(symbol, action, quantity, price)
+    def place_order(self, product: Product, order: Order) -> OrderResult:
+        return self.broker.place_order(product, order)
 
     def get_broker_name(self) -> str:
         return self.broker.get_broker_name()
@@ -55,3 +65,16 @@ class AccountClient:
     @property
     def current_broker_type(self) -> BrokerType:
         return self.broker_type
+
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+        # if has buy_stock method in broker api
+        if hasattr(self.broker, 'buy_stock'):
+            return self.broker.buy_stock(symbol, quantity, price, intraday_odd)
+        raise NotImplementedError("buy_stock method is not implemented for this broker")
+
+
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+        # if has sell_stock method in broker api
+        if hasattr(self.broker, 'sell_stock'):
+            return self.broker.sell_stock(symbol, quantity, price, intraday_odd)
+        raise NotImplementedError("sell_stock method is not implemented for this broker")

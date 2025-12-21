@@ -1,29 +1,10 @@
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
+from typing import Any, Dict, List
 
-@dataclass
-class Position:
-    symbol: str
-    quantity: int
-    avg_cost: float
-    current_price: float
-    market_value: float
-    unrealized_pnl: float = 0.0  # Unrealized profit/loss
-
-@dataclass
-class Quote:
-    symbol: str
-    price: float
-    volume: int
-    timestamp: str
-
-@dataclass
-class OrderResult:
-    order_id: str
-    status: str
-    message: str
+from cjtrade.models.order import *
+from cjtrade.models.position import *
+from cjtrade.models.product import *
+from cjtrade.models.quote import *
 
 # connect / disconnect / is_connected /
 # get_positions / get_balance / get_quotes /
@@ -68,6 +49,11 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
+        # Five bid/ask prices and their volumes
+        pass
+
+    @abstractmethod
     def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         """Get real-time quotes for given symbols.
         Args:
@@ -79,7 +65,7 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def place_order(self, symbol: str, action: str, quantity: int, price: float) -> OrderResult:
+    def place_order(self, product: Product, order: Order) -> OrderResult:
         """
         Args:
             symbol
@@ -94,4 +80,13 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     def get_broker_name(self) -> str:
+        pass
+
+    ##### SIMPLE HIGH-LEVEL METHODS #####
+    @abstractmethod
+    def buy_stock(self, product: Product, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+        pass
+
+    @abstractmethod
+    def sell_stock(self, product: Product, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
         pass
