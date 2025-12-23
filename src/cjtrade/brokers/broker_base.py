@@ -65,7 +65,7 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def place_order(self, product: Product, order: Order) -> OrderResult:
+    def place_order(self, order: Order) -> OrderResult:
         """
         Args:
             symbol
@@ -79,14 +79,22 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def commit_order(self) -> OrderResult:
+        pass
+
+    @abstractmethod
+    def list_orders(self) -> List[Dict]:
+        pass
+
+    @abstractmethod
     def get_broker_name(self) -> str:
         pass
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
     @abstractmethod
-    def buy_stock(self, product: Product, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
         pass
 
     @abstractmethod
-    def sell_stock(self, product: Product, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
         pass

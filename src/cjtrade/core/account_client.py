@@ -56,8 +56,14 @@ class AccountClient:
     def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
         return self.broker.get_quotes(symbols)
 
-    def place_order(self, product: Product, order: Order) -> OrderResult:
-        return self.broker.place_order(product, order)
+    def place_order(self, order: Order) -> OrderResult:
+        return self.broker.place_order(order)
+
+    def commit_order(self, order_id: str) -> OrderResult:
+        return self.broker.commit_order(order_id)
+
+    def list_orders(self) -> List[Dict[str, Any]]:
+        return self.broker.list_orders()
 
     def get_broker_name(self) -> str:
         return self.broker.get_broker_name()
@@ -67,14 +73,7 @@ class AccountClient:
         return self.broker_type
 
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
-        # if has buy_stock method in broker api
-        if hasattr(self.broker, 'buy_stock'):
-            return self.broker.buy_stock(symbol, quantity, price, intraday_odd)
-        raise NotImplementedError("buy_stock method is not implemented for this broker")
-
+        return self.broker.buy_stock(symbol, quantity, price, intraday_odd)
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
-        # if has sell_stock method in broker api
-        if hasattr(self.broker, 'sell_stock'):
-            return self.broker.sell_stock(symbol, quantity, price, intraday_odd)
-        raise NotImplementedError("sell_stock method is not implemented for this broker")
+        return self.broker.sell_stock(symbol, quantity, price, intraday_odd)

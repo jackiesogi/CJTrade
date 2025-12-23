@@ -31,18 +31,11 @@ HEALTHCHECK_INTERVAL_SECONDS = 15
 DB_PATH = "cjtrade-stock.db"
 SHUTDOWN = False                   # for graceful shutdown
 
-load_dotenv()
-keyobj = ACCOUNT.KeyObject(
-    api_key=os.environ["API_KEY"],
-    secret_key=os.environ["SECRET_KEY"],
-    ca_path=os.environ["CA_CERT_PATH"],
-    ca_password=os.environ["CA_PASSWORD"]
-)
-
-bank = ACCOUNT.AccountAccess(keyobj, simulation=True)
-database = DATABASE.DatabaseConnection(DB_PATH)
-fetcher = STOCK.PriceFetcher()
-cand_manager = CAND.CandidateManager(bank)
+# Global variables will be initialized in main()
+bank = None
+database = None
+fetcher = None
+cand_manager = None
 
 
 # queues for intra-process communication
@@ -196,6 +189,21 @@ def _signal_handler(sig):
 
 
 async def main():
+    global bank, database, fetcher, cand_manager
+
+    # Initialize components
+    load_dotenv()
+    keyobj = ACCOUNT.KeyObject(
+        api_key=os.environ["API_KEY"],
+        secret_key=os.environ["SECRET_KEY"],
+        ca_path=os.environ["CA_CERT_PATH"],
+        ca_password=os.environ["CA_PASSWORD"]
+    )
+
+    bank = ACCOUNT.AccountAccess(keyobj, simulation=True)
+    database = DATABASE.DatabaseConnection(DB_PATH)
+    fetcher = STOCK.PriceFetcher()
+    cand_manager = CAND.CandidateManager(bank)
 
     # register signal handlers
     loop = asyncio.get_running_loop()

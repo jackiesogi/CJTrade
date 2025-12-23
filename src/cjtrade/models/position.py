@@ -10,3 +10,6 @@ class Position:
     current_price: float
     market_value: float
     unrealized_pnl: float = 0.0  # Unrealized profit/loss
+
+    def __str__(self) -> str:
+        return (f"Hold {self.quantity * 1000} shares of {self.symbol} with avg cost {self.avg_cost}")

@@ -3,6 +3,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
+from .product import Product
 
 # PARTIALLY ALIGNED WITH SINOPAC
 class OrderAction(str, Enum):
@@ -26,11 +27,14 @@ class OrderLot(str, Enum):
 
 # TODO: more useful and descriptive status set
 class OrderStatus(str, Enum):
-    SUBMITTED = "SUBMITTED"
-    ACCEPTED = "ACCEPTED"
+    STAGED = "STAGED"
+    ON_THE_WAY = "ON_THE_WAY"
+    COMMITTED = "COMMITTED"
     FILLED = "FILLED"
     PARTIAL = "PARTIAL"
+    CANCELLED = "CANCELLED"
     REJECTED = "REJECTED"
+    UNKNOWN = "UNKNOWN"
 
 
 # PARTIALLY ALIGNED WITH SINOPAC
@@ -47,13 +51,20 @@ class OrderStatus(str, Enum):
 # )
 @dataclass
 class Order:
+    product: Product
     action: OrderAction
     price: float
     quantity: int
     price_type: PriceType
     order_type: OrderType
     order_lot: OrderLot
+
+    # Auto generated fields
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    created_at: datetime = field(default_factory=datetime.datetime.utcnow)
+
+    # def __str__(self) -> str:
+    #     return (f"ID: {self.id} [{self.action}] {self}")
 
 
 # PARTIALLY ALIGNED WITH SINOPAC
@@ -80,4 +91,5 @@ class OrderResult:
     status: OrderStatus
     message: str
     metadata: Dict[str, Any]
+    linked_order: str
     id: str = field(default_factory=lambda: uuid.uuid4().hex)

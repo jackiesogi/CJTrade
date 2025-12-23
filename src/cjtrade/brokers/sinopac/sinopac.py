@@ -7,6 +7,9 @@ from cjtrade.models.order import *
 from cjtrade.models.product import *
 from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product
 
+# Since the conversion from sj to cj loses information, we need to keep a mapping
+# between cj Order IDs and sj Order objects to track order status
+cj_sj_order_map = {}
 
 class SinopacBroker(BrokerInterface):
     def __init__(self, **config: Any):
@@ -91,14 +94,8 @@ class SinopacBroker(BrokerInterface):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        try:
-            settlements = self.api.settlements
-            if settlements:
-                return settlements[0].available_balance
-            return 0.0
-        except Exception as e:
-            print(f"Failed to get balance: {e}")
-            return 0.0
+        account_status = self.api.account_balance()
+        return account_status.acc_balance
 
 
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, Any]:
@@ -190,29 +187,90 @@ class SinopacBroker(BrokerInterface):
         # return result
 
 
-    def place_order(self, product: Product, order: Order) -> OrderResult:
+    def place_order(self, order: Order) -> OrderResult:
         """Place order"""
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
         try:
-            # product = self.api.Contracts.Stocks[symbol]
-            sinopac_product = _to_sinopac_product(self.api, product)
+            sinopac_product = _to_sinopac_product(self.api, order.product)
             sinopac_order = _to_sinopac_order(self.api, order)
-            order_result = self.api.place_order(sinopac_product, sinopac_order)
-            return  _from_sinopac_result(order_result)
+            sinopac_trade = self.api.place_order(sinopac_product, sinopac_order)
+
+            # Store mapping using shioaji order id, not cj order id
+            sj_order_id = sinopac_trade.order.id
+            cj_sj_order_map[sj_order_id] = sinopac_trade
+            # print(f"--- place_order() -> {sinopac_trade}")
+
+            order_result = _from_sinopac_result(sinopac_trade)
+            order_result.linked_order = sj_order_id  # Use shioaji order id as linked_order
+            return order_result
 
         except Exception as e:
             return OrderResult(
-                id="",
                 status=OrderStatus.REJECTED,
                 message=f"Order failed: {e}",
-                metadata={}
+                metadata={},
+                linked_order=""
+            )
+
+
+    # TODO: Re-Design the `Order` and `OrderResult`
+    def commit_order(self, order_id: str) -> OrderResult:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+        try:
+            # Update status to refresh all trade information
+            self.api.update_status(self.api.stock_account)
+
+            # In order to get the order result, we look up the mapping
+            trade_obj = cj_sj_order_map.get(order_id)
+            # print(f"--- commit_order() -> {trade_obj}")
+            return _from_sinopac_result(trade_obj)
+
+        except Exception as e:
+            return OrderResult(
+                status=OrderStatus.REJECTED,
+                message=f"Failed to commit order: {str(e)}",
+                metadata={"broker": "sinopac", "error": str(e)},
+                linked_order=order_id
             )
 
 
     def get_broker_name(self) -> str:
         return "sinopac"
+
+    def list_orders(self) -> List[Dict]:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+
+        try:
+            self.api.update_status()  # Refresh status
+            trades = self.api.list_trades()
+
+            orders = []
+            for trade in trades:
+                order_info = {
+                    'id': trade.status.id,
+                    'symbol': getattr(trade.contract, 'code', 'N/A') if hasattr(trade, 'contract') else 'N/A',
+                    'action': trade.order.action.value if hasattr(trade.order, 'action') else 'N/A',
+                    'quantity': trade.order.quantity,
+                    'price': trade.order.price,
+                    'status': trade.status.status.value,
+                    'order_type': trade.order.order_type.value if hasattr(trade.order, 'order_type') else 'N/A',
+                    'price_type': trade.order.price_type.value if hasattr(trade.order, 'price_type') else 'N/A',
+                    'order_lot': trade.order.order_lot.value if hasattr(trade.order, 'order_lot') else 'N/A',
+                    'order_datetime': trade.status.order_datetime.strftime('%Y-%m-%d %H:%M:%S') if hasattr(trade.status, 'order_datetime') else 'N/A',
+                    'deals': len(trade.status.deals) if hasattr(trade.status, 'deals') else 0,
+                    'ordno': trade.order.ordno if hasattr(trade.order, 'ordno') else 'N/A'
+                }
+                orders.append(order_info)
+
+            return orders
+
+        except Exception as e:
+            logger.error(f"list_orders() exception: {e}")
+            return []
 
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
@@ -226,6 +284,7 @@ class SinopacBroker(BrokerInterface):
         print(f"intraday_odd: {intraday_odd}")
 
         order = Order(
+            product=product,
             action=OrderAction.BUY,
             price=price,
             quantity=quantity,
@@ -233,7 +292,9 @@ class SinopacBroker(BrokerInterface):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common
         )
-        return self.place_order(product, order)
+
+        temp = self.place_order(order)
+        return self.commit_order(temp.linked_order)
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
@@ -244,6 +305,7 @@ class SinopacBroker(BrokerInterface):
         )
 
         order = Order(
+            product=product,
             action=OrderAction.SELL,
             price=price,
             quantity=quantity,
@@ -251,4 +313,5 @@ class SinopacBroker(BrokerInterface):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common
         )
-        return self.place_order(product, order)
+        temp = self.place_order(order)
+        return self.commit_order(temp.linked_order)

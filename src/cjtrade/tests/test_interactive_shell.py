@@ -1,44 +1,31 @@
-"""
-Simple test for AccountClient with Sinopac broker
-Test flow: login() -> get_positions() -> logout()
-"""
-import os
-import sys
-from pathlib import Path
-from dotenv import load_dotenv
+# Interactive shell
+# Supported commands:
+#   help:   Show this help message
+#   lsodr:  List all orders
+#   lspos:  List all positions
+#   exit:   Close interactive shell
 
-from cjtrade.core.account_client import *
+from cjtrade.core.account_client import AccountClient
+from cjtrade.tests.test_basic_flow import *
+
+exit_flag = False
 
 
-load_dotenv()
+def set_exit_flag(client: AccountClient):
+    global exit_flag
+    exit_flag = True
 
-config = {
-    'api_key': os.environ["API_KEY"],
-    'secret_key': os.environ["SECRET_KEY"],
-    'ca_path': os.environ["CA_CERT_PATH"],
-    'ca_passwd': os.environ["CA_PASSWORD"],
-    'simulation': False  # Use production environment to see actual holdings
-}
 
-def test_sinopac_buy_0050():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
+
+def test_sinopac_buy_0050(client: AccountClient):
     order_result = client.buy_stock("0050", quantity=2, price=62.6, intraday_odd=True)
     print(f"--- order_result: {order_result}")
-    # commit_result = client.commit_order(order_result.linked_order)
-    # print(f"--- commit_result: {commit_result}")
-    client.disconnect()
 
-def test_sinopac_sell_0050():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
+def test_sinopac_sell_0050(client: AccountClient):
     order_result = client.sell_stock("0050", quantity=2, price=62.6, intraday_odd=True)
     print(f"--- order_result: {order_result}")
-    client.disconnect()
 
-def test_sinopac_bidask_0050():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
+def test_sinopac_bidask_0050(client: AccountClient):
     product = Product(
         type=ProductType.STOCK,
         exchange=Exchange.TSE,
@@ -46,11 +33,8 @@ def test_sinopac_bidask_0050():
     )
     bid_ask = client.get_bid_ask(product, intraday_odd=True)
     print(f"Bid/Ask for 0050: {bid_ask}")
-    client.disconnect()
 
-def test_sinopac_get_account_positions():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
+def test_sinopac_get_account_positions(client: AccountClient):
     positions = client.get_positions()
     print(f"{'Symbol':^10} {'Quantity':^8} {'Avg Cost':^10} {'Unrealized PnL':^15}")
     print("-" * 46)
@@ -62,41 +46,13 @@ def test_sinopac_get_account_positions():
             f"{pos.avg_cost:>10.2f} "
             f"{pos.unrealized_pnl:>15.2f}"
         )
-    client.disconnect()
 
-def test_sinopac_get_account_balance():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
+def test_sinopac_get_account_balance(client: AccountClient):
     balance = client.get_balance()
     print(f"Account Balance: {balance}")
-    client.disconnect()
-
-def test_sinopac_buy_0050_intraday_odd_real():
-    real_config = {
-            'api_key': os.environ["API_KEY"],
-            'secret_key': os.environ["SECRET_KEY"],
-            'ca_path': os.environ["CA_CERT_PATH"],
-            'ca_passwd': os.environ["CA_PASSWORD"],
-            'simulation': False
-    }
-    client = AccountClient(BrokerType.SINOPAC, **real_config)
-    client.connect()
-
-    order_result = client.buy_stock("0050", quantity=5, price=62.6, intraday_odd=True)
-    print(f"Order Result: ID={order_result.id}, Status={order_result.status}, Message={order_result.message}")
-
-    print("Committing order...")
-    commit_result = client.commit_order()
-    print(f"Commit Result: ID={commit_result.id}, Status={commit_result.status}, Message={commit_result.message}")
-
-    client.disconnect()
 
 
-def test_sinopac_cancel_all_orders():
-    """Cancel all pending orders in real environment"""
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
-
+def test_sinopac_cancel_all_orders(client: AccountClient):
     try:
         api = client.broker.api
         api.update_status()
@@ -148,13 +104,8 @@ def test_sinopac_cancel_all_orders():
     except Exception as e:
         print(f"Error occurred while canceling orders: {e}")
 
-    client.disconnect()
 
-
-def test_sinopac_list_orders_real():
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    client.connect()
-
+def test_sinopac_list_orders_real(client: AccountClient):
     print("=== Test Order List Query ===")
 
     try:
@@ -183,22 +134,72 @@ def test_sinopac_list_orders_real():
     except Exception as e:
         print(f"Error occurred while querying orders: {e}")
 
-    client.disconnect()
+
+def show_help(client: AccountClient):
+    print("help:   Show this help message")
+    print("clear:  Clear the screen")
+    print("lsodr:  List all orders")
+    print("lspos:  List all positions")
+    print("buy:    Place a buy order for 0050")
+    print("sell:   Place a sell order for 0050")
+    print("bidask: Get bid/ask for 0050")
+    print("cancel: Cancel all active orders")
+    print("balance: Show account balance")
+    print("exit:   Close interactive shell")
 
 
-def enter_interactive_shell():
-    pass
+def clear_screen(client: AccountClient):
+    import os
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+
+command_func_map = {
+    "help": show_help,
+    "lsodr": test_sinopac_list_orders_real,
+    "lspos": test_sinopac_get_account_positions,
+    "buy": test_sinopac_buy_0050,
+    "sell": test_sinopac_sell_0050,
+    "bidask": test_sinopac_bidask_0050,
+    "cancel": test_sinopac_cancel_all_orders,
+    "balance": test_sinopac_get_account_balance,
+    "clear": clear_screen,
+    "exit": set_exit_flag,
+}
+
+
+def process_command(cmd: str, client: AccountClient):
+    cmd = cmd.strip()
+
+    if not cmd:
+        return
+
+    func = command_func_map.get(cmd)
+    if func is None:
+        print(f"Unknown command: {cmd}")
+        print("Type 'help' to see available commands")
+        return
+
+    try:
+        func(client)
+    except Exception as e:
+        print(f"Command failed: {e}")
+
+
+def interactive_shell(client: AccountClient):
+    global exit_flag
+    exit_flag = False
+
+    print("Interactive shell started. Type 'help' for commands.")
+
+    while not exit_flag:
+        cmd = input("> ")
+        process_command(cmd, client)
+
+    print("Bye!")
 
 
 if __name__ == "__main__":
-    # test_sinopac_bidask_0050()
-
-    # test_sinopac_get_account_positions()
-
-    # test_sinopac_buy_0050()
-
-    test_sinopac_get_account_balance()
-    # test_sinopac_buy_0050_intraday_odd_real()
-    # test_sinopac_api_methods()
-    # test_sinopac_list_orders_real()
-    # test_sinopac_cancel_all_orders()  # 緊急取消所有委託單
+    client = AccountClient(BrokerType.SINOPAC, **config)
+    client.connect()
+    interactive_shell(client)
+    client.disconnect()
