@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
-from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product
+from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot
 
 # Since the conversion from sj to cj loses information, we need to keep a mapping
 # between cj Order IDs and sj Order objects to track order status
@@ -161,30 +161,25 @@ class SinopacBroker(BrokerInterface):
             return {"error": f"Failed to get bid/ask for {product.symbol}: {str(e)}"}
 
 
-    def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
+    def get_quotes(self, product: List[Product]) -> Dict[str, Quote]:
         pass
-        # if not self._connected:
-        #     raise ConnectionError("Not connected to broker")
+    #     if not self._connected:
+    #         raise ConnectionError("Not connected to broker")
 
-        # result = {}
-        # try:
-        #     for symbol in symbols:
-        #         product = self.api.Contracts.Stocks[symbol]
-        #         snapshot = self.api.snapshots([product])
+    #     try:
 
-        #         if snapshot and len(snapshot) > 0:
-        #             snap = snapshot[0]
-        #             quote = Quote(
-        #                 symbol=symbol,
-        #                 price=snap.close,
-        #                 volume=snap.volume,
-        #                 timestamp=datetime.now().isoformat()
-        #             )
-        #             result[symbol] = quote
-        # except Exception as e:
-        #     print(f"Failed to get quotes: {e}")
+    # Return close prices for given products at any time
+    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
 
-        # return result
+        sinopac_products = [_to_sinopac_product(self.api, p) for p in products]
+        sinopac_snapshots = self.api.snapshots(sinopac_products)
+        cj_snapshots = []
+        for snapshot in sinopac_snapshots:
+            cj_snapshot = _from_sinopac_snapshot(snapshot)
+            cj_snapshots.append(cj_snapshot)
+        return cj_snapshots
 
 
     def place_order(self, order: Order) -> OrderResult:
@@ -215,6 +210,14 @@ class SinopacBroker(BrokerInterface):
             )
 
 
+    def cancel_order(self, order_id: str) -> OrderResult:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+        sinopac_trade = cj_sj_order_map.get(order_id)
+        self.api.cancel_order(sinopac_trade)
+        return _from_sinopac_result(sinopac_trade)
+
+
     # TODO: Re-Design the `Order` and `OrderResult`
     def commit_order(self, order_id: str) -> OrderResult:
         if not self._connected:
@@ -240,6 +243,7 @@ class SinopacBroker(BrokerInterface):
     def get_broker_name(self) -> str:
         return "sinopac"
 
+    # TODO: Decouple from sj API/objects, use cj internal class instead
     def list_orders(self) -> List[Dict]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -278,7 +282,7 @@ class SinopacBroker(BrokerInterface):
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
-            exchange=sj.contracts.Exchange.TSE,  # Assuming TSE for simplicity
+            exchange=Exchange.TSE,  # Assuming TSE for simplicity
             symbol=symbol
         )
         print(f"intraday_odd: {intraday_odd}")

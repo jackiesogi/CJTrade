@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List
 
@@ -36,7 +36,7 @@ class ProductType(str, Enum):
 class Product:
     symbol: str
     type: ProductType = ProductType.STOCK
-    exchange: str = Exchange.TSE
+    exchange: Exchange = Exchange.TSE
     category: str = ""
-    tags: List[str] = None
-    metadata: Dict[str, Any] = None
+    tags: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)

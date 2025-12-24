@@ -72,6 +72,48 @@ def _from_sinopac_order(sj_order: sj.Order, sj_contract: sj.contracts.Contract) 
     )
 
 
+# class Snapshot:
+#     symbol: str
+#     exchange: str
+#     timestamp: datetime.datetime
+#     open: float
+#     close: float
+#     high: float
+#     low: float
+#     volume: int
+#     average_price: float
+#     action: OrderAction  # Buy/Sell/None
+#     buy_price: float
+#     buy_volume: int
+#     sell_price: float
+#     sell_volume: int
+def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
+    """Convert Shioaji Snapshot to CJTrade Quote"""
+    try:
+        return Snapshot(
+                symbol=getattr(sj_snapshot, 'code', getattr(sj_snapshot, 'symbol', '')),
+                exchange=getattr(sj_snapshot, 'exchange', 'N/A'),
+                timestamp=datetime.datetime.fromtimestamp(getattr(sj_snapshot, 'ts', 0) / 1_000_000_000),
+                open=getattr(sj_snapshot, 'open', 0.0),
+                close=getattr(sj_snapshot, 'close', 0.0),
+                high=getattr(sj_snapshot, 'high', 0.0),
+                low=getattr(sj_snapshot, 'low', 0.0),
+                volume=getattr(sj_snapshot, 'volume', 0),
+                average_price=getattr(sj_snapshot, 'average_price', 0.0),
+                action=OrderAction.BUY if getattr(sj_snapshot, 'tick_type', None)
+                    == sj.constant.TickType.Buy else (
+                        OrderAction.SELL if getattr(sj_snapshot, 'tick_type', None)
+                        == sj.constant.TickType.Sell else OrderAction.NONE
+                    ),
+                buy_price=getattr(sj_snapshot, 'buy_price', 0.0),
+                buy_volume=getattr(sj_snapshot, 'buy_volume', 0),
+                sell_price=getattr(sj_snapshot, 'sell_price', 0.0),
+                sell_volume=getattr(sj_snapshot, 'sell_volume', 0)
+        )
+    except Exception as e:
+        raise ValueError(f"Cannot convert Shioaji snapshot to Snapshot: {e}") from e
+
+
 def _from_sinopac_product(sj_contract) -> Product:
     """Convert Shioaji Contract to CJTrade Product"""
     try:

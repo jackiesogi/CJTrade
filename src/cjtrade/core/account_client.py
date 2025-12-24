@@ -53,8 +53,11 @@ class AccountClient:
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
         return self.broker.get_bid_ask(product, intraday_odd)
 
-    def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
-        return self.broker.get_quotes(symbols)
+    def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
+        return self.broker.get_quotes(products)
+
+    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
+        return self.broker.get_snapshot(products)
 
     def place_order(self, order: Order) -> OrderResult:
         return self.broker.place_order(order)

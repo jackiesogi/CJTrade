@@ -4,7 +4,7 @@
 #   lsodr:  List all orders
 #   lspos:  List all positions
 #   exit:   Close interactive shell
-
+import pandas as pd
 from cjtrade.core.account_client import AccountClient
 from cjtrade.tests.test_basic_flow import *
 
@@ -36,16 +36,10 @@ def test_sinopac_bidask_0050(client: AccountClient):
 
 def test_sinopac_get_account_positions(client: AccountClient):
     positions = client.get_positions()
-    print(f"{'Symbol':^10} {'Quantity':^8} {'Avg Cost':^10} {'Unrealized PnL':^15}")
-    print("-" * 46)
 
-    for pos in positions:
-        print(
-            f"{pos.symbol:^10} "
-            f"{pos.quantity:^8} "
-            f"{pos.avg_cost:>10.2f} "
-            f"{pos.unrealized_pnl:>15.2f}"
-        )
+    df = pd.DataFrame([p.__dict__ for p in positions])
+    print(df)
+
 
 def test_sinopac_get_account_balance(client: AccountClient):
     balance = client.get_balance()
@@ -136,22 +130,29 @@ def test_sinopac_list_orders_real(client: AccountClient):
 
 
 def show_help(client: AccountClient):
-    print("help:   Show this help message")
-    print("clear:  Clear the screen")
-    print("lsodr:  List all orders")
-    print("lspos:  List all positions")
-    print("buy:    Place a buy order for 0050")
-    print("sell:   Place a sell order for 0050")
-    print("bidask: Get bid/ask for 0050")
-    print("cancel: Cancel all active orders")
+    print("help:    Show this help message")
+    print("clear:   Clear the screen")
+    print("lsodr:   List all orders")
+    print("lspos:   List all positions")
+    print("buy:     Place a buy order for 0050")
+    print("sell:    Place a sell order for 0050")
+    print("snap:    Get market snapshot for 0050")
+    print("bidask:  Get bid/ask for 0050")
+    print("cancel:  Cancel all active orders")
     print("balance: Show account balance")
-    print("exit:   Close interactive shell")
+    print("exit:    Close interactive shell")
 
 
 def clear_screen(client: AccountClient):
     import os
     os.system('cls' if os.name == 'nt' else 'clear')
 
+
+def test_sinopac_get_snapshot_0050(client: AccountClient):
+    product = Product(symbol="0050")
+    snapshots = client.get_snapshot([product])
+    df = pd.DataFrame([s.__dict__ for s in snapshots])
+    print(df)
 
 command_func_map = {
     "help": show_help,
@@ -160,6 +161,7 @@ command_func_map = {
     "buy": test_sinopac_buy_0050,
     "sell": test_sinopac_sell_0050,
     "bidask": test_sinopac_bidask_0050,
+    "snap": test_sinopac_get_snapshot_0050,
     "cancel": test_sinopac_cancel_all_orders,
     "balance": test_sinopac_get_account_balance,
     "clear": clear_screen,
@@ -185,16 +187,43 @@ def process_command(cmd: str, client: AccountClient):
         print(f"Command failed: {e}")
 
 
+# def interactive_shell(client: AccountClient):
+#     global exit_flag
+#     exit_flag = False
+
+#     print("Interactive shell started. Type 'help' for commands.")
+
+#     while not exit_flag:
+#         cmd = input("> ")
+#         process_command(cmd, client)
+
+#     print("Bye!")
+
+import readline
+MAX_HISTORY_SIZE = 30
+
+def init_readline():
+    readline.set_history_length(MAX_HISTORY_SIZE)
+    readline.parse_and_bind("tab: complete")
+
 def interactive_shell(client: AccountClient):
     global exit_flag
     exit_flag = False
 
+    init_readline()
     print("Interactive shell started. Type 'help' for commands.")
-
     while not exit_flag:
-        cmd = input("> ")
-        process_command(cmd, client)
+        try:
+            cmd = input("> ").strip()
 
+            if not cmd:
+                continue
+
+            readline.add_history(cmd)
+            process_command(cmd, client)
+
+        except (EOFError, KeyboardInterrupt):
+            break
     print("Bye!")
 
 

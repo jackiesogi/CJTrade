@@ -54,7 +54,7 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_quotes(self, symbols: List[str]) -> Dict[str, Quote]:
+    def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
         """Get real-time quotes for given symbols.
         Args:
             List of stock symbols
@@ -62,6 +62,10 @@ class BrokerInterface(ABC):
         Returns:
             Dict[str, Quote]
         """
+        pass
+
+    @abstractmethod
+    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
         pass
 
     @abstractmethod
