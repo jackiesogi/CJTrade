@@ -1,0 +1,229 @@
+from cjtrade.core.account_client import AccountClient
+from cjtrade.models.quote import Snapshot
+from cjtrade.models.order import OrderAction
+import yfinance as yf
+import datetime
+import random
+import pandas as pd
+# This is used to simulate a securities account
+# It is for testing purposes, allowing users to test their trading strategies
+# even if the market is closed or they don't have a real account.
+
+# We need to keep track of some important variables and states, such as:
+# - Account balance
+# - Holdings
+# - Open orders
+# - Transaction history
+# - Dynamic Market data (simulated by replaying historical data)
+
+# If possible, we sync account data with real broker account data
+# And only simulate the order execution and market data parts.
+class SimulationEnvironment:
+    def __init__(self, real_account: AccountClient = None):
+        self.real_account = real_account
+        self.account_balance = 100_000.0  # default amount of cash
+        self.positions = []
+        self._connected = False
+
+        self._init_time = datetime.datetime.now()   # For simulating time progression
+
+        # yfinance api only keeps minute data within the last 30 days
+        current_time = datetime.datetime.now()
+        days_back = random.randint(1, 20)  # 1-20 days back
+        start_date = current_time - datetime.timedelta(days=days_back)
+
+        start_hour = random.randint(9, 13)
+        if start_hour == 13:
+            start_minute = random.randint(0, 30)
+        else:
+            start_minute = random.randint(0, 59)
+
+        self._data_start_time = start_date.replace(
+            hour=start_hour,
+            minute=start_minute,
+            second=0,
+            microsecond=0
+        )
+
+        self._historical_data = {}  # {symbol: DataFrame}
+        self._data_loaded = set()   # symbols with data loaded
+
+        print(f"Simulation environment initialized with data starting from: {self._data_start_time}")
+        print(f"(Using data from {days_back} days ago to ensure availability)")
+
+    def start(self) -> bool:
+        try:
+            self._connected = True
+
+            if self.real_account:
+                self._sync_with_real_account()
+
+            print("Simulation environment started")
+            return True
+        except Exception as e:
+            print(f"Failed to start simulation environment: {e}")
+            self._connected = False
+            return False
+
+    def stop(self):
+        self._connected = False
+        print("Simulation environment stopped")
+
+    def _sync_with_real_account(self):
+        if not self.real_account:
+            return
+
+        try:
+            if self.real_account.connect():
+                print("Syncing simulation environment with real account data...")
+                self.account_balance = self.real_account.get_balance()
+                self.positions = self.real_account.get_positions()
+                self.real_account.disconnect()
+                print(f"Synced: Balance = {self.account_balance}, Positions = {len(self.positions)}")
+            else:
+                print("Failed to connect to real account for sync")
+        except Exception as e:
+            print(f"Error syncing with real account: {e}")
+
+    def reset_to_real_account_state(self, account: AccountClient = None):
+        if account:
+            self.real_account = account
+            self._sync_with_real_account()
+        else:
+            # Reset to default empty state
+            self.account_balance = 100_000.0
+            self.positions = []
+
+    def get_account_balance(self) -> float:
+        return self.account_balance
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def _preload_historical_data(self, symbol: str):
+        if symbol in self._data_loaded:
+            return
+
+        print(f"Loading historical data for {symbol}...")
+
+        yf_symbol = f"{symbol}.TW"
+        start_date = self._data_start_time
+        end_date = start_date + datetime.timedelta(days=1)  # preload 1 day of data
+
+        try:
+            data = yf.download(yf_symbol,
+                             start=start_date.strftime("%Y-%m-%d"),
+                             end=end_date.strftime("%Y-%m-%d"),
+                             interval="1m")
+
+            if data.empty:
+                print(f"No 1m data available for {symbol}, trying 1h data...")
+                data = yf.download(yf_symbol,
+                                 start=start_date.strftime("%Y-%m-%d"),
+                                 end=end_date.strftime("%Y-%m-%d"),
+                                 interval="1h")
+
+            if not data.empty:
+                if not isinstance(data.index, pd.DatetimeIndex):
+                    data.index = pd.to_datetime(data.index)
+
+                if data.index.tz is not None:
+                    data.index = data.index.tz_localize(None)
+
+                self._historical_data[symbol] = {
+                    'data': data,
+                    'timestamps': data.index.to_numpy(),  # convert to numpy array for performance
+                }
+
+                print(f"Loaded {len(data)} data points for {symbol}")
+            else:
+                print(f"No data available for {symbol}, will use fallback")
+                self._historical_data[symbol] = {
+                    'data': pd.DataFrame(),
+                    'timestamps': None
+                }
+
+        except Exception as e:
+            print(f"Error loading data for {symbol}: {e}")
+            self._historical_data[symbol] = {
+                'data': pd.DataFrame(),
+                'timestamps': None
+            }
+
+        self._data_loaded.add(symbol)
+
+    def get_dummy_snapshot(self, symbol: str) -> Snapshot:
+        if symbol not in self._data_loaded:
+            self._preload_historical_data(symbol)
+
+        current_time = datetime.datetime.now()
+        time_offset = current_time - self._init_time
+
+        minutes_passed = int(time_offset.total_seconds() / 60)
+
+        if symbol in self._historical_data:
+            data_info = self._historical_data[symbol]
+            data = data_info['data']
+            timestamps = data_info['timestamps']
+
+            if not data.empty and timestamps is not None:
+                # CIRCULARLY replay historical data
+                data_idx = minutes_passed % len(data)
+
+                actual_data_time = data.index[data_idx]
+                sampling_time = self._data_start_time + time_offset
+
+                print(f"Debug: minutes_passed={minutes_passed}, data_idx={data_idx}/{len(data)}, "
+                      f"actual_data_time={actual_data_time}, sampling_time={sampling_time}")
+
+                row = data.iloc[data_idx]
+
+                open_price = row['Open'].item()
+                close_price = row['Close'].item()
+                high_price = row['High'].item()
+                low_price = row['Low'].item()
+                volume = row['Volume'].item()
+
+                snapshot = Snapshot(
+                    symbol=symbol,
+                    exchange="TSE",
+                    timestamp=sampling_time,
+                    open=open_price,
+                    close=close_price,
+                    high=high_price,
+                    low=low_price,
+                    volume=int(volume),
+                    average_price=(high_price + low_price) / 2,
+                    action=OrderAction.BUY if close_price >= open_price else OrderAction.SELL,
+                    buy_price=close_price,
+                    buy_volume=int(volume // 2),
+                    sell_price=close_price + 0.5,
+                    sell_volume=int(volume // 2),
+                )
+                return snapshot
+
+        # use fallback if no historical data
+        print(f"No historical data for {symbol} at {sampling_time}, using fallback")
+        return self._create_fallback_snapshot(symbol, sampling_time)
+
+    def _create_fallback_snapshot(self, symbol: str, timestamp: datetime.datetime) -> Snapshot:
+        import random
+        base_price = 100.0 + random.uniform(-10, 10)
+        price_change = random.uniform(-2, 2)
+
+        return Snapshot(
+            symbol=symbol,
+            exchange="TSE",
+            timestamp=timestamp,
+            open=base_price,
+            close=base_price + price_change,
+            high=base_price + abs(price_change) + random.uniform(0, 1),
+            low=base_price - abs(price_change) - random.uniform(0, 1),
+            volume=random.randint(1000, 100000),
+            average_price=base_price + price_change / 2,
+            action=OrderAction.BUY if price_change >= 0 else OrderAction.SELL,
+            buy_price=base_price + price_change,
+            buy_volume=random.randint(500, 50000),
+            sell_price=base_price + price_change + 0.5,
+            sell_volume=random.randint(500, 50000),
+        )

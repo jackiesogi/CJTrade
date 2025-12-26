@@ -13,6 +13,7 @@ class BrokerType(Enum):
     SINOPAC = "sinopac"  # 永豐金
     YUANTA = "yuanta"    # 元大
     CATHAY = "cathay"    # 國泰
+    MOCK = "mock"        # 模擬券商
 
 
 class AccountClient:
@@ -32,6 +33,9 @@ class AccountClient:
         elif broker_type == BrokerType.CATHAY:
             from cjtrade.brokers.cathay.cathay import CathayBroker
             return CathayBroker(**config)
+        elif broker_type == BrokerType.MOCK:
+            from cjtrade.brokers.mock.mock_broker import MockBroker
+            return MockBroker(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 
