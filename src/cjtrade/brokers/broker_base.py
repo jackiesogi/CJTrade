@@ -65,7 +65,7 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
+    def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         pass
 
     @abstractmethod

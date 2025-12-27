@@ -5,7 +5,8 @@ from typing import Any, Dict, List
 from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
-from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot
+from cjtrade.models.rank_type import *
+from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype
 
 # Since the conversion from sj to cj loses information, we need to keep a mapping
 # between cj Order IDs and sj Order objects to track order status
@@ -169,7 +170,7 @@ class SinopacBroker(BrokerInterface):
     #     try:
 
     # Return close prices for given products at any time
-    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
+    def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -180,6 +181,34 @@ class SinopacBroker(BrokerInterface):
             cj_snapshot = _from_sinopac_snapshot(snapshot)
             cj_snapshots.append(cj_snapshot)
         return cj_snapshots
+
+
+    # TODO: This is not a stable API, just for testing purpose
+    def get_market_movers(self, top_n: int = 10,
+                          by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,
+                          ascending: bool = True) -> Dict[str, Snapshot]:
+
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+        try:
+            sj_rank_type = _to_sinopac_ranktype(by)
+            movers = self.api.scanners(
+                scanner_type=sj_rank_type,
+                ascending=ascending,
+                count=top_n
+            )  # Returns a List[shioaji.data.ChangePercentRank]
+            codes = [mover.code for mover in movers]
+            names = [mover.name for mover in movers]
+            cj_snapshots = self.get_snapshots([Product(symbol=code) for code in codes])
+            result = {}
+            for i, cj_snapshot in enumerate(cj_snapshots):
+                cj_snapshot.name = names[i]  # Add name info
+                result[cj_snapshot.name] = cj_snapshot
+            return result
+        except Exception as e:
+            raise ValueError(f"Cannot get market movers from Sinopac: {e}") from e
+
+
 
 
     def place_order(self, order: Order) -> OrderResult:

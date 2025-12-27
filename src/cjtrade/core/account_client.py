@@ -7,6 +7,7 @@ from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
+from cjtrade.models.rank_type import *
 
 
 class BrokerType(Enum):
@@ -60,8 +61,11 @@ class AccountClient:
     def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
         return self.broker.get_quotes(products)
 
-    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
-        return self.broker.get_snapshot(products)
+    def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
+        return self.broker.get_snapshots(products)
+
+    def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:
+        return self.broker.get_market_movers(top_n, by, ascending)
 
     def place_order(self, order: Order) -> OrderResult:
         return self.broker.place_order(order)

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
+from cjtrade.models.rank_type import *
 
 
 ##### Cjtrade -> Shioaji #####
@@ -26,6 +27,13 @@ ORDER_TYPE_MAP = {
     OrderType.ROD: sj.constant.OrderType.ROD,
     OrderType.IOC: sj.constant.OrderType.IOC,
     OrderType.FOK: sj.constant.OrderType.FOK,
+}
+
+RANK_SCANNER_MAP = {
+    RankType.PRICE_PERCENTAGE_CHANGE: sj.constant.ScannerType.ChangePercentRank,
+    RankType.PRICE_CHANGE: sj.constant.ScannerType.ChangePriceRank,
+    RankType.VOLUME: sj.constant.ScannerType.VolumeRank
+    # sj also provide sj.constant.ScannerType.AmountRank
 }
 
 ACTION_MAP = {
@@ -103,7 +111,7 @@ def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
                 action=OrderAction.BUY if getattr(sj_snapshot, 'tick_type', None)
                     == sj.constant.TickType.Buy else (
                         OrderAction.SELL if getattr(sj_snapshot, 'tick_type', None)
-                        == sj.constant.TickType.Sell else OrderAction.NONE
+                        == sj.constant.TickType.Sell else 'N/A'
                     ),
                 buy_price=getattr(sj_snapshot, 'buy_price', 0.0),
                 buy_volume=getattr(sj_snapshot, 'buy_volume', 0),
@@ -224,5 +232,11 @@ def _to_sinopac_product(api, cj_product: Product) -> sj.contracts.Contract:
             f"{cj_product.type}.{cj_product.exchange}.{cj_product.symbol}"
         ) from e
 
+
+def _to_sinopac_ranktype(cj_rank_type: RankType) -> sj.constant.ScannerType:
+    try:
+        return RANK_SCANNER_MAP[cj_rank_type]
+    except KeyError as e:
+        raise ValueError(f"Unsupported rank type: {e.args[0]}") from e
 
 ##### INTERNAL METHODS END #####
