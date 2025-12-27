@@ -86,7 +86,7 @@ class MockBroker(BrokerInterface):
 
         return quotes
 
-    def get_snapshot(self, products: List[Product]) -> List[Snapshot]:
+    def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
