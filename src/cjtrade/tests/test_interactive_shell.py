@@ -10,6 +10,9 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from cjtrade.core.account_client import AccountClient
 from cjtrade.tests.test_basic_flow import *
+from cjtrade.analytics.strategies.fixed_price import *
+from cjtrade.models.market_state import *
+from cjtrade.analytics.signals.signal import *
 
 exit_flag = False
 
@@ -189,6 +192,49 @@ class ListPositionsCommand(CommandBase):
         df = pd.DataFrame([p.__dict__ for p in positions])
         print(df)
 
+class RunAanalyticsCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "start"
+        self.description = "Run analytics"
+        self.params = ["symbol", "buy_target_price", "sell_target_price"]
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        symbol = args[0]
+        buy = float(args[1])
+        sell = float(args[2])
+
+        strategy = FixedPriceStrategy(buy_target_price=buy, sell_target_price=sell)
+        FILL_FLAG = False
+
+        while not FILL_FLAG:
+
+            snapshots = client.get_snapshots([Product(symbol=symbol)])
+            snapshot = snapshots[0]
+            print(f"fetch market state = O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
+
+            # To be more accurate, caller may need to construct
+            # their kbar of time unit they want, rather than using
+            # the OHLCV info from `Snapshot`, since it is 1-day OHLCV.
+            state = OHLCVState(o=snapshot.open, h=snapshot.high,
+                               l=snapshot.low, c=snapshot.close, v=snapshot.volume)
+
+            intention = strategy.evaluate(state)
+
+            if intention.action == SignalAction.BUY:
+                print(f"\nAccept buy signal at price: {snapshot.close}, reason: {intention.reason}\n")
+                order_result = client.buy_stock(symbol, quantity=100, price=snapshot.close + 0.1, intraday_odd=True)
+                print(f"Order result: {order_result}")
+                FILL_FLAG = True
+            elif intention.action == SignalAction.SELL:
+                print(f"\nAccept sell signal at price: {snapshot.close}, reason: {intention.reason}\n")
+                order_result = client.sell_stock(symbol, quantity=100, price=snapshot.close - 0.1, intraday_odd=False)
+                print(f"Order result: {order_result}")
+                FILL_FLAG = True
+
+            if not FILL_FLAG:
+                sleep(60)
+
 
 class BalanceCommand(CommandBase):
     def __init__(self):
@@ -301,6 +347,7 @@ def register_commands():
         BidAskCommand(),
         ListOrdersCommand(),
         ListPositionsCommand(),
+        RunAanalyticsCommand(),
         BalanceCommand(),
         CancelAllCommand(),
         ClearCommand(),
@@ -528,7 +575,8 @@ def interactive_shell(client: AccountClient):
 
 
 if __name__ == "__main__":
-    client = AccountClient(BrokerType.SINOPAC, **config)
+    real = AccountClient(BrokerType.SINOPAC, **config)
+    client = AccountClient(BrokerType.MOCK, real_account=real)
     client.connect()
     interactive_shell(client)
     client.disconnect()

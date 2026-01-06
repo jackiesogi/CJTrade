@@ -172,9 +172,11 @@ class SimulationEnvironment:
 
                 actual_data_time = data.index[data_idx]
                 sampling_time = self._data_start_time + time_offset
+                cycle_number = minutes_passed // len(data)
+                position_in_cycle = minutes_passed % len(data)
 
-                print(f"Debug: minutes_passed={minutes_passed}, data_idx={data_idx}/{len(data)}, "
-                      f"actual_data_time={actual_data_time}, sampling_time={sampling_time}")
+                print(f"Debug: minutes_passed={minutes_passed} (cycle {cycle_number}, position {position_in_cycle}/{len(data)}), "
+                      f"historical_data_time={actual_data_time}, simulated_time={sampling_time}")
 
                 row = data.iloc[data_idx]
 
