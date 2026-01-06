@@ -288,9 +288,9 @@ class SearchOnlineNewsCommand(CommandBase):
         else:
             query = args[0]
 
-        news_client = NewsClient(provider_type=NewsProviderType.MOCK)
-        # news_client = NewsClient(provider_type=NewsProviderType.MOCK,
-        #                          api_key=os.getenv("NEWSAPI_API_KEY", ""))
+        # news_client = NewsClient(provider_type=NewsProviderType.MOCK)
+        news_client = NewsClient(provider_type=NewsProviderType.NEWS_API,
+                                 api_key=os.getenv("NEWSAPI_API_KEY", ""))
         articles = []
 
         try:

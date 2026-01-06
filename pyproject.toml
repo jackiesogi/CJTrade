@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib>=3.10.6",
     "mpl-finance>=0.10.1",
     "mplfinance>=0.12.10b0",
+    "newsapi-python>=0.2.7",
     "ollama>=0.6.0",
     "pandas-datareader>=0.10.0",
     "python-dotenv>=1.1.1",

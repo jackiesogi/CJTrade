@@ -323,6 +323,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "mpl-finance" },
     { name = "mplfinance" },
+    { name = "newsapi-python" },
     { name = "ollama" },
     { name = "pandas-datareader" },
     { name = "python-dotenv" },
@@ -344,6 +345,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "mpl-finance", specifier = ">=0.10.1" },
     { name = "mplfinance", specifier = ">=0.12.10b0" },
+    { name = "newsapi-python", specifier = ">=0.2.7" },
     { name = "ollama", specifier = ">=0.6.0" },
     { name = "pandas-datareader", specifier = ">=0.10.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
@@ -1285,6 +1287,18 @@ name = "multitasking"
 version = "0.0.12"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/17/0d/74f0293dfd7dcc3837746d0138cbedd60b31701ecc75caec7d3f281feba0/multitasking-0.0.12.tar.gz", hash = "sha256:2fba2fa8ed8c4b85e227c5dd7dc41c7d658de3b6f247927316175a57349b84d1", size = 19984, upload-time = "2025-07-20T21:27:51.636Z" }
+
+[[package]]
+name = "newsapi-python"
+version = "0.2.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f8/4b/12fb9495211fc5a6d3a96968759c1a48444124a1654aaf65d0de80b46794/newsapi-python-0.2.7.tar.gz", hash = "sha256:a4b66d5dd9892198cdaa476f7542f2625cdd218e5e3121c8f880b2ace717a3c2", size = 7485, upload-time = "2023-03-02T13:15:35.89Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/47/e3b099102f0c826d37841d2266e19f1568dcf58ba86e4c6948e2a124f91d/newsapi_python-0.2.7-py2.py3-none-any.whl", hash = "sha256:11d34013a24d92ca7b7cbdac84ed2d504862b1e22467bc2a9a6913a70962318e", size = 7942, upload-time = "2023-03-02T13:15:34.475Z" },
+]
 
 [[package]]
 name = "numpy"
