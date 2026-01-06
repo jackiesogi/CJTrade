@@ -3,8 +3,8 @@ import asyncio
 import signal
 import logging
 from datetime import datetime, timedelta
-from .app import main as _main
 
 def cli():
     """同步 entrypoint，用於 pyproject.toml"""
+    from .app import main as _main
     asyncio.run(_main())

@@ -1,14 +1,12 @@
+from typing import List
+from ._base import NewsInterface, News
+import random
 import asyncio
 
-class News:
-    def __init__(self, title: str, content: str):
-        self.title = title
-        self.content = content
-
-class Webscraper:
-    async def fetch_news(self) -> list[News]:
-        await asyncio.sleep(5)  # Simulate network delay
-        return [
+class MockNewsProvider(NewsInterface):
+    def __init__(self, **config):
+        super().__init__(**config)
+        self.mock_data: List[News] = [
             News(
                 title="台積電尾盤大漲15元寫1705新天價 台股再創30576點新高",
                 content="在台積電強勢領漲的帶動之下，台股今日再創史上新高點，\
@@ -29,8 +27,7 @@ class Webscraper:
                     「不只是台灣，已是世界級的權值股！」因此也難以避免外資集中投資在台積電。"
             ),
             News(
-                title="群創、友達連2天漲停，10萬買單排隊憑什麼？原來不只基本面有曙光：\
-                    它們操作手法也改了！",
+                title="群創、友達連2天漲停，10萬買單排隊憑什麼？原來不只基本面有曙光：它們操作手法也改了！",
                 content="本土法人對群創相對看好，目標價從17元提升至19元。群創(3481)日\
                     前公布11月每股淨損0.02元，虧損收斂幅度顯著優於預期，摩根士丹利(大摩)\
                     出具最新報告，意味群創2025年第4季的最終淨損極有可能小於原先預期，\
@@ -65,4 +62,20 @@ class Webscraper:
                     抬權值股，技術面又遇壓，漲勢延續性不佳，建議不要此時追高入場。"
             )
         ]
-    
+
+
+    def fetch_news(self) -> List[News]:
+        return self.mock_data
+
+    async def fetch_news_async(self) -> List[News]:
+        await asyncio.sleep(5)  # Simulate network delay
+        return self.mock_data
+
+
+    def search_by_keyword(self, keyword: str) -> List[News]:
+        # keyword search using simple substring match
+        return [news for news in self.mock_data if keyword in news.title or keyword in news.content]
+
+
+    def get_provider_name(self) -> str:
+        return "MockNewsProvider"

@@ -1,5 +1,4 @@
-from cjtrade.models.market_state import *
-from cjtrade.analytics.signals.signal import *
+from cjtrade.analytics.technical.models import *
 import asyncio
 
 class FixedPriceStrategy:

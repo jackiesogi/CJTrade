@@ -1,5 +1,6 @@
-from cjtrade.analytics.news.news import News, Webscraper
+from cjtrade.analytics.informational.news_client import *
 from cjtrade.llm.gemini import GeminiClient
+from cjtrade.analytics.informational.news_client import *
 from dotenv import load_dotenv
 import os
 import asyncio
@@ -8,8 +9,9 @@ load_dotenv()
 
 if __name__ == "__main__":
     client = GeminiClient(api_key=os.getenv("GEMINI_API_KEY"))
-    postman = Webscraper()
-    news = asyncio.run(postman.fetch_news())
+    # postman = Webscraper()
+    postman = NewsClient(provider_type=NewsProviderType.MOCK)
+    news = asyncio.run(postman.fetch_news_async())
     for n in news:
         prompt = f"title:'{n.title}', content:'{n.content}'.\
             Provide one line hashtags separated by space without newline of:\
