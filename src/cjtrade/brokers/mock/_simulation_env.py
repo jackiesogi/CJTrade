@@ -32,6 +32,10 @@ class SimulationEnvironment:
         days_back = random.randint(1, 20)  # 1-20 days back
         start_date = current_time - datetime.timedelta(days=days_back)
 
+        while start_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            days_back += 1
+            start_date = current_time - datetime.timedelta(days=days_back)
+
         start_hour = random.randint(9, 13)
         if start_hour == 13:
             start_minute = random.randint(0, 30)
@@ -159,6 +163,7 @@ class SimulationEnvironment:
 
         current_time = datetime.datetime.now()
         time_offset = current_time - self._init_time
+        sampling_time = self._data_start_time + time_offset
 
         minutes_passed = int(time_offset.total_seconds() / 60)
 
@@ -172,7 +177,6 @@ class SimulationEnvironment:
                 data_idx = minutes_passed % len(data)
 
                 actual_data_time = data.index[data_idx]
-                sampling_time = self._data_start_time + time_offset
                 cycle_number = minutes_passed // len(data)
                 position_in_cycle = minutes_passed % len(data)
 

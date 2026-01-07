@@ -142,7 +142,9 @@ class SinopacBroker(BrokerInterface):
         self.api.quote.unsubscribe(sinopac_product, **subscribe_kwargs)
 
         if not received_bidask:
-            raise TimeoutError(f"No bid/ask data received for {product.symbol}")
+            # TODO: Consider raising exception/error here
+            print(f"No bid/ask data received for {product.symbol}")
+            return None
 
         return _from_sinopac_bidask(received_bidask[-1])
 

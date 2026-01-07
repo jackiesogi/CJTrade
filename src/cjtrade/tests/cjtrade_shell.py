@@ -488,7 +488,7 @@ def process_command(cmd_line: str, client: AccountClient):
     cmd_line = cmd_line.strip()
 
     if not cmd_line:
-        return
+        return True  # Empty command is okay
 
     # Split command and arguments
     parts = cmd_line.split()
@@ -500,19 +500,22 @@ def process_command(cmd_line: str, client: AccountClient):
     if cmd is None:
         print(f"Unknown command: '{cmd_name}'")
         print("Type 'help' to see available commands")
-        return
+        return False
 
     # Validate arguments
     if not cmd.validate_args(args):
-        return
+        return False
 
     # Execute command
     try:
         cmd.execute(client, *args)
+        return True
     except ValueError as e:
         print(f"Invalid argument: {e}")
+        return False
     except Exception as e:
         print(f"Command failed: {e}")
+        return False
 
 
 
@@ -555,9 +558,39 @@ def interactive_shell(client: AccountClient):
 
 
 if __name__ == "__main__":
-    # client = AccountClient(BrokerType.SINOPAC, **config)
-    real = AccountClient(BrokerType.SINOPAC, **config)
-    client = AccountClient(BrokerType.MOCK, real_account=real)
+    import sys
+
+    exit_code = 0  # Default success
+
+    client = AccountClient(BrokerType.SINOPAC, **config)
+    # real = AccountClient(BrokerType.SINOPAC, **config)
+    # client = AccountClient(BrokerType.MOCK, real_account=real)
     client.connect()
-    interactive_shell(client)
-    client.disconnect()
+
+    try:
+        # Register all commands
+        register_commands()
+
+        # Check if command line arguments are provided
+        if len(sys.argv) > 1:
+            # Direct command execution mode
+            # sys.argv[1] is command, sys.argv[2:] are arguments
+            command = sys.argv[1]
+            args = sys.argv[2:]
+
+            cmd_line = f"{command} {' '.join(args)}".strip()
+            print(f"Executing: {cmd_line}")
+            success = process_command(cmd_line, client)
+            if not success:
+                exit_code = 1
+        else:
+            # Regular interactive mode
+            interactive_shell(client)
+
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        exit_code = 1
+    finally:
+        client.disconnect()
+
+    sys.exit(exit_code)
