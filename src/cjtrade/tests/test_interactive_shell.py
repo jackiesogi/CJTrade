@@ -7,9 +7,10 @@
 from time import sleep, time
 import pandas as pd
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
-from cjtrade.core.account_client import AccountClient
+from dotenv import load_dotenv
 from cjtrade.tests.test_basic_flow import *
 from cjtrade.analytics.technical.strategies.fixed_price import *
 from cjtrade.analytics.technical.models import *
@@ -17,6 +18,16 @@ from cjtrade.analytics.fundamental import *
 
 exit_flag = False
 
+
+load_dotenv()
+
+config = {
+    'api_key': os.environ["API_KEY"],
+    'secret_key': os.environ["SECRET_KEY"],
+    'ca_path': os.environ["CA_CERT_PATH"],
+    'ca_passwd': os.environ["CA_PASSWORD"],
+    'simulation': False  # Use production environment to see actual holdings
+}
 
 # ========== Command Pattern Implementation ==========
 class CommandBase(ABC):
@@ -191,7 +202,48 @@ class ListPositionsCommand(CommandBase):
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         positions = client.get_positions()
         df = pd.DataFrame([p.__dict__ for p in positions])
-        print(df)
+
+        # Print DataFrame with colored unrealized_pnl values
+        if not df.empty and 'unrealized_pnl' in df.columns:
+            # Get the formatted string without colors
+            table_str = df.to_string()
+            lines = table_str.split('\n')
+
+            # Print header (first line)
+            print(lines[0])
+
+            # Print data rows with colored unrealized_pnl
+            for i, line in enumerate(lines[1:], start=0):
+                if i < len(df):
+                    # Get the unrealized_pnl value for this row
+                    pnl_value = df.iloc[i]['unrealized_pnl']
+                    pnl_str = f"{pnl_value:.1f}"  # Match the format pandas uses
+
+                    # Apply color to the pnl value in the line
+                    if pnl_value > 0:
+                        colored_line = line.replace(pnl_str, f"\033[91m{pnl_str}\033[0m", 1)
+                    elif pnl_value < 0:
+                        colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
+                    else:
+                        colored_line = line
+
+                    print(colored_line)
+                else:
+                    print(line)
+        else:
+            print(df)
+
+        if not df.empty and 'unrealized_pnl' in df.columns:
+            total_cost = (df['avg_cost'] * df['quantity']).sum()
+            total_val = df['market_value'].sum()
+            total_pnl = df['unrealized_pnl'].sum()
+            pnl_pct = (total_pnl / total_cost * 100) if total_cost != 0 else 0.0
+            print(f"\nTotal Cost: {total_cost:,.3f}")
+            print(f"Market Value: {total_val:,.3f}")
+            if pnl_pct >= 0:
+                print(f"Total Unrealized PnL: \033[91m{total_pnl:,.3f} (+{pnl_pct:.2f}%)\033[0m")
+            else:
+                print(f"Total Unrealized PnL: \033[92m{total_pnl:,.3f} ({pnl_pct:.2f}%)\033[0m")
 
 class RunAanalyticsCommand(CommandBase):
     def __init__(self):
@@ -500,8 +552,9 @@ def interactive_shell(client: AccountClient):
 
 
 if __name__ == "__main__":
-    real = AccountClient(BrokerType.SINOPAC, **config)
-    client = AccountClient(BrokerType.MOCK, real_account=real)
+    client = AccountClient(BrokerType.SINOPAC, **config)
+    # real = AccountClient(BrokerType.SINOPAC, **config)
+    # client = AccountClient(BrokerType.MOCK, real_account=real)
     client.connect()
     interactive_shell(client)
     client.disconnect()

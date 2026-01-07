@@ -1,6 +1,10 @@
 import shioaji as sj
 from datetime import datetime
 from typing import Any, Dict, List
+import json
+import os
+from pathlib import Path
+import math
 
 from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
@@ -30,9 +34,15 @@ class SinopacBroker(BrokerInterface):
 
         self.api = sj.Shioaji(simulation=self.simulation)
 
+        # TODO: Trade history for accurate tax calculation
+        # self.trade_history_path = config.get('trade_history_path', '.sinopac_trade_history.json')
+        # self.trade_history = {}  # {symbol: [{"shares": 1000, "price": 100, "date": "2026-01-01", "side": "buy"}]}
+
 
     def connect(self) -> bool:
         try:
+            # self._load_trade_history()
+
             self.api.login(
                 api_key=self.api_key,
                 secret_key=self.secret_key,
@@ -42,6 +52,8 @@ class SinopacBroker(BrokerInterface):
                 ca_passwd=self.ca_password,
             )
             self._connected = True
+
+            # self._sync_positions_with_broker()
             return True
         except Exception as e:
             print(f"Connection failed: {e}")
@@ -68,8 +80,8 @@ class SinopacBroker(BrokerInterface):
             raise ConnectionError("Not connected to broker")
 
         try:
-            # Get position (inventory) via shioaji api with stock_account
-            positions = self.api.list_positions()
+            # Get position (inventory) via shioaji api (in shares)
+            positions = self.api.list_positions(unit=sj.constant.Unit.Share)
             result = []
 
             for pos in positions:
@@ -78,9 +90,9 @@ class SinopacBroker(BrokerInterface):
                     symbol=pos.code,
                     quantity=pos.quantity,
                     avg_cost=pos.price,
-                    current_price=pos.last_price,  # This comes from the position data
+                    current_price=pos.last_price,
                     market_value=pos.quantity * pos.last_price,
-                    unrealized_pnl=pos.pnl  # Unrealized P&L from shioaji
+                    unrealized_pnl=pos.pnl
                 )
                 result.append(position)
 
@@ -348,3 +360,98 @@ class SinopacBroker(BrokerInterface):
         )
         temp = self.place_order(order)
         return self.commit_order(temp.linked_order)
+
+
+    ##### TODO: TRADE HISTORY MANAGEMENT #####
+    # def _load_trade_history(self):
+    #     """Load trade history from local file"""
+    #     try:
+    #         if os.path.exists(self.trade_history_path):
+    #             with open(self.trade_history_path, 'r', encoding='utf-8') as f:
+    #                 self.trade_history = json.load(f)
+    #             print(f"Loaded trade history from {self.trade_history_path}")
+    #         else:
+    #             self.trade_history = {}
+    #             print(f"No existing trade history found, starting fresh")
+    #     except Exception as e:
+    #         print(f"Failed to load trade history: {e}")
+    #         self.trade_history = {}
+
+    # def _save_trade_history(self):
+    #     """Save trade history to local file"""
+    #     try:
+    #         with open(self.trade_history_path, 'w', encoding='utf-8') as f:
+    #             json.dump(self.trade_history, f, indent=2, ensure_ascii=False)
+    #         print(f"Saved trade history to {self.trade_history_path}")
+    #     except Exception as e:
+    #         print(f"Failed to save trade history: {e}")
+
+    # def _sync_positions_with_broker(self):
+    #     """Sync local trade history with broker positions
+    #     If broker has positions not in our history, add them with current info
+    #     """
+    #     try:
+    #         positions = self.api.list_positions()
+    #         for pos in positions:
+    #             symbol = pos.code
+    #             shares = pos.quantity * 1000
+
+    #             if symbol not in self.trade_history:
+    #                 # New position not in our history, add it
+    #                 self.trade_history[symbol] = [{
+    #                     "shares": shares,
+    #                     "price": pos.price,
+    #                     "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    #                     "side": "buy",
+    #                     "note": "synced_from_broker"
+    #                 }]
+    #                 print(f"Added {symbol} to trade history from broker sync")
+
+    #         self._save_trade_history()
+    #     except Exception as e:
+    #         print(f"Failed to sync positions with broker: {e}")
+
+    # def _get_cost_basis(self, symbol: str, shares: int, fallback_price: float) -> float:
+    #     """Calculate cost basis from trade history
+    #     If no history available, use fallback price from broker
+    #     """
+    #     if symbol in self.trade_history and self.trade_history[symbol]:
+    #         # Calculate weighted average cost from trade history
+    #         total_cost = 0
+    #         total_shares = 0
+
+    #         for trade in self.trade_history[symbol]:
+    #             if trade.get("side") == "buy":
+    #                 trade_shares = trade.get("shares", 0)
+    #                 trade_price = trade.get("price", 0)
+    #                 total_cost += trade_shares * trade_price
+    #                 total_shares += trade_shares
+
+    #         if total_shares > 0:
+    #             return total_cost
+
+    #     # Fallback to broker's average price
+    #     return shares * fallback_price
+
+    # def record_trade(self, symbol: str, shares: int, price: float, side: str):
+    #     """Record a trade in history for accurate cost tracking
+    #     Call this after each successful trade execution
+
+    #     Args:
+    #         symbol: Stock symbol
+    #         shares: Number of shares (not contracts)
+    #         price: Execution price per share
+    #         side: 'buy' or 'sell'
+    #     """
+    #     if symbol not in self.trade_history:
+    #         self.trade_history[symbol] = []
+
+    #     self.trade_history[symbol].append({
+    #         "shares": shares,
+    #         "price": price,
+    #         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    #         "side": side
+    #     })
+
+    #     self._save_trade_history()
+    #     print(f"Recorded {side} {shares} shares of {symbol} at {price}")

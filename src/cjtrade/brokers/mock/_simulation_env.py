@@ -152,6 +152,7 @@ class SimulationEnvironment:
 
         self._data_loaded.add(symbol)
 
+    # Note: This snapshot is actually a 1-min kbar
     def get_dummy_snapshot(self, symbol: str) -> Snapshot:
         if symbol not in self._data_loaded:
             self._preload_historical_data(symbol)
