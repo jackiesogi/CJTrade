@@ -10,7 +10,8 @@ from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
-from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype
+from cjtrade.models.quote import BidAsk
+from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype, _from_sinopac_bidask
 
 # Since the conversion from sj to cj loses information, we need to keep a mapping
 # between cj Order IDs and sj Order objects to track order status
@@ -111,71 +112,44 @@ class SinopacBroker(BrokerInterface):
         return account_status.acc_balance
 
 
-    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, Any]:
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        try:
-            # Convert to Shioaji product
-            sinopac_product = _to_sinopac_product(self.api, product)
+        sinopac_product = _to_sinopac_product(self.api, product)
+        received_bidask = []
 
-            # First subscribe to get live quotes (this enables real-time data)
-            subscribe_kwargs = {
-                "quote_type": sj.constant.QuoteType.BidAsk,
-                "version": sj.constant.QuoteVersion.v1
-            }
+        def quote_callback(exchange, bidask):
+            received_bidask.append(bidask)
 
-            if intraday_odd:
-                subscribe_kwargs["intraday_odd"] = True
+        self.api.quote.set_on_bidask_stk_v1_callback(quote_callback)
 
-            # Subscribe for real-time updates
-            self.api.quote.subscribe(sinopac_product, **subscribe_kwargs)
+        subscribe_kwargs = {
+            "quote_type": sj.constant.QuoteType.BidAsk,
+            "version": sj.constant.QuoteVersion.v1
+        }
+        if intraday_odd:
+            subscribe_kwargs["intraday_odd"] = True
 
-            # Get current snapshot
-            snapshots = self.api.snapshots([sinopac_product])
+        self.api.quote.subscribe(sinopac_product, **subscribe_kwargs)
 
-            if snapshots and len(snapshots) > 0:
-                snapshot = snapshots[0]
+        import time
+        timeout = 5
+        start = time.time()
+        while not received_bidask and (time.time() - start) < timeout:
+            time.sleep(0.1)
 
-                # Check for detailed bid/ask arrays first
-                bid_price = list(snapshot.bid_price) if hasattr(snapshot, 'bid_price') and snapshot.bid_price else []
-                ask_price = list(snapshot.ask_price) if hasattr(snapshot, 'ask_price') and snapshot.ask_price else []
-                bid_volume = list(snapshot.bid_volume) if hasattr(snapshot, 'bid_volume') and snapshot.bid_volume else []
-                ask_volume = list(snapshot.ask_volume) if hasattr(snapshot, 'ask_volume') and snapshot.ask_volume else []
+        self.api.quote.unsubscribe(sinopac_product, **subscribe_kwargs)
 
-                # If detailed arrays are empty, use simple buy/sell price
-                if not bid_price and hasattr(snapshot, 'buy_price') and snapshot.buy_price:
-                    bid_price = [snapshot.buy_price]
-                if not ask_price and hasattr(snapshot, 'sell_price') and snapshot.sell_price:
-                    ask_price = [snapshot.sell_price]
-                if not bid_volume and hasattr(snapshot, 'buy_volume') and snapshot.buy_volume:
-                    bid_volume = [snapshot.buy_volume]
-                if not ask_volume and hasattr(snapshot, 'sell_volume') and snapshot.sell_volume:
-                    ask_volume = [snapshot.sell_volume]
+        if not received_bidask:
+            raise TimeoutError(f"No bid/ask data received for {product.symbol}")
 
-                result = {
-                    "symbol": product.symbol,
-                    "bid_price": bid_price,
-                    "bid_volume": bid_volume,
-                    "ask_price": ask_price,
-                    "ask_volume": ask_volume,
-                    "datetime": snapshot.datetime if hasattr(snapshot, 'datetime') else None,
-                    "close": snapshot.close if hasattr(snapshot, 'close') else None,
-                    "volume": snapshot.volume if hasattr(snapshot, 'volume') else None,
-                    "change_price": snapshot.change_price if hasattr(snapshot, 'change_price') else None,
-                    "change_rate": snapshot.change_rate if hasattr(snapshot, 'change_rate') else None,
-                    "intraday_odd": intraday_odd
-                }
-                return result
-            else:
-                return {"error": f"No snapshot data available for {product.symbol}"}
-
-        except Exception as e:
-            return {"error": f"Failed to get bid/ask for {product.symbol}: {str(e)}"}
+        return _from_sinopac_bidask(received_bidask[-1])
 
 
-    def get_quotes(self, product: List[Product]) -> Dict[str, Quote]:
-        pass
+    # TODO: Plan to remove
+    # def get_quotes(self, product: List[Product]) -> Dict[str, Quote]:
+    #     pass
     #     if not self._connected:
     #         raise ConnectionError("Not connected to broker")
 

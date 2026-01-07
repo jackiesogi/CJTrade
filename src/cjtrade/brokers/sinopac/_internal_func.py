@@ -7,6 +7,7 @@ from cjtrade.brokers.broker_base import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
+from cjtrade.models.quote import BidAsk
 
 
 ##### Cjtrade -> Shioaji #####
@@ -116,7 +117,8 @@ def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
                 buy_price=getattr(sj_snapshot, 'buy_price', 0.0),
                 buy_volume=getattr(sj_snapshot, 'buy_volume', 0),
                 sell_price=getattr(sj_snapshot, 'sell_price', 0.0),
-                sell_volume=getattr(sj_snapshot, 'sell_volume', 0)
+                sell_volume=getattr(sj_snapshot, 'sell_volume', 0),
+                additional_note="all fields here are available"
         )
     except Exception as e:
         raise ValueError(f"Cannot convert Shioaji snapshot to Snapshot: {e}") from e
@@ -238,5 +240,16 @@ def _to_sinopac_ranktype(cj_rank_type: RankType) -> sj.constant.ScannerType:
         return RANK_SCANNER_MAP[cj_rank_type]
     except KeyError as e:
         raise ValueError(f"Unsupported rank type: {e.args[0]}") from e
+
+
+def _from_sinopac_bidask(sj_bidask) -> BidAsk:
+    return BidAsk(
+        symbol=sj_bidask.code,
+        datetime=sj_bidask.datetime,
+        bid_price=[float(p) for p in sj_bidask.bid_price],
+        bid_volume=list(sj_bidask.bid_volume),
+        ask_price=[float(p) for p in sj_bidask.ask_price],
+        ask_volume=list(sj_bidask.ask_volume)
+    )
 
 ##### INTERNAL METHODS END #####

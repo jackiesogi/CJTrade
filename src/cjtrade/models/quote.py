@@ -1,7 +1,7 @@
 import datetime
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from cjtrade.models.order import *
 
@@ -52,3 +52,14 @@ class Snapshot:
     buy_volume: int
     sell_price: float
     sell_volume: int
+    additional_note: Optional[str] = None
+
+
+@dataclass
+class BidAsk:
+    symbol: str
+    datetime: datetime.datetime
+    bid_price: List[float]  # Five levels
+    bid_volume: List[int]
+    ask_price: List[float]
+    ask_volume: List[int]

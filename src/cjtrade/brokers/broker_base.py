@@ -49,23 +49,27 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
-    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
-        # Five bid/ask prices and their volumes
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         pass
 
-    @abstractmethod
-    def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
-        """Get real-time quotes for given symbols.
-        Args:
-            List of stock symbols
-
-        Returns:
-            Dict[str, Quote]
-        """
-        pass
+    # TODO: Plan to remove
+    # @abstractmethod
+    # def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
+    #     """
+    #     Get quotes for given products.
+    #     Note that quote is the price info that has already filled in the market,
+    #     it may be different from the bid/ask prices.
+    #     """
+    #     pass
 
     @abstractmethod
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
+        """
+        Get real-time market snapshots for given products.
+        It must contain more detail than `get_quotes()`/ `get_bid_ask()` does.
+        If broker's api does not provide some fields that required by `Snapshot`,
+        broker must mention them in the `additional_note`.
+        """
         pass
 
     @abstractmethod

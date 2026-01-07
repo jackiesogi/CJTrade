@@ -141,6 +141,7 @@ class SnapshotCommand(CommandBase):
         snapshots = client.get_snapshots(products)
         df = pd.DataFrame([s.__dict__ for s in snapshots])
         df = df.drop(columns=['exchange'], errors='ignore')
+        df = df.drop(columns=['additional_note'], errors='ignore')
         print(df)
 
 
@@ -552,9 +553,9 @@ def interactive_shell(client: AccountClient):
 
 
 if __name__ == "__main__":
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    # real = AccountClient(BrokerType.SINOPAC, **config)
-    # client = AccountClient(BrokerType.MOCK, real_account=real)
+    # client = AccountClient(BrokerType.SINOPAC, **config)
+    real = AccountClient(BrokerType.SINOPAC, **config)
+    client = AccountClient(BrokerType.MOCK, real_account=real)
     client.connect()
     interactive_shell(client)
     client.disconnect()

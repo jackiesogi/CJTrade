@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 import time
 import random
+from datetime import datetime
 from cjtrade.brokers.broker_base import BrokerInterface
 from cjtrade.models.order import *
 from cjtrade.models.position import *
@@ -49,43 +50,41 @@ class MockBroker(BrokerInterface):
     def get_balance(self) -> float:
         return self._simulation.get_account_balance()
 
-    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
         snapshot = self._simulation.get_dummy_snapshot(product.symbol)
-        if snapshot:
-            return {
-                "bid_price": snapshot.buy_price,
-                "ask_price": snapshot.sell_price,
-                "bid_volume": snapshot.buy_volume,
-                "ask_volume": snapshot.sell_volume
-            }
-        else:
-            return {
-                "bid_price": 100.0,
-                "ask_price": 100.5,
-                "bid_volume": 1000,
-                "ask_volume": 1000
-            }
+        base_price = snapshot.close if snapshot else 100.0
 
-    def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
-        if not self._connected:
-            raise ConnectionError("Not connected to broker")
+        return BidAsk(
+            symbol=product.symbol,
+            datetime=datetime.datetime.now(),
+            bid_price=[base_price - i*0.5 for i in range(5)],
+            bid_volume=[random.randint(50, 500) for _ in range(5)],
+            ask_price=[base_price + 0.5 + i*0.5 for i in range(5)],
+            ask_volume=[random.randint(50, 500) for _ in range(5)]
+        )
 
-        quotes = {}
-        for product in products:
-            snapshot = self._simulation.get_dummy_snapshot(product.symbol)
-            if snapshot:
-                quotes[product.symbol] = Quote(
-                    symbol=product.symbol,
-                    price=snapshot.close,
-                    volume=snapshot.volume,
-                    timestamp=snapshot.timestamp.isoformat()
-                )
+    # TODO: Plan to remove
+    # def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
+    #     if not self._connected:
+    #         raise ConnectionError("Not connected to broker")
 
-        return quotes
+    #     quotes = {}
+    #     for product in products:
+    #         snapshot = self._simulation.get_dummy_snapshot(product.symbol)
+    #         if snapshot:
+    #             quotes[product.symbol] = Quote(
+    #                 symbol=product.symbol,
+    #                 price=snapshot.close,
+    #                 volume=snapshot.volume,
+    #                 timestamp=snapshot.timestamp.isoformat()
+    #             )
 
+    #     return quotes
+
+    # Note: This actually returns a 1-min kbar
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
