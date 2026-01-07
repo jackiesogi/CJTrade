@@ -16,17 +16,17 @@ class NewsInterface(ABC):
         self.config = config
 
     @abstractmethod
-    async def fetch_news_async(self) -> List[News]:
+    async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
         """Fetch latest news asynchronously."""
         pass
 
     @abstractmethod
-    def fetch_news(self) -> List[News]:
+    def fetch_headline_news(self, n: int = 10) -> List[News]:
         """Fetch latest news. (blocking call)"""
         pass
     
     @abstractmethod
-    def search_by_keyword(self, keyword: str) -> List[News]:
+    def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         """Search news by keyword."""
         pass
     

@@ -335,25 +335,27 @@ class SearchOnlineNewsCommand(CommandBase):
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         from cjtrade.analytics.informational.news_client import NewsClient, NewsProviderType
 
+        news_client = NewsClient(provider_type=NewsProviderType.CNYES)
+        # news_client = NewsClient(provider_type=NewsProviderType.MOCK)
+        # news_client = NewsClient(provider_type=NewsProviderType.NEWS_API,
+        #                          api_key=os.getenv("NEWSAPI_API_KEY", ""))
+        print(f"source: {news_client.get_provider_name()}")
         if len(args) == 0:
             query = ""
             print("No search query provided, fetching latest news...")
         else:
             query = args[0]
 
-        # news_client = NewsClient(provider_type=NewsProviderType.MOCK)
-        news_client = NewsClient(provider_type=NewsProviderType.NEWS_API,
-                                 api_key=os.getenv("NEWSAPI_API_KEY", ""))
         articles = []
 
         try:
             if query is None or query.strip() == "":
-                articles = news_client.fetch_news()
+                articles = news_client.fetch_headline_news()
             else:
                 articles = news_client.search_by_keyword(query)
 
             print(f"Found {len(articles)} articles.")
-            for article in articles[:5]:
+            for article in articles[:10]:
                 title = article.title[:100] + "..." if len(article.title) > 100 else article.title
                 print(f"- {title}")
         except Exception as e:

@@ -64,17 +64,18 @@ class MockNewsProvider(NewsInterface):
         ]
 
 
-    def fetch_news(self) -> List[News]:
-        return self.mock_data
+    def fetch_headline_news(self, n: int = 10) -> List[News]:
+        return self.mock_data[:n]
 
-    async def fetch_news_async(self) -> List[News]:
+    async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
         await asyncio.sleep(5)  # Simulate network delay
-        return self.mock_data
+        return self.mock_data[:n]
 
 
-    def search_by_keyword(self, keyword: str) -> List[News]:
+    def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         # keyword search using simple substring match
-        return [news for news in self.mock_data if keyword in news.title or keyword in news.content]
+        all = [news for news in self.mock_data if keyword in news.title or keyword in news.content]
+        return all[:n]
 
 
     def get_provider_name(self) -> str:

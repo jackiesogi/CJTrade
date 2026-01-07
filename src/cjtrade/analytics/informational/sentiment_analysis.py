@@ -10,8 +10,9 @@ load_dotenv()
 if __name__ == "__main__":
     client = GeminiClient(api_key=os.getenv("GEMINI_API_KEY"))
     # postman = Webscraper()
-    postman = NewsClient(provider_type=NewsProviderType.MOCK)
-    news = asyncio.run(postman.fetch_news_async())
+    # postman = NewsClient(provider_type=NewsProviderType.MOCK)
+    postman = NewsClient(provider_type=NewsProviderType.CNYES)
+    news = asyncio.run(postman.fetch_headline_news_async(n=5))
     for n in news:
         prompt = f"title:'{n.title}', content:'{n.content}'.\
             Provide one line hashtags separated by space without newline of:\

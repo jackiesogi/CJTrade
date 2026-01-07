@@ -28,7 +28,8 @@ class NewsAPIProvider(NewsInterface):
         return news_list
 
 
-    async def fetch_news_async(self) -> List[News]:
+    async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        await asyncio.sleep(1)  # Simulate async behavior
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_top_headlines(q=self.default_query,
                                                  sources='bbc-news,the-verge',
@@ -43,9 +44,9 @@ class NewsAPIProvider(NewsInterface):
         #                               language='en',
         #                               sort_by='relevancy',
         #                               page=2)
-        return self._response_to_news_list(all_articles)
+        return self._response_to_news_list(all_articles)[:n]
 
-    def fetch_news(self) -> List[News]:
+    def fetch_headline_news(self, n: int = 10) -> List[News]:
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_top_headlines(q=self.default_query,
                                                  sources='bbc-news',
@@ -54,9 +55,9 @@ class NewsAPIProvider(NewsInterface):
                                                 #  language='en',
                                                 #  country='us')
         # print(all_articles)
-        return self._response_to_news_list(all_articles)
+        return self._response_to_news_list(all_articles)[:n]
 
-    def search_by_keyword(self, keyword: str) -> List[News]:
+    def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_everything(q=keyword,
                                       sources='bbc-news,the-verge',
@@ -66,7 +67,7 @@ class NewsAPIProvider(NewsInterface):
                                       language='en',
                                       sort_by='relevancy',
                                       page=1)
-        return self._response_to_news_list(all_articles)
+        return self._response_to_news_list(all_articles)[:n]
 
 
     def get_provider_name(self) -> str:

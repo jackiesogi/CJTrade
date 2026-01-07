@@ -7,6 +7,7 @@ class NewsProviderType(Enum):
     STATEMENT_DOG = "statement_dog"  # 財報狗
     NEWS_API = "news_api"            # NewsAPI
     MOCK = "mock"                    # Simulated News Source
+    CNYES = "cnyes"                  # 鉅亨網
 
 class NewsClient:
     """An unified API to interact with different news providers."""
@@ -22,20 +23,23 @@ class NewsClient:
         elif provider_type == NewsProviderType.NEWS_API:
             from .news_providers.news_api import NewsAPIProvider
             return NewsAPIProvider(**config)
+        elif provider_type == NewsProviderType.CNYES:
+            from .news_providers.cnyes import CnyesProvider
+            return CnyesProvider(**config)
         elif provider_type == NewsProviderType.MOCK:
             from .news_providers.mock import MockNewsProvider
             return MockNewsProvider(**config)
         else:
             raise ValueError(f"Unsupported news provider type: {provider_type}")
 
-    async def fetch_news_async(self) -> List[News]:
-        return await self.provider.fetch_news_async()
+    async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        return await self.provider.fetch_headline_news_async(n=n)
 
-    def fetch_news(self) -> List[News]:
-        return self.provider.fetch_news()
+    def fetch_headline_news(self, n: int = 10) -> List[News]:
+        return self.provider.fetch_headline_news(n=n)
 
-    def search_by_keyword(self, keyword: str) -> List[News]:
-        return self.provider.search_by_keyword(keyword)
+    def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
+        return self.provider.search_by_keyword(keyword, n=n)
 
     def get_provider_name(self) -> str:
         return self.provider.get_provider_name()
