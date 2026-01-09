@@ -8,6 +8,7 @@ from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
+from cjtrade.models.kbar import *
 
 
 ##### Cjtrade -> Shioaji #####
@@ -56,6 +57,28 @@ ORDER_LOT_MAP = {
     OrderLot.Common: sj.constant.StockOrderLot.Common,
 }
 
+def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
+    cj_kbars = []
+    for i in range(len(sj_kbar.ts)):
+        cj_kbars.append(
+            Kbar(
+                timestamp=datetime.fromtimestamp(sj_kbar.ts[i] / 1_000_000_000),
+                open=sj_kbar.Open[i],
+                high=sj_kbar.High[i],
+                low=sj_kbar.Low[i],
+                close=sj_kbar.Close[i],
+                volume=sj_kbar.Volume[i]
+            )
+        )
+    return cj_kbars
+    # return Kbar(
+    #     timestamp=sj_kbar.ts,
+    #     open=sj_kbar.Open,
+    #     high=sj_kbar.High,
+    #     low=sj_kbar.Low,
+    #     close=sj_kbar.Close,
+    #     volume=sj_kbar.Volume
+    # )
 
 # sj_order + sj_contract = cj_order
 def _from_sinopac_order(sj_order: sj.Order, sj_contract: sj.contracts.Contract) -> Order:
@@ -102,7 +125,7 @@ def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
         return Snapshot(
                 symbol=getattr(sj_snapshot, 'code', getattr(sj_snapshot, 'symbol', '')),
                 exchange=getattr(sj_snapshot, 'exchange', 'N/A'),
-                timestamp=datetime.datetime.fromtimestamp(getattr(sj_snapshot, 'ts', 0) / 1_000_000_000),
+                timestamp=datetime.fromtimestamp(getattr(sj_snapshot, 'ts', 0) / 1_000_000_000),
                 open=getattr(sj_snapshot, 'open', 0.0),
                 close=getattr(sj_snapshot, 'close', 0.0),
                 high=getattr(sj_snapshot, 'high', 0.0),

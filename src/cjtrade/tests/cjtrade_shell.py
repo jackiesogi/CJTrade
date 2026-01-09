@@ -267,10 +267,12 @@ class RunAanalyticsCommand(CommandBase):
             snapshot = snapshots[0]
             print(f"fetch market state = O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
 
-            # To be more accurate, caller may need to construct
+            # TODO: To be more accurate, caller may need to construct
             # their kbar of time unit they want, rather than using
             # the OHLCV info from `Snapshot`, since it is 1-day OHLCV.
-            state = OHLCVState(o=snapshot.open, h=snapshot.high,
+            # The method here used to work with mock broker (since mock.get_snapshots()
+            # acutally return exact one 1-min kbar).
+            state = OHLCVState(ts=snapshot.timestamp, o=snapshot.open, h=snapshot.high,
                                l=snapshot.low, c=snapshot.close, v=snapshot.volume)
 
             intention = strategy.evaluate(state)
@@ -363,6 +365,20 @@ class SearchOnlineNewsCommand(CommandBase):
 
 
 
+# TODO: Support start/end/interval parameters
+class KbarsCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "kbars"
+        self.params = ["symbol"]
+        self.description = "Get K-bars (candlestick data)"
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        symbol = args[0]
+        # TODO: Mock only have one kbar in List, Sinopac should have all kbars in the query range
+        kbars = client.get_kbars(Product(symbol=symbol), start="2026-01-07", end="2026-01-08", interval="1m")
+        print(kbars)
+
 
 class MoversCommand(CommandBase):
     def __init__(self):
@@ -372,10 +388,14 @@ class MoversCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         movers = client.get_market_movers()
+        if not movers:
+            print("No market movers data available.")
+            return
         df = pd.DataFrame(list(movers.items()), columns=['Symbol', 'Change'])
         print(df)
 
 
+# TODO: Also need to test mock broker
 class CancelAllCommand(CommandBase):
     def __init__(self):
         super().__init__()
@@ -468,6 +488,7 @@ def register_commands():
         BalanceCommand(),
         AnnouncementCommand(),
         SearchOnlineNewsCommand(),
+        KbarsCommand(),
         CancelAllCommand(),
         ClearCommand(),
         ExitCommand(),

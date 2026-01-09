@@ -7,7 +7,9 @@ from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
+from cjtrade.models.kbar import *
 from cjtrade.core.account_client import AccountClient
+from cjtrade.models.rank_type import RankType
 from ._simulation_env import SimulationEnvironment
 
 
@@ -59,32 +61,14 @@ class MockBroker(BrokerInterface):
 
         return BidAsk(
             symbol=product.symbol,
-            datetime=datetime.datetime.now(),
+            datetime=datetime.now(),
             bid_price=[base_price - i*0.5 for i in range(5)],
             bid_volume=[random.randint(50, 500) for _ in range(5)],
             ask_price=[base_price + 0.5 + i*0.5 for i in range(5)],
             ask_volume=[random.randint(50, 500) for _ in range(5)]
         )
 
-    # TODO: Plan to remove
-    # def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
-    #     if not self._connected:
-    #         raise ConnectionError("Not connected to broker")
 
-    #     quotes = {}
-    #     for product in products:
-    #         snapshot = self._simulation.get_dummy_snapshot(product.symbol)
-    #         if snapshot:
-    #             quotes[product.symbol] = Quote(
-    #                 symbol=product.symbol,
-    #                 price=snapshot.close,
-    #                 volume=snapshot.volume,
-    #                 timestamp=snapshot.timestamp.isoformat()
-    #             )
-
-    #     return quotes
-
-    # Note: This actually returns a 1-min kbar
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -96,6 +80,20 @@ class MockBroker(BrokerInterface):
                 snapshots.append(snapshot)
 
         return snapshots
+
+    def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+
+        kbars = self._simulation.get_dummy_kbars(product.symbol, start, end, interval)
+        return kbars
+
+    def get_market_movers(self, top_n: int = 10,
+                          by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,
+                          ascending: bool = True) -> Dict[str, Snapshot]:
+        # Mock implementation - return None for simplicity
+        # Caller should handle None return value
+        return None
 
     def place_order(self, order: Order) -> OrderResult:
         if not self._connected:
@@ -110,6 +108,15 @@ class MockBroker(BrokerInterface):
             message="Mock order placed successfully",
             metadata={},
             linked_order=order.id
+        )
+
+    def cancel_order(self, order_id: str) -> OrderResult:
+        # Mock
+        return OrderResult(
+            status=OrderStatus.CANCELLED,
+            linked_order=order_id,
+            metadata={},
+            message="Mock order cancelled successfully"
         )
 
     def commit_order(self) -> OrderResult:

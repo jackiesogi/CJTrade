@@ -5,6 +5,7 @@ from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
+from cjtrade.models.kbar import *
 
 # connect / disconnect / is_connected /
 # get_positions / get_balance / get_quotes /
@@ -52,15 +53,9 @@ class BrokerInterface(ABC):
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         pass
 
-    # TODO: Plan to remove
-    # @abstractmethod
-    # def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
-    #     """
-    #     Get quotes for given products.
-    #     Note that quote is the price info that has already filled in the market,
-    #     it may be different from the bid/ask prices.
-    #     """
-    #     pass
+    @abstractmethod
+    def get_kbars(self, products: List[Product], start: str, end: str, interval: str) -> List[Kbar]:
+        pass
 
     @abstractmethod
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:

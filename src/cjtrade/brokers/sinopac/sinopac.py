@@ -11,7 +11,7 @@ from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
-from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype, _from_sinopac_bidask
+from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype, _from_sinopac_bidask, _from_sinopac_kbar
 
 # Since the conversion from sj to cj loses information, we need to keep a mapping
 # between cj Order IDs and sj Order objects to track order status
@@ -149,14 +149,6 @@ class SinopacBroker(BrokerInterface):
         return _from_sinopac_bidask(received_bidask[-1])
 
 
-    # TODO: Plan to remove
-    # def get_quotes(self, product: List[Product]) -> Dict[str, Quote]:
-    #     pass
-    #     if not self._connected:
-    #         raise ConnectionError("Not connected to broker")
-
-    #     try:
-
     # Return close prices for given products at any time
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         if not self._connected:
@@ -171,7 +163,16 @@ class SinopacBroker(BrokerInterface):
         return cj_snapshots
 
 
-    # TODO: This is not a stable API, just for testing purpose
+    # start: str in "YYYY-MM-DD" format
+    # interval: str (e.g. 1m/5m/15m/30m/1h/2h/1d currently only supports '1m')
+    def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+        sinopac_product = _to_sinopac_product(self.api, product)
+        kbars = self.api.kbars(contract=sinopac_product, start=start, end=end)
+        return _from_sinopac_kbar(kbars)
+
+
     def get_market_movers(self, top_n: int = 10,
                           by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,
                           ascending: bool = True) -> Dict[str, Snapshot]:
@@ -261,6 +262,8 @@ class SinopacBroker(BrokerInterface):
         return "sinopac"
 
     # TODO: Decouple from sj API/objects, use cj internal class instead
+    # This is quite important since other equivalent feature have been
+    # abstracted in cjtrade-based dataclass. (Don't simply use List[Dict])
     def list_orders(self) -> List[Dict]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -290,6 +293,7 @@ class SinopacBroker(BrokerInterface):
             return orders
 
         except Exception as e:
+            # TODO: Consider raising exception/error here
             logger.error(f"list_orders() exception: {e}")
             return []
 

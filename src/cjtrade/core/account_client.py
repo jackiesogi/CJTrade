@@ -58,11 +58,11 @@ class AccountClient:
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
         return self.broker.get_bid_ask(product, intraday_odd)
 
-    def get_quotes(self, products: List[Product]) -> Dict[str, Quote]:
-        return self.broker.get_quotes(products)
-
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         return self.broker.get_snapshots(products)
+
+    def get_kbars(self, product: Product, start: str, end: str, interval: str):
+        return self.broker.get_kbars(product, start, end, interval)
 
     def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:
         return self.broker.get_market_movers(top_n, by, ascending)
