@@ -132,11 +132,11 @@ def test_sinopac_historical_kbars():
     drawer.set_product(product)
     drawer.set_theme('light')
 
-    kbars = sinopac.get_kbars(product, start='2026-01-01', end='2026-01-02', interval='1m')
+    kbars = sinopac.get_kbars(product, start='2026-01-01', end='2026-01-08', interval='1m')
     for kbar in kbars:
         drawer.append_kbar(kbar)
         drawer.show_chart()
-        sleep(1)
+        sleep(0.3)
 
 
 if __name__ == "__main__":

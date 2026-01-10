@@ -134,7 +134,12 @@ class SimulationEnvironment:
                     data.index = pd.to_datetime(data.index)
 
                 if data.index.tz is not None:
-                    data.index = data.index.tz_localize(None)
+                    if str(data.index.tz) in ['UTC', 'UTC+00:00']:
+                        import pytz
+                        taiwan_tz = pytz.timezone('Asia/Taipei')
+                        data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
+                    else:
+                        data.index = data.index.tz_localize(None)
 
                 self._historical_data[symbol] = {
                     'data': data,
@@ -253,11 +258,16 @@ class SimulationEnvironment:
                 print(f"No data available for {symbol} in range {start} to {end}")
                 return []
 
-            # Ensure timezone-aware datetime index is converted to naive
             if not isinstance(data.index, pd.DatetimeIndex):
                 data.index = pd.to_datetime(data.index)
             if data.index.tz is not None:
-                data.index = data.index.tz_localize(None)
+                # If yfinance data is UTC, need to convert to Taiwan time
+                if str(data.index.tz) in ['UTC', 'UTC+00:00']:
+                    import pytz
+                    taiwan_tz = pytz.timezone('Asia/Taipei')
+                    data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
+                else:
+                    data.index = data.index.tz_localize(None)
 
             kbars = []
 

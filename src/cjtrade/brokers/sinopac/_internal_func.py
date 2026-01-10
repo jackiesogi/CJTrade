@@ -58,11 +58,19 @@ ORDER_LOT_MAP = {
 }
 
 def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
+    """
+    Note: Shioaji timestamps have an extra 8-hour offset,
+    so we need to subtract 8 hours to get the correct Taiwan market time.
+    """
     cj_kbars = []
     for i in range(len(sj_kbar.ts)):
+        # Shioaji timestamp needs 8-hour adjustment for correct Taiwan time
+        corrected_timestamp = sj_kbar.ts[i] / 1_000_000_000 - 8 * 3600
+        taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
+
         cj_kbars.append(
             Kbar(
-                timestamp=datetime.fromtimestamp(sj_kbar.ts[i] / 1_000_000_000),
+                timestamp=taiwan_dt,
                 open=sj_kbar.Open[i],
                 high=sj_kbar.High[i],
                 low=sj_kbar.Low[i],
@@ -71,14 +79,7 @@ def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
             )
         )
     return cj_kbars
-    # return Kbar(
-    #     timestamp=sj_kbar.ts,
-    #     open=sj_kbar.Open,
-    #     high=sj_kbar.High,
-    #     low=sj_kbar.Low,
-    #     close=sj_kbar.Close,
-    #     volume=sj_kbar.Volume
-    # )
+
 
 # sj_order + sj_contract = cj_order
 def _from_sinopac_order(sj_order: sj.Order, sj_contract: sj.contracts.Contract) -> Order:
@@ -122,10 +123,19 @@ def _from_sinopac_order(sj_order: sj.Order, sj_contract: sj.contracts.Contract) 
 def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
     """Convert Shioaji Snapshot to CJTrade Quote"""
     try:
+        # Handle timestamp - Shioaji timestamp needs 8-hour offset adjustment
+        ts_value = getattr(sj_snapshot, 'ts', 0)
+        if ts_value > 0:
+            # Subtract 8-hour offset to get correct Taiwan time
+            corrected_timestamp = ts_value / 1_000_000_000 - 8 * 3600
+            taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
+        else:
+            taiwan_dt = datetime.now()
+
         return Snapshot(
                 symbol=getattr(sj_snapshot, 'code', getattr(sj_snapshot, 'symbol', '')),
                 exchange=getattr(sj_snapshot, 'exchange', 'N/A'),
-                timestamp=datetime.fromtimestamp(getattr(sj_snapshot, 'ts', 0) / 1_000_000_000),
+                timestamp=taiwan_dt,
                 open=getattr(sj_snapshot, 'open', 0.0),
                 close=getattr(sj_snapshot, 'close', 0.0),
                 high=getattr(sj_snapshot, 'high', 0.0),
