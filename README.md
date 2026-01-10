@@ -18,6 +18,12 @@ If it is a modification to existing logic, please mark todo directly in that fil
 - [ ] Add candidate manager related feature.
 - [ ] Add `Dash` package and work with stateful UI (not only kbar chart but also some buttons and fields).
 
+### Kbar aggregation interval consistency
+- For mock securities, YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+- For sinopac securities, Sinopac supports: N/A (Only 1m kbar)
+- For unified `AccountClient` class requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
+Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
+
 ## Run
 ```sh
 git clone git@github.com:jackiesogi/cjtrade

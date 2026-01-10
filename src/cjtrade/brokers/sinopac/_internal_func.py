@@ -9,6 +9,7 @@ from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
 from cjtrade.models.kbar import *
+import pandas as pd
 
 
 ##### Cjtrade -> Shioaji #####
@@ -285,4 +286,190 @@ def _from_sinopac_bidask(sj_bidask) -> BidAsk:
         ask_volume=list(sj_bidask.ask_volume)
     )
 
+# TODO: Consider whether to adopt original thought (for loop aggregation)
+def _aggregate_kbars(kbars: List[Kbar], target_interval: str) -> List[Kbar]:
+    """
+    Aggregate 1-minute K-bars into higher timeframes for Sinopac broker.
+    Special handling for daily intervals to ensure exactly one bar per trading day.
+    """
+    if not kbars:
+        return []
+
+    # Taiwan stock market specific intervals (4.5 hour trading session)
+    interval_minutes = {
+        "1m": 1, "3m": 3, "5m": 5, "10m": 10, "15m": 15,
+        "20m": 20, "30m": 30, "45m": 45, "1h": 60, "90m": 90, "2h": 120,
+        "1d": 270, "1w": 1350, "1M": 5400  # 270 = 4.5h trading day
+    }
+
+    if target_interval not in interval_minutes:
+        raise ValueError(f"Unsupported interval: {target_interval}")
+
+    target_mins = interval_minutes[target_interval]
+
+    # If already at target interval, return as-is
+    if target_mins == 1:
+        return kbars
+
+    # Special handling for daily and longer intervals
+    if target_interval in ["1d", "1w", "1M"]:
+        return _aggregate_by_trading_session(kbars, target_interval)
+
+    # For intraday intervals, use standard time-based aggregation
+    return _aggregate_by_time_windows(kbars, target_mins)
+
+
+def _aggregate_by_trading_session(kbars: List[Kbar], interval: str) -> List[Kbar]:
+    """
+    Aggregate kbars by trading sessions (daily, weekly, monthly).
+    Ensures exactly one bar per trading session regardless of data quality.
+    """
+    if not kbars:
+        return []
+
+    # Group kbars by trading date
+    from collections import defaultdict
+    daily_groups = defaultdict(list)
+
+    for kbar in kbars:
+        # Use date as key to group all kbars from same trading day
+        date_key = kbar.timestamp.date()
+        daily_groups[date_key].append(kbar)
+
+    # Aggregate each trading day into single kbar
+    daily_kbars = []
+    for date, day_kbars in sorted(daily_groups.items()):
+        if not day_kbars:
+            continue
+
+        # Sort by timestamp to ensure proper OHLC
+        day_kbars.sort(key=lambda k: k.timestamp)
+
+        # Create aggregated daily kbar
+        daily_kbar = Kbar(
+            timestamp=day_kbars[0].timestamp.replace(hour=9, minute=0, second=0),  # Market open time
+            open=day_kbars[0].open,
+            high=max(k.high for k in day_kbars),
+            low=min(k.low for k in day_kbars),
+            close=day_kbars[-1].close,
+            volume=sum(k.volume for k in day_kbars)
+        )
+        daily_kbars.append(daily_kbar)
+
+    # For weekly/monthly, further aggregate daily kbars
+    if interval == "1d":
+        return daily_kbars
+    elif interval == "1w":
+        return _aggregate_daily_to_weekly(daily_kbars)
+    elif interval == "1M":
+        return _aggregate_daily_to_monthly(daily_kbars)
+
+    return daily_kbars
+
+
+def _aggregate_daily_to_weekly(daily_kbars: List[Kbar]) -> List[Kbar]:
+    """Aggregate daily kbars into weekly kbars."""
+    if not daily_kbars:
+        return []
+
+    from collections import defaultdict
+    weekly_groups = defaultdict(list)
+
+    for kbar in daily_kbars:
+        # Get week number (Monday = start of week)
+        year, week, _ = kbar.timestamp.date().isocalendar()
+        week_key = f"{year}-W{week:02d}"
+        weekly_groups[week_key].append(kbar)
+
+    weekly_kbars = []
+    for week_key, week_kbars in sorted(weekly_groups.items()):
+        if not week_kbars:
+            continue
+
+        week_kbars.sort(key=lambda k: k.timestamp)
+        weekly_kbar = Kbar(
+            timestamp=week_kbars[0].timestamp,
+            open=week_kbars[0].open,
+            high=max(k.high for k in week_kbars),
+            low=min(k.low for k in week_kbars),
+            close=week_kbars[-1].close,
+            volume=sum(k.volume for k in week_kbars)
+        )
+        weekly_kbars.append(weekly_kbar)
+
+    return weekly_kbars
+
+
+def _aggregate_daily_to_monthly(daily_kbars: List[Kbar]) -> List[Kbar]:
+    """Aggregate daily kbars into monthly kbars."""
+    if not daily_kbars:
+        return []
+
+    from collections import defaultdict
+    monthly_groups = defaultdict(list)
+
+    for kbar in daily_kbars:
+        # Group by year-month
+        month_key = kbar.timestamp.strftime("%Y-%m")
+        monthly_groups[month_key].append(kbar)
+
+    monthly_kbars = []
+    for month_key, month_kbars in sorted(monthly_groups.items()):
+        if not month_kbars:
+            continue
+
+        month_kbars.sort(key=lambda k: k.timestamp)
+        monthly_kbar = Kbar(
+            timestamp=month_kbars[0].timestamp,
+            open=month_kbars[0].open,
+            high=max(k.high for k in month_kbars),
+            low=min(k.low for k in month_kbars),
+            close=month_kbars[-1].close,
+            volume=sum(k.volume for k in month_kbars)
+        )
+        monthly_kbars.append(monthly_kbar)
+
+    return monthly_kbars
+
+
+def _aggregate_by_time_windows(kbars: List[Kbar], target_mins: int) -> List[Kbar]:
+    """
+    Aggregate kbars using fixed time windows for intraday intervals.
+    """
+    # Convert to pandas for efficient aggregation
+    data = {
+        'timestamp': [k.timestamp for k in kbars],
+        'open': [k.open for k in kbars],
+        'high': [k.high for k in kbars],
+        'low': [k.low for k in kbars],
+        'close': [k.close for k in kbars],
+        'volume': [k.volume for k in kbars],
+    }
+    df = pd.DataFrame(data)
+    df.set_index('timestamp', inplace=True)
+
+    # Resample to target interval with OHLCV rules
+    freq = f"{target_mins}min"  # Use 'min' instead of deprecated 'T'
+    aggregated = df.resample(freq).agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna()
+
+    # Convert back to Kbar objects
+    result = []
+    for timestamp, row in aggregated.iterrows():
+        kbar = Kbar(
+            timestamp=timestamp.to_pydatetime(),
+            open=round(row['open'], 2),
+            high=round(row['high'], 2),
+            low=round(row['low'], 2),
+            close=round(row['close'], 2),
+            volume=int(row['volume'])
+        )
+        result.append(kbar)
+
+    return result
 ##### INTERNAL METHODS END #####

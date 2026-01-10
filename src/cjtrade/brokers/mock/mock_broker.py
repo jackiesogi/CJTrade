@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 import time
 import random
 from datetime import datetime
+
 from cjtrade.brokers.broker_base import BrokerInterface
 from cjtrade.models.order import *
 from cjtrade.models.position import *
@@ -9,6 +10,7 @@ from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.kbar import *
 from cjtrade.core.account_client import AccountClient
+from ._simulation_env import SimulationEnvironment
 from cjtrade.models.rank_type import RankType
 from ._simulation_env import SimulationEnvironment
 
@@ -83,10 +85,25 @@ class MockBroker(BrokerInterface):
 
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
         if not self._connected:
-            raise ConnectionError("Not connected to broker")
+            raise ConnectionError("Not connected to simulation environment")
 
-        kbars = self._simulation.get_dummy_kbars(product.symbol, start, end, interval)
-        return kbars
+        # yfinance directly supported intervals
+        yf_supported = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
+
+        if interval in yf_supported:
+            # Direct fetch from yfinance
+            return self._simulation.get_dummy_kbars(product.symbol, start, end, interval)
+        else:
+            # Use internal aggregation for unsupported intervals
+            kbars_1m = self._simulation.get_dummy_kbars(product.symbol, start, end, "1m")
+
+            if not kbars_1m:
+                return []
+
+            try:
+                return self._simulation._aggregate_kbars_internal(kbars_1m, interval)
+            except ValueError as e:
+                raise ValueError(f"Mock broker interval '{interval}' not supported: {e}") from e
 
     def get_market_movers(self, top_n: int = 10,
                           by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,

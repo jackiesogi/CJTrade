@@ -6,11 +6,13 @@
 #   exit:   Close interactive shell
 from time import sleep, time
 import pandas as pd
+import subprocess
 import asyncio
 import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from dotenv import load_dotenv
+from cjtrade.analytics.informational.news_client import *
 from cjtrade.tests.test_basic_flow import *
 from cjtrade.analytics.technical.strategies.fixed_price import *
 from cjtrade.analytics.technical.models import *
@@ -335,8 +337,6 @@ class SearchOnlineNewsCommand(CommandBase):
         self.optional_args = ["query"]
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        from cjtrade.analytics.informational.news_client import NewsClient, NewsProviderType
-
         news_client = NewsClient(provider_type=NewsProviderType.CNYES)
         # news_client = NewsClient(provider_type=NewsProviderType.MOCK)
         # news_client = NewsClient(provider_type=NewsProviderType.NEWS_API,
@@ -448,6 +448,31 @@ class HelpCommand(CommandBase):
             print(f"  {cmd.get_help()}")
 
 
+class InfoCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "info"
+        self.description = "Shell info"
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        try:
+            subprocess.check_output(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                stderr=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError:
+            return
+
+        if Path("cjtrade_shell.py").is_file():
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                stderr=subprocess.DEVNULL
+            ).decode().strip()
+            print(f"Interactive shell version: {commit}")
+        print(f"Connected broker: {client.get_broker_name()}")
+        print(f"News source: {NewsProviderType.CNYES.value}")
+
+
 class ClearCommand(CommandBase):
     def __init__(self):
         super().__init__()
@@ -491,6 +516,7 @@ def register_commands():
         KbarsCommand(),
         CancelAllCommand(),
         ClearCommand(),
+        InfoCommand(),
         ExitCommand(),
     ]
 
@@ -583,9 +609,9 @@ if __name__ == "__main__":
 
     exit_code = 0  # Default success
 
-    client = AccountClient(BrokerType.SINOPAC, **config)
-    # real = AccountClient(BrokerType.SINOPAC, **config)
-    # client = AccountClient(BrokerType.MOCK, real_account=real)
+    # client = AccountClient(BrokerType.SINOPAC, **config)
+    real = AccountClient(BrokerType.SINOPAC, **config)
+    client = AccountClient(BrokerType.MOCK, real_account=real)
     client.connect()
 
     try:

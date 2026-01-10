@@ -120,14 +120,16 @@ class SimulationEnvironment:
             data = yf.download(yf_symbol,
                              start=start_date.strftime("%Y-%m-%d"),
                              end=end_date.strftime("%Y-%m-%d"),
-                             interval="1m")
+                             interval="1m",
+                             progress=False)
 
             if data.empty:
                 print(f"No 1m data available for {symbol}, trying 1h data...")
                 data = yf.download(yf_symbol,
                                  start=start_date.strftime("%Y-%m-%d"),
                                  end=end_date.strftime("%Y-%m-%d"),
-                                 interval="1h")
+                                 interval="1h",
+                                 progress=False)
 
             if not data.empty:
                 if not isinstance(data.index, pd.DatetimeIndex):
@@ -252,7 +254,7 @@ class SimulationEnvironment:
 
         try:
             # Download data from yfinance for the specified range
-            data = yf.download(yf_symbol, start=start, end=end, interval=interval)
+            data = yf.download(yf_symbol, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
 
             if data.empty:
                 print(f"No data available for {symbol} in range {start} to {end}")
@@ -282,12 +284,69 @@ class SimulationEnvironment:
                 )
                 kbars.append(kbar)
 
-            print(f"Loaded {len(kbars)} kbars for {symbol}")
+            # print(f"Loaded {len(kbars)} kbars for {symbol}")
             return kbars
 
         except Exception as e:
             print(f"Error loading kbars for {symbol}: {e}")
             return []
+
+### TODO: Use these function for interval that yfinance doesn't support
+### YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+### Sinopac supports: N/A (Only 1m kbar)
+### Broker interface requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
+    def _aggregate_kbars_internal(self, kbars: List[Kbar], target_interval: str) -> List[Kbar]:
+        if not kbars:
+            return []
+
+        # Simple aggregation for common intervals
+        interval_minutes = {
+            "3m": 3, "6m": 6, "12m": 12, "20m": 20, "45m": 45
+        }
+
+        if target_interval not in interval_minutes:
+            raise ValueError(f"Mock broker: Unsupported interval for aggregation: {target_interval}")
+
+        target_mins = interval_minutes[target_interval]
+
+        # Group kbars by time windows and aggregate
+        import pandas as pd
+
+        data = {
+            'timestamp': [k.timestamp for k in kbars],
+            'open': [k.open for k in kbars],
+            'high': [k.high for k in kbars],
+            'low': [k.low for k in kbars],
+            'close': [k.close for k in kbars],
+            'volume': [k.volume for k in kbars],
+        }
+        df = pd.DataFrame(data)
+        df.set_index('timestamp', inplace=True)
+
+        # Aggregate with pandas resample
+        freq = f"{target_mins}min"  # Use 'min' instead of deprecated 'T'
+        aggregated = df.resample(freq).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+
+        # Convert back to Kbar objects
+        result = []
+        for timestamp, row in aggregated.iterrows():
+            kbar = Kbar(
+                timestamp=timestamp.to_pydatetime(),
+                open=round(row['open'], 2),
+                high=round(row['high'], 2),
+                low=round(row['low'], 2),
+                close=round(row['close'], 2),
+                volume=int(row['volume'])
+            )
+            result.append(kbar)
+
+        return result
 
     # TODO: Remove this when get_dummy_kbars() is stable
     # Legacy method for backward compatibility - now just returns single kbar

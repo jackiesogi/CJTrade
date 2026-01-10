@@ -55,6 +55,10 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     def get_kbars(self, products: List[Product], start: str, end: str, interval: str) -> List[Kbar]:
+        """
+        return a list of Kbar, 1-min kbar by default
+        note that the range is [start,end), end is exclusive.
+        """
         pass
 
     @abstractmethod

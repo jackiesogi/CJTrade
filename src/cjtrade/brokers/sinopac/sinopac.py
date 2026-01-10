@@ -164,12 +164,35 @@ class SinopacBroker(BrokerInterface):
 
 
     # start: str in "YYYY-MM-DD" format
-    # interval: str (e.g. 1m/5m/15m/30m/1h/2h/1d currently only supports '1m')
+    # end: str in "YYYY-MM-DD" format (exclusive - will not include this date)
+    # interval: str (e.g. 1m/3m/5m/15m/30m/1h/1d)
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
+
+        # Convert end date from exclusive to inclusive for Shioaji API
+        from datetime import datetime, timedelta
+        end_date = datetime.strptime(end, '%Y-%m-%d')
+        adjusted_end_date = end_date - timedelta(days=1)
+        adjusted_end = adjusted_end_date.strftime('%Y-%m-%d')
+
         sinopac_product = _to_sinopac_product(self.api, product)
-        kbars = self.api.kbars(contract=sinopac_product, start=start, end=end)
+
+        # Always fetch 1-minute data from Shioaji (only supported interval)
+        kbars_1m = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
+        base_kbars = _from_sinopac_kbar(kbars_1m)
+
+        # If requesting 1m data, return as-is
+        if interval == "1m":
+            return base_kbars
+
+        # For other intervals, use internal aggregation
+        try:
+            from ._internal_func import _aggregate_kbars
+            return _aggregate_kbars(base_kbars, interval)
+        except ValueError as e:
+            raise ValueError(f"Interval '{interval}' not supported: {e}") from e
+        kbars = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
         return _from_sinopac_kbar(kbars)
 
 

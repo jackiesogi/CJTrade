@@ -62,6 +62,10 @@ class AccountClient:
         return self.broker.get_snapshots(products)
 
     def get_kbars(self, product: Product, start: str, end: str, interval: str):
+        # note that the range is [start,end), end is exclusive.
+        # TODO: test each interval aggregation stability (especially edge cases)
+        # interval: '1m', '3m', '5m', '10m', '15m', '20m', '30m', '45m',
+        #           '1h', '90m', '2h', '1d', '1w', '1M'
         return self.broker.get_kbars(product, start, end, interval)
 
     def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:

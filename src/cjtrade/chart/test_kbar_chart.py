@@ -118,28 +118,106 @@ def test_sinopac_historical_kbars():
     }
     sinopac = AccountClient(BrokerType.SINOPAC, **config)
     sinopac.connect()
-    product = Product(symbol="2330")
+    product = Product(symbol="2308")
 
     # Drawer setup
     drawer = KbarChartClient(
         chart_type=KbarChartType.PLOTLY,
         auto_save=True,
-        width=1400,
-        height=1000
+        width=1200,
+        height=650
     )
 
     # Set product to generate filename
     drawer.set_product(product)
-    drawer.set_theme('light')
+    drawer.set_theme('nordic')
 
-    kbars = sinopac.get_kbars(product, start='2026-01-01', end='2026-01-08', interval='1m')
+    # Get only 2026-01-07 data using [start, end) exclusive range
+    # end='2026-01-08' will exclude 2026-01-08, getting only 2026-01-07
+    kbars = sinopac.get_kbars(product, start='2026-01-05', end='2026-01-10', interval='15m')
+    print(f"Total kbars: {len(kbars)}")
     for kbar in kbars:
         drawer.append_kbar(kbar)
         drawer.show_chart()
-        sleep(0.3)
+        sleep(0.5)
+
+
+def test_kbar_aggregation():
+    conf = {
+        "product": Product(symbol="2308"),
+        "start": "2026-01-07",
+        "end": "2026-01-08",
+    }
+    expected_oneday_kbar_in_out = {
+        "1m": (250, 270),
+        "5m": (50, 55),
+        "15m": (17, 20),
+        "30m": (9, 10),
+        "1h": (4, 5),
+        "1d": (1, 1)
+    }
+
+    def _in_expected_range(n: int, interval: str) -> bool:
+        return expected_oneday_kbar_in_out[interval][0] <= n <= expected_oneday_kbar_in_out[interval][1]
+
+    def assert_kbar_count_valid(kbars, interval: str, broker_name: str = ""):
+        n_kbars = len(kbars) if hasattr(kbars, '__len__') else kbars
+        expected_range = expected_oneday_kbar_in_out[interval]
+        min_expected, max_expected = expected_range
+
+        broker_prefix = f"({broker_name}) " if broker_name else ""
+
+        if _in_expected_range(n_kbars, interval):
+            print(f"{broker_prefix}Interval {interval} returned {n_kbars} kbars, within expected range [{min_expected},{max_expected}].")
+        else:
+            error_msg = (
+                f"{broker_prefix}Interval {interval} returned {n_kbars} kbars, "
+                f"expected in range [{min_expected},{max_expected}]"
+            )
+            if hasattr(kbars, '__len__') and len(kbars) <= 5:  # Only show raw kbars if few
+                error_msg += f". Raw kbars: {kbars}"
+
+            raise AssertionError(error_msg)
+
+
+    def test_sinopac_kbar_agg():
+        load_dotenv()
+        config = {
+            'api_key': os.environ["API_KEY"],
+            'secret_key': os.environ["SECRET_KEY"],
+            'ca_path': os.environ["CA_CERT_PATH"],
+            'ca_passwd': os.environ["CA_PASSWORD"],
+            'simulation': False  # Use production environment to see actual holdings
+        }
+        sinopac = AccountClient(BrokerType.SINOPAC, **config)
+        sinopac.connect()
+        for interval in expected_oneday_kbar_in_out.keys():
+            kbars = sinopac.get_kbars(
+                product=conf["product"],
+                start=conf["start"],
+                end=conf["end"],
+                interval=interval
+            )
+            assert_kbar_count_valid(kbars, interval, "Sinopac")
+
+    def test_mock_kbar_agg():
+        mock = AccountClient(BrokerType.MOCK)
+        mock.connect()
+        for interval in expected_oneday_kbar_in_out.keys():
+            kbars = mock.get_kbars(
+                product=conf["product"],
+                start=conf["start"],
+                end=conf["end"],
+                interval=interval
+            )
+            assert_kbar_count_valid(kbars, interval, "Mock")
+
+    test_sinopac_kbar_agg()
+    test_mock_kbar_agg()
 
 
 if __name__ == "__main__":
     # demo_kbar_chart()
     # test_kbar_chart_historical_data()
     test_sinopac_historical_kbars()
+    # test_kbar_aggregation()
