@@ -52,8 +52,8 @@ class PlotlyKbarChart(KbarChartBase):
                 'paper_bgcolor': 'white',
                 'font_color': 'black',
                 'grid_color': '#e6e6e6',
-                'candlestick_up': '#26a69a',
-                'candlestick_down': '#ef5350',
+                'candlestick_down': '#26a69a',
+                'candlestick_up': '#ef5350',
                 'volume_color': 'lightblue',
                 'modebar': {'bgcolor': 'rgba(255,255,255,0.8)', 'color': 'black'},
                 'config': {
@@ -69,8 +69,8 @@ class PlotlyKbarChart(KbarChartBase):
                 'paper_bgcolor': 'black',
                 'font_color': 'white',
                 'grid_color': '#333333',
-                'candlestick_up': '#00ff00',
-                'candlestick_down': '#ff0000',
+                'candlestick_down': '#00ff00',
+                'candlestick_up': '#ff0000',
                 'volume_color': '#404040',
                 'modebar': {'bgcolor': 'rgba(0,0,0,0)', 'color': 'white'},
                 'config': {

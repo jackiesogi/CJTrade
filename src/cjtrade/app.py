@@ -16,6 +16,7 @@ import cjtrade.modules.stockdata as STOCK
 import cjtrade.modules.candidate as CAND
 import cjtrade.modules.ui.web as WEB
 
+# TODO: Gradually take new modules from service_oriented branch to here to make it a system.
 
 # CONFIG (tune these)
 log = logging.getLogger("cjtrade.main")
