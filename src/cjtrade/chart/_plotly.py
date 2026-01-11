@@ -139,11 +139,80 @@ class PlotlyKbarChart(KbarChartBase):
         if self.auto_save and self.output_filename:
             self._auto_save()
 
+    def _save_html_with_template(self, filename: str) -> None:
+        if not self.fig:
+            return
+
+        import os
+        import plotly.io as pio
+
+        theme_config = self._get_theme_config()
+
+        # Generate HTML div for the chart
+        html_content = pio.to_html(
+            self.fig,
+            config=theme_config['config'],
+            div_id="plotly-div",
+            include_plotlyjs=True,
+            full_html=False
+        )
+
+        # Read template HTML
+        template_path = os.path.join(os.path.dirname(__file__), 'templates', 'chart_template.html')
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = f.read()
+
+        def calculate_nav_bgcolor(paper_bg):
+            if paper_bg == '#0d1117':  # GitHub dark
+                return '#161b22'
+            elif paper_bg == '#2e3440':  # Nordic
+                return '#3b4252'
+            elif paper_bg == '#282828':  # Gruvbox
+                return '#32302f'
+            elif paper_bg == 'white':  # Light
+                return '#f8f9fa'
+            else:  # Fallback
+                return paper_bg
+
+        nav_bgcolor = calculate_nav_bgcolor(theme_config['paper_bgcolor'])
+        accent_color = '#58a6ff' if theme_config['paper_bgcolor'] == '#0d1117' else '#3498db'
+        border_color = '#30363d' if theme_config['paper_bgcolor'] == '#0d1117' else '#34495e'
+
+        if accent_color == '#58a6ff':
+            accent_color_rgb = '88, 166, 255'
+        else:
+            accent_color_rgb = '52, 152, 219'
+
+        # Auto refresh meta tag
+        extra_head = '<meta http-equiv="refresh" content="2">' if self.auto_save else ''
+
+        full_html = template.format(
+            paper_bgcolor=theme_config['paper_bgcolor'],
+            font_color=theme_config['font_color'],
+            nav_bgcolor=nav_bgcolor,
+            accent_color=accent_color,
+            accent_color_rgb=accent_color_rgb,
+            border_color=border_color,
+            chart_width=self.width,
+            chart_height=self.height,
+            chart_content=html_content,
+            theme_name=self.theme,
+            extra_head=extra_head
+        )
+
+        # Handle absolute path or relative path
+        if not os.path.isabs(filename):
+             filename = os.path.abspath(filename)
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(full_html)
+
+        print(f"Chart saved to: {filename}")
+        print(f"Open in browser: file://{filename}")
+
     def _auto_save(self) -> None:
         if self.fig and self.output_filename:
-            theme_config = self._get_theme_config()
-            self.fig.write_html(self.output_filename, config=theme_config['config'])
-            print(f"Chart auto-saved to: {self.output_filename}")
+            self._save_html_with_template(self.output_filename)
 
     def _create_chart(self) -> None:
         if not self.kbar_data or not self.product:
@@ -344,83 +413,23 @@ class PlotlyKbarChart(KbarChartBase):
         if not self.fig:
             self._create_chart()
 
-        theme_config = self._get_theme_config()
-
         if self.output_filename:
-            import os
-            abs_path = os.path.abspath(self.output_filename)
-
-            import plotly.io as pio
-            html_content = pio.to_html(
-                self.fig,
-                config=theme_config['config'],
-                div_id="plotly-div",
-                include_plotlyjs=True,
-                full_html=False
-            )
-
-            # Read template HTML
-            template_path = os.path.join(os.path.dirname(__file__), 'templates', 'chart_template.html')
-            with open(template_path, 'r', encoding='utf-8') as f:
-                template = f.read()
-
-            def calculate_nav_bgcolor(paper_bg):
-                if paper_bg == '#0d1117':  # GitHub dark
-                    return '#161b22'
-                elif paper_bg == '#2e3440':  # Nordic
-                    return '#3b4252'
-                elif paper_bg == '#282828':  # Gruvbox
-                    return '#32302f'
-                elif paper_bg == 'white':  # Light
-                    return '#f8f9fa'
-                else:  # Fallback
-                    return paper_bg
-
-            nav_bgcolor = calculate_nav_bgcolor(theme_config['paper_bgcolor'])
-            accent_color = '#58a6ff' if theme_config['paper_bgcolor'] == '#0d1117' else '#3498db'
-            border_color = '#30363d' if theme_config['paper_bgcolor'] == '#0d1117' else '#34495e'
-
-            if accent_color == '#58a6ff':
-                accent_color_rgb = '88, 166, 255'
-            else:
-                accent_color_rgb = '52, 152, 219'
-
-            # Auto refresh meta tag
-            extra_head = '<meta http-equiv="refresh" content="2">' if self.auto_save else ''
-
-            full_html = template.format(
-                paper_bgcolor=theme_config['paper_bgcolor'],
-                font_color=theme_config['font_color'],
-                nav_bgcolor=nav_bgcolor,
-                accent_color=accent_color,
-                accent_color_rgb=accent_color_rgb,
-                border_color=border_color,
-                chart_width=self.width,
-                chart_height=self.height,
-                chart_content=html_content,
-                theme_name=self.theme,
-                extra_head=extra_head
-            )
-
-            with open(abs_path, 'w', encoding='utf-8') as f:
-                f.write(full_html)
-
-            print(f"Chart saved to: {abs_path}")
-            print(f"Open in browser: file://{abs_path}")
+            self._save_html_with_template(self.output_filename)
         else:
             # Fallback to old behavior if no filename set
+            theme_config = self._get_theme_config()
             self.fig.show(config=theme_config['config'])
 
     def save_chart(self, filename: str) -> None:
         if not self.fig:
             self._create_chart()
 
-        if filename.endswith('.html'):
-            self.fig.write_html(filename)
-        elif filename.endswith('.png'):
+        if filename.endswith('.png'):
             self.fig.write_image(filename)
         elif filename.endswith('.pdf'):
             self.fig.write_image(filename)
         else:
-            self.fig.write_html(f"{filename}.html")
+            if not filename.endswith('.html'):
+                filename = f"{filename}.html"
+            self._save_html_with_template(filename)
 
