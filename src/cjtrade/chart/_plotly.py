@@ -129,6 +129,7 @@ class PlotlyKbarChart(KbarChartBase):
             self.kbar_data = []
 
         self.kbar_data.append(kbar)
+        print(f"ts: {kbar.timestamp}, open: {kbar.open}, high: {kbar.high}, low: {kbar.low}, close: {kbar.close}, volume: {kbar.volume}")
 
         # Create chart if this is the first data
         if len(self.kbar_data) == 1:
@@ -207,8 +208,9 @@ class PlotlyKbarChart(KbarChartBase):
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(full_html)
 
-        print(f"Chart saved to: {filename}")
-        print(f"Open in browser: file://{filename}")
+        # TODO: Temporarily disable print statements
+        # print(f"Chart saved to: {filename}")
+        # print(f"Open in browser: file://{filename}")
 
     def _auto_save(self) -> None:
         if self.fig and self.output_filename:

@@ -66,8 +66,9 @@ class SinopacBroker(BrokerInterface):
         if self._connected:
             try:
                 self.api.logout()
-            except:
-                pass
+                print("Sinopac broker disconnected")
+            except Exception as e:
+                print(f"Error disconnecting Sinopac broker: {e}")
             finally:
                 self._connected = False
 

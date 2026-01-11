@@ -72,6 +72,8 @@ class SimulationEnvironment:
             return False
 
     def stop(self):
+        if self.real_account:
+            self.real_account.disconnect()
         self._connected = False
         print("Simulation environment stopped")
 

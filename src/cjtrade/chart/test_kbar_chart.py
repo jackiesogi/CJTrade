@@ -146,7 +146,7 @@ def test_sinopac_historical_kbars(on_ready=None, symbol="2308",
             on_ready(drawer.get_output_filename())
             first_run = False
 
-        sleep(0.5)
+        sleep(0.3)
 
 
 def test_kbar_aggregation():
