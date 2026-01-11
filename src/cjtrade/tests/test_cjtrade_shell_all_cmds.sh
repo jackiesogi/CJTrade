@@ -14,6 +14,14 @@ exit_failed() {
 
 echo "=== Testing CJTrade Shell Commands ==="
 
+# info
+echo "Testing info command..."
+__ "info" || exit_failed "info command"
+
+# cal 2026
+echo "Testing date command..."
+__ "date 2026" || exit_failed "date command"
+
 # buy 0050 @20.25 80 shares
 echo "Testing buy command..."
 __ "buy 0050 20.25 80" || exit_failed "buy command"

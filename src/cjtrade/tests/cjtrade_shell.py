@@ -448,6 +448,31 @@ class HelpCommand(CommandBase):
             print(f"  {cmd.get_help()}")
 
 
+class CalendarCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "date"
+        self.description = "Show the calendar"
+        self.optional_params = ["year"]
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        # yellow
+        print("\033[93m")
+        if os.name == 'nt':
+            subprocess.run(['date', '/T'])
+        else:
+            subprocess.run(['date'])
+        print("\033[0m")
+
+        if len(args) == 1:
+            exe_arr = ['cal', args[0]]
+        else:
+            exe_arr = ['cal']
+
+        subprocess.run(exe_arr)
+
+
+
 class InfoCommand(CommandBase):
     def __init__(self):
         super().__init__()
@@ -495,6 +520,54 @@ class ExitCommand(CommandBase):
         exit_flag = True
 
 
+class KbarAggregationCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "replay"
+        self.params = ["symbol", "range", "interval"]  # range means [T-range, T+1)
+        self.description = "Replay historical K-bar and do aggregation"
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        from cjtrade.chart.test_kbar_chart import test_sinopac_historical_kbars
+        import webbrowser
+        import os
+
+        symbol = args[0]
+        range_days = int(args[1])
+        interval = args[2]
+
+        # calculate the latest market date (Mon-Fri)
+        from datetime import datetime, timedelta
+        import pandas as pd
+
+        today = datetime.now()
+
+        # If today is Sat(5) or Sun(6), revert to last Friday
+        if today.weekday() == 5:  # Saturday
+            latest_market_date = today - timedelta(days=1)
+        elif today.weekday() == 6:  # Sunday
+            latest_market_date = today - timedelta(days=2)
+        else:
+            latest_market_date = today
+
+        # Use BusinessDay to calculate start date (approx trading days)
+        # range_days ago
+        start_date_obj = latest_market_date - pd.tseries.offsets.BusinessDay(n=range_days)
+
+        start_date = start_date_obj.strftime('%Y-%m-%d')
+        end_date = (latest_market_date + timedelta(days=1)).strftime('%Y-%m-%d')
+
+        print(f"Replay range: {start_date} -> {end_date} (Latest market date: {latest_market_date.strftime('%Y-%m-%d')})")
+
+        def on_ready(filename):
+            if filename:
+                print(f"Opening chart: {filename}")
+                webbrowser.open(f"file://{os.path.abspath(filename)}")
+
+        test_sinopac_historical_kbars(on_ready=on_ready, symbol=symbol,
+                                      start=start_date, end=end_date, interval=interval)
+
+
 # ========== Command Registry ==========
 command_registry: dict[str, CommandBase] = {}
 
@@ -502,6 +575,7 @@ def register_commands():
     """Register all available commands"""
     commands = [
         HelpCommand(),
+        CalendarCommand(),
         BuyCommand(),
         SellCommand(),
         SnapshotCommand(),
@@ -514,6 +588,7 @@ def register_commands():
         AnnouncementCommand(),
         SearchOnlineNewsCommand(),
         KbarsCommand(),
+        KbarAggregationCommand(),
         CancelAllCommand(),
         ClearCommand(),
         InfoCommand(),

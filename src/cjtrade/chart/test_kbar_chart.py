@@ -107,7 +107,8 @@ def test_kbar_chart_historical_data():
         sleep(60)
 
 
-def test_sinopac_historical_kbars():
+def test_sinopac_historical_kbars(on_ready=None, symbol="2308",
+                                  start="2026-01-07", end="2026-01-08", interval="15m") -> str:
     load_dotenv()
     config = {
         'api_key': os.environ["API_KEY"],
@@ -118,14 +119,14 @@ def test_sinopac_historical_kbars():
     }
     sinopac = AccountClient(BrokerType.SINOPAC, **config)
     sinopac.connect()
-    product = Product(symbol="2308")
+    product = Product(symbol=symbol)
 
     # Drawer setup
     drawer = KbarChartClient(
         chart_type=KbarChartType.PLOTLY,
         auto_save=True,
-        width=1200,
-        height=650
+        width=900,
+        height=1000
     )
 
     # Set product to generate filename
@@ -134,11 +135,17 @@ def test_sinopac_historical_kbars():
 
     # Get only 2026-01-07 data using [start, end) exclusive range
     # end='2026-01-08' will exclude 2026-01-08, getting only 2026-01-07
-    kbars = sinopac.get_kbars(product, start='2026-01-05', end='2026-01-10', interval='15m')
+    kbars = sinopac.get_kbars(product, start=start, end=end, interval=interval)
     print(f"Total kbars: {len(kbars)}")
+
+    first_run = True
     for kbar in kbars:
         drawer.append_kbar(kbar)
-        drawer.show_chart()
+
+        if first_run and on_ready:
+            on_ready(drawer.get_output_filename())
+            first_run = False
+
         sleep(0.5)
 
 
