@@ -385,6 +385,9 @@ class PlotlyKbarChart(KbarChartBase):
             else:
                 accent_color_rgb = '52, 152, 219'
 
+            # Auto refresh meta tag
+            extra_head = '<meta http-equiv="refresh" content="2">' if self.auto_save else ''
+
             full_html = template.format(
                 paper_bgcolor=theme_config['paper_bgcolor'],
                 font_color=theme_config['font_color'],
@@ -395,7 +398,8 @@ class PlotlyKbarChart(KbarChartBase):
                 chart_width=self.width,
                 chart_height=self.height,
                 chart_content=html_content,
-                theme_name=self.theme
+                theme_name=self.theme,
+                extra_head=extra_head
             )
 
             with open(abs_path, 'w', encoding='utf-8') as f:
