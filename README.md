@@ -37,12 +37,10 @@ echo "SECRET_KEY=${YOUR_SINOPAC_SECRET_KEY}" >> .env
 echo "CA_PATH=${YOUR_SINOPAC_CA_PATH}" >> .env
 echo "CA_PASSWORD=${YOUR_SINOPAC_CA_PASSWORD}" >> .env
 
-# For those who don't have a sinopac account
-# try to modify the code you want to run
-# modify the AccountClientType to "MOCK"
-# then you don't need to login.
+# For those who don't have a sinopac account but still want to try it out,
+# try adding --broker=mock to use the mock environment (no login required):
+python3 src/cjtrade/tests/cjtrade_shell.py --broker=mock # Will become main CLI tool in the future.
 
-# Run main testing script or small feature
-python3 src/cjtrade/tests/cjtrade_shell.py  # Will become main CLI tool in the future.
-python3 src/cjtrade/tests/test_cjtrade_shell_all_cmds.sh  # Test all CLI commands
+# For testing all the features in cjtrade shell
+bash src/cjtrade/tests/test_cjtrade_shell_all_cmds.sh  # Test all CLI commands
 ```

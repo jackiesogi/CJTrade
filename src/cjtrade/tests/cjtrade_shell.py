@@ -639,6 +639,14 @@ def process_command(cmd_line: str, client: AccountClient):
         print(f"Command failed: {e}")
         return False
 
+def print_supported_brokers():
+    print("Currently supported:")
+    print("  - sinopac (永豐金證券)")
+    print("  - mock (模擬環境)")
+    print("Coming soon:")
+    print("  - ibkr (盈透證券)")
+    print("  - cathay (國泰證券)")
+    print("  - mega (兆豐證券)")
 
 
 # ========== Interactive Shell ==========
@@ -681,12 +689,29 @@ def interactive_shell(client: AccountClient):
 
 if __name__ == "__main__":
     import sys
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-B", "--broker", type=str, required=True)
+    args, shell_argv = parser.parse_known_args()
+    # print(args)
 
     exit_code = 0  # Default success
 
-    # client = AccountClient(BrokerType.SINOPAC, **config)
-    real = AccountClient(BrokerType.SINOPAC, **config)
-    client = AccountClient(BrokerType.MOCK, real_account=real)
+    if args.broker == 'sinopac':
+        client = AccountClient(BrokerType.SINOPAC, **config)
+    elif args.broker == 'mock':
+        real = AccountClient(BrokerType.SINOPAC, **config)
+        client = AccountClient(BrokerType.MOCK, real_account=real)
+    elif args.broker in ['cathay', 'ibkr', 'mega']:
+        print(f"Broker '{args.broker}' is currently not supported (coming soon)")
+        print_supported_brokers()
+        exit(0)
+    else:
+        print(f"Broker '{args.broker}' will not be supported anytime soon")
+        print_supported_brokers()
+        exit(0)
+
     client.connect()
 
     try:
@@ -694,11 +719,11 @@ if __name__ == "__main__":
         register_commands()
 
         # Check if command line arguments are provided
-        if len(sys.argv) > 1:
+        if shell_argv:
             # Direct command execution mode
-            # sys.argv[1] is command, sys.argv[2:] are arguments
-            command = sys.argv[1]
-            args = sys.argv[2:]
+            # shell_argv[0] is command, shell_argv[1:] are its arguments
+            command = shell_argv[0]
+            args = shell_argv[1:]
 
             cmd_line = f"{command} {' '.join(args)}".strip()
             print(f"Executing: {cmd_line}")
