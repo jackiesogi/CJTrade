@@ -1,4 +1,5 @@
 from cjtrade.core.account_client import AccountClient
+from cjtrade.models.position import Position
 from cjtrade.models.quote import Snapshot
 from cjtrade.models.order import OrderAction
 from cjtrade.models.kbar import Kbar
@@ -57,12 +58,22 @@ class SimulationEnvironment:
         print(f"Simulation environment initialized with data starting from: {self._data_start_time}")
         print(f"(Using data from {days_back} days ago to ensure availability)")
 
+    def _mock_env_account_init(self):
+        self.account_balance = 100_000.0
+        self.positions = [
+            Position(symbol="2330", quantity=1000, avg_cost=600.0, current_price=610.0, market_value=610000.0, unrealized_pnl=10000.0),
+            Position(symbol="2357", quantity=2000, avg_cost=400.0, current_price=410.0, market_value=820000.0, unrealized_pnl=20000.0),
+        ]
+
     def start(self) -> bool:
         try:
             self._connected = True
 
             if self.real_account:
                 self._sync_with_real_account()
+            else:
+                print("---> This is a pure simulation environment. <---")
+                self._mock_env_account_init()
 
             print("Simulation environment started")
             return True

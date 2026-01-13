@@ -20,7 +20,7 @@ The `cjtrade` project provides a unified programming interface for developers to
 
 ### Core Abstraction
 
-Each broker implementation is a directory containing a standalone broker interface. All brokers inherit from the `BrokerInterface` base class, which defines the required methods for:
+Each broker implementation is a directory containing a standalone broker interface. All brokers inherit from the `BrokerAPIBase` base class, which defines the required methods for:
 
 - **Account Management**: Check balance, account status
 - **Market Data**: Real-time quotes, historical data, five-level order book
@@ -30,10 +30,10 @@ Each broker implementation is a directory containing a standalone broker interfa
 
 ### Interface Contract
 
-The `BrokerInterface` class in `broker_base.py` defines the contract that all broker implementations must follow:
+The `BrokerAPIBase` class in `broker_base.py` defines the contract that all broker implementations must follow:
 
 ```python
-class BrokerInterface:
+class BrokerAPIBase:
     def connect(self) -> bool
     def get_balance(self) -> dict
     def get_bid_ask(self, product: Product) -> dict
@@ -70,11 +70,11 @@ touch _internal_func.py    # Helper functions (if needed)
 
 ### Step 2: Implement the Interface
 
-Create your broker class inheriting from `BrokerInterface`:
+Create your broker class inheriting from `BrokerAPIBase`:
 
 ```python
 # your_broker.py
-class YourBroker(BrokerInterface):
+class YourBroker(BrokerAPIBase):
     def __init__(self, **config: Any):
         super().__init__(**config)
         self.api_key = config.get('api_key')
@@ -137,18 +137,18 @@ class BrokerType(Enum):
 2. **Update the dispatch logic** in `src/cjtrade/core/account_client.py`:
 
 ```python
-def _create_broker(self, broker_type: BrokerType, **config) -> BrokerInterface:
+def _create_broker(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
     """
     Factory method to create broker instances based on type.
     This dispatch system allows users to switch brokers without
     changing their strategy code.
     """
     if broker_type == BrokerType.SINOPAC:
-        from cjtrade.brokers.sinopac.sinopac import SinopacBroker
-        return SinopacBroker(**config)
+        from cjtrade.brokers.sinopac.sinopac import SinopacBrokerAPI
+        return SinopacBrokerAPI(**config)
     elif broker_type == BrokerType.MOCK:
-        from cjtrade.brokers.mock.mock_broker import MockBroker
-        return MockBroker(**config)
+        from cjtrade.brokers.mock.mock_broker import MockBrokerAPI
+        return MockBrokerAPI(**config)
     elif broker_type == BrokerType.YOUR_BROKER:
         from cjtrade.brokers.your_broker.your_broker import YourBroker
         return YourBroker(**config)

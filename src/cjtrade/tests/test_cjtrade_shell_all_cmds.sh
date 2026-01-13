@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=mock"
+CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=sinopac"
+# CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=mock"
+# CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=realistic"
+
 WAIT="&& sleep 1"
 __() {
     eval "$CMD $1 $WAIT"

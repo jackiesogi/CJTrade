@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from dotenv import load_dotenv
 from cjtrade.analytics.informational.news_client import *
+from cjtrade.chart.kbar_client import KbarChartClient, KbarChartType
 from cjtrade.tests.test_basic_flow import *
 from cjtrade.analytics.technical.strategies.fixed_price import *
 from cjtrade.analytics.technical.models import *
@@ -123,7 +124,7 @@ class SellCommand(CommandBase):
         symbol = args[0]
         price = float(args[1])
         quantity = int(args[2])
-        intraday_odd = bool(int(args[3])) if len(args) > 3 else False
+        intraday_odd = bool(int(args[3])) if len(args) > 3 else True
 
         print(f"Selling {quantity} shares of {symbol} at {price} (intraday_odd={intraday_odd})")
         order_result = client.sell_stock(symbol, quantity=quantity, price=price, intraday_odd=intraday_odd)
@@ -204,49 +205,59 @@ class ListPositionsCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         positions = client.get_positions()
-        df = pd.DataFrame([p.__dict__ for p in positions])
 
-        # Print DataFrame with colored unrealized_pnl values
-        if not df.empty and 'unrealized_pnl' in df.columns:
-            # Get the formatted string without colors
-            table_str = df.to_string()
-            lines = table_str.split('\n')
+        if positions:
+            df = pd.DataFrame([p.__dict__ for p in positions])
 
-            # Print header (first line)
-            print(lines[0])
+            # Print DataFrame with colored unrealized_pnl values
+            if 'unrealized_pnl' in df.columns:
+                # Get the formatted string without colors
+                table_str = df.to_string()
+                lines = table_str.split('\n')
 
-            # Print data rows with colored unrealized_pnl
-            for i, line in enumerate(lines[1:], start=0):
-                if i < len(df):
-                    # Get the unrealized_pnl value for this row
-                    pnl_value = df.iloc[i]['unrealized_pnl']
-                    pnl_str = f"{pnl_value:.1f}"  # Match the format pandas uses
+                # Print header (first line)
+                print(lines[0])
 
-                    # Apply color to the pnl value in the line
-                    if pnl_value > 0:
-                        colored_line = line.replace(pnl_str, f"\033[91m{pnl_str}\033[0m", 1)
-                    elif pnl_value < 0:
-                        colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
+                # Print data rows with colored unrealized_pnl
+                for i, line in enumerate(lines[1:], start=0):
+                    if i < len(df):
+                        # Get the unrealized_pnl value for this row
+                        pnl_value = df.iloc[i]['unrealized_pnl']
+                        pnl_str = f"{pnl_value:.1f}"  # Match the format pandas uses
+
+                        # Apply color to the pnl value in the line
+                        if pnl_value > 0:
+                            colored_line = line.replace(pnl_str, f"\033[91m{pnl_str}\033[0m", 1)
+                        elif pnl_value < 0:
+                            colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
+                        else:
+                            colored_line = line
+
+                        print(colored_line)
                     else:
-                        colored_line = line
-
-                    print(colored_line)
-                else:
-                    print(line)
-        else:
-            print(df)
-
-        if not df.empty and 'unrealized_pnl' in df.columns:
-            total_cost = (df['avg_cost'] * df['quantity']).sum()
-            total_val = df['market_value'].sum()
-            total_pnl = df['unrealized_pnl'].sum()
-            pnl_pct = (total_pnl / total_cost * 100) if total_cost != 0 else 0.0
-            print(f"\nTotal Cost: {total_cost:,.3f}")
-            print(f"Market Value: {total_val:,.3f}")
-            if pnl_pct >= 0:
-                print(f"Total Unrealized PnL: \033[91m{total_pnl:,.3f} (+{pnl_pct:.2f}%)\033[0m")
+                        print(line)
             else:
-                print(f"Total Unrealized PnL: \033[92m{total_pnl:,.3f} ({pnl_pct:.2f}%)\033[0m")
+                print(df)
+
+            # Print summary statistics
+            if 'unrealized_pnl' in df.columns:
+                total_cost = (df['avg_cost'] * df['quantity']).sum()
+                total_val = df['market_value'].sum()
+                total_pnl = df['unrealized_pnl'].sum()
+                pnl_pct = (total_pnl / total_cost * 100) if total_cost != 0 else 0.0
+                print(f"\nTotal Cost: {total_cost:,.3f}")
+                print(f"Market Value: {total_val:,.3f}")
+                if pnl_pct >= 0:
+                    print(f"Total Unrealized PnL: \033[91m{total_pnl:,.3f} (+{pnl_pct:.2f}%)\033[0m")
+                else:
+                    print(f"Total Unrealized PnL: \033[92m{total_pnl:,.3f} ({pnl_pct:.2f}%)\033[0m")
+        else:
+            # No positions - display empty table with header
+            columns = ['symbol', 'quantity', 'avg_cost', 'current_price', 'market_value', 'unrealized_pnl']
+            header = " | ".join(columns)
+            print(header)
+            print("-" * len(header))
+            print("  (You have no position, purchase stock using 'buy' command)")
 
 class RunAanalyticsCommand(CommandBase):
     def __init__(self):
@@ -404,26 +415,35 @@ class CancelAllCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
-            api = client.broker.api
-            api.update_status()
-            trades = api.list_trades()
+            # Use unified broker API interface
+            orders = client.list_orders()
 
-            print(f"{len(trades)} entries found.")
+            print(f"{len(orders)} entries found.")
 
             cancelled_count = 0
-            for i, trade in enumerate(trades):
+            for i, order in enumerate(orders):
                 try:
-                    status = trade.status.status.value
-                    print(f"\nProcessing {i+1}/{len(trades)}")
-                    print(f"  ID: {trade.status.id}")
-                    print(f"  Product: {getattr(trade.contract, 'code', 'N/A')}")
+                    order_id = order.get('id') or order.get('ordno')
+                    status = order.get('status', 'UNKNOWN')
+                    symbol = order.get('symbol', 'N/A')
+
+                    print(f"\nProcessing {i+1}/{len(orders)}")
+                    print(f"  ID: {order_id}")
+                    print(f"  Symbol: {symbol}")
                     print(f"  Status: {status}")
 
-                    if status in ['PreSubmitted', 'Submitted', 'PartialFilled']:
+                    # Cancel orders that are not yet filled or already cancelled
+                    # OrderStatus: STAGED, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
+                    # OrderStatus: FILLED, CANCELLED, REJECTED cannot be cancelled
+                    if status in ['STAGED', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
+                                 'PreSubmitted', 'Submitted', 'PartialFilled']:
                         print(f"  → Trying to cancel...")
-                        result = api.cancel_order(trade)
-                        print(f"  → Cancel result: {result}")
-                        cancelled_count += 1
+                        result = client.cancel_order(order_id)
+                        if result.status == OrderStatus.CANCELLED:
+                            print(f"  → Cancelled successfully")
+                            cancelled_count += 1
+                        else:
+                            print(f"  → Cancel failed: {result.message}")
                     else:
                         print(f"  → Skipping (Status: {status})")
 
@@ -520,6 +540,8 @@ class ExitCommand(CommandBase):
         exit_flag = True
 
 
+# Note: When using PURE mock client, the kbar data is from yfinance,
+# which doesn't provide small interval kbars(1m/5m/15m/30m) if the date is over 1 month.
 class KbarAggregationCommand(CommandBase):
     def __init__(self):
         super().__init__()
@@ -528,7 +550,6 @@ class KbarAggregationCommand(CommandBase):
         self.description = "Replay historical K-bar and do aggregation"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        from cjtrade.chart.test_kbar_chart import test_sinopac_historical_kbars
         import webbrowser
         import os
 
@@ -564,9 +585,39 @@ class KbarAggregationCommand(CommandBase):
                 print(f"Opening chart: {filename}")
                 webbrowser.open(f"file://{os.path.abspath(filename)}")
 
-        test_sinopac_historical_kbars(on_ready=on_ready, symbol=symbol,
+        get_historical_kbars_helper(client, on_ready=on_ready, symbol=symbol,
                                       start=start_date, end=end_date, interval=interval)
 
+
+def get_historical_kbars_helper(client: AccountClient, on_ready=None, symbol="2308",
+                                  start="2026-01-07", end="2026-01-08", interval="15m") -> str:
+    product = Product(symbol=symbol)
+    # Drawer setup
+    drawer = KbarChartClient(
+        chart_type=KbarChartType.PLOTLY,
+        auto_save=True,
+        width=1200,
+        height=800
+    )
+
+    # Set product to generate filename
+    drawer.set_product(product)
+    drawer.set_theme('nordic')
+
+    # Get only 2026-01-07 data using [start, end) exclusive range
+    # end='2026-01-08' will exclude 2026-01-08, getting only 2026-01-07
+    kbars = client.get_kbars(product, start=start, end=end, interval=interval)
+    print(f"Total kbars: {len(kbars)}")
+
+    first_run = True
+    for kbar in kbars:
+        drawer.append_kbar(kbar)
+
+        if first_run and on_ready:
+            on_ready(drawer.get_output_filename())
+            first_run = False
+
+        sleep(0.3)
 
 # ========== Command Registry ==========
 command_registry: dict[str, CommandBase] = {}
@@ -701,6 +752,8 @@ if __name__ == "__main__":
     if args.broker == 'sinopac':
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
+        client = AccountClient(BrokerType.MOCK)
+    elif args.broker == 'realistic':
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.MOCK, real_account=real)
     elif args.broker in ['cathay', 'ibkr', 'mega']:

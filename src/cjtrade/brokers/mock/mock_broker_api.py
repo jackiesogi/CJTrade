@@ -3,30 +3,32 @@ import time
 import random
 from datetime import datetime
 
-from cjtrade.brokers.broker_base import BrokerInterface
+from cjtrade.brokers.base_broker_api import BrokerAPIBase
 from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.kbar import *
 from cjtrade.core.account_client import AccountClient
-from ._simulation_env import SimulationEnvironment
+# from ._simulation_env import SimulationEnvironment
 from cjtrade.models.rank_type import RankType
-from ._simulation_env import SimulationEnvironment
+from ._mock_broker_backend import MockBrokerBackend
 
-
-class MockBroker(BrokerInterface):
+# MockBrokerAPI will not forward `place_order()` call to the real broker,
+# but will fetch data from the real broker if `real_account` is provided.
+# In other words, `real_account` is read-only.
+class MockBrokerAPI(BrokerAPIBase):
     def __init__(self, **config: Any):
         super().__init__(**config)
 
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
-        self._simulation = SimulationEnvironment(real_account=self.real_account)
+        self.api = MockBrokerBackend(real_account=self.real_account)
         self._connected = False
 
     def connect(self) -> bool:
         """MockBroker's connection simply starts the simulation environment."""
         try:
-            self._simulation.start()
+            self.api.login()
             self._connected = True
             print("MockBroker connected successfully")
             return True
@@ -38,7 +40,7 @@ class MockBroker(BrokerInterface):
     def disconnect(self) -> None:
         if self._connected:
             try:
-                self._simulation.stop()
+                self.api.logout()
                 print("MockBroker disconnected")
             except Exception as e:
                 print(f"Error during disconnect: {e}")
@@ -49,16 +51,17 @@ class MockBroker(BrokerInterface):
         return self._connected
 
     def get_positions(self) -> List[Position]:
-        return self._simulation.positions
+        return self.api.list_positions()
 
     def get_balance(self) -> float:
-        return self._simulation.get_account_balance()
+        return self.api.account_balance()
 
+    # TODO: Move the logic to MockBackend to simulate bid-ask (with time progression)
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        snapshot = self._simulation.get_dummy_snapshot(product.symbol)
+        snapshot = self.api.snapshot(product.symbol)
         base_price = snapshot.close if snapshot else 100.0
 
         return BidAsk(
@@ -77,7 +80,7 @@ class MockBroker(BrokerInterface):
 
         snapshots = []
         for product in products:
-            snapshot = self._simulation.get_dummy_snapshot(product.symbol)
+            snapshot = self.api.snapshot(product.symbol)
             if snapshot:
                 snapshots.append(snapshot)
 
@@ -92,16 +95,16 @@ class MockBroker(BrokerInterface):
 
         if interval in yf_supported:
             # Direct fetch from yfinance
-            return self._simulation.get_dummy_kbars(product.symbol, start, end, interval)
+            return self.api.kbars(product.symbol, start, end, interval)
         else:
             # Use internal aggregation for unsupported intervals
-            kbars_1m = self._simulation.get_dummy_kbars(product.symbol, start, end, "1m")
+            kbars_1m = self.api.kbars(product.symbol, start, end, "1m")
 
             if not kbars_1m:
                 return []
 
             try:
-                return self._simulation._aggregate_kbars_internal(kbars_1m, interval)
+                return self.api._aggregate_kbars_internal(kbars_1m, interval)
             except ValueError as e:
                 raise ValueError(f"Mock broker interval '{interval}' not supported: {e}") from e
 
@@ -112,20 +115,13 @@ class MockBroker(BrokerInterface):
         # Caller should handle None return value
         return None
 
+    # Send place_order to the MockBackend to simulate order execution
     def place_order(self, order: Order) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        timestamp = int(time.time() * 1000)
-        random_num = random.randint(1000, 9999)
-        order_id = f"mock_order_{timestamp}_{random_num}"
-
-        return OrderResult(
-            status=OrderStatus.ON_THE_WAY,
-            message="Mock order placed successfully",
-            metadata={},
-            linked_order=order.id
-        )
+        # Call backend to record the order
+        return self.api.place_order(order)
 
     def cancel_order(self, order_id: str) -> OrderResult:
         # Mock
@@ -136,21 +132,21 @@ class MockBroker(BrokerInterface):
             message="Mock order cancelled successfully"
         )
 
-    def commit_order(self) -> OrderResult:
-        return OrderResult(
-            status=OrderStatus.ON_THE_WAY,
-            linked_order="0xDEADF00D",  # TODO: implement a id-obj mapping to be able to track
-            metadata={},
-            message="Mock order committed successfully"
-        )
+    def commit_order(self, order_id: str) -> OrderResult:
+        # Call backend to commit the order
+        return self.api.commit_order(order_id)
+
+    def cancel_order(self, order_id: str) -> OrderResult:
+        # Call backend to cancel the order
+        return self.api.cancel_order(order_id)
 
     def list_orders(self) -> List[Dict]:
-        return []
+        return self.api.list_trades()
 
     def get_broker_name(self) -> str:
         return "mock_securities"
 
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -167,9 +163,10 @@ class MockBroker(BrokerInterface):
             price=price
         )
 
-        return self.place_order(order)
+        place_result = self.place_order(order)
+        return self.commit_order(place_result.linked_order)
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -186,4 +183,5 @@ class MockBroker(BrokerInterface):
             price=price
         )
 
-        return self.place_order(order)
+        place_result = self.place_order(order)
+        return self.commit_order(place_result.linked_order)

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import math
 
-from cjtrade.brokers.broker_base import *
+from cjtrade.brokers.base_broker_api import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
@@ -17,7 +17,7 @@ from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac
 # between cj Order IDs and sj Order objects to track order status
 cj_sj_order_map = {}
 
-class SinopacBroker(BrokerInterface):
+class SinopacBrokerAPI(BrokerAPIBase):
     def __init__(self, **config: Any):
         super().__init__(**config)
 
@@ -25,13 +25,14 @@ class SinopacBroker(BrokerInterface):
         required_params = ['api_key', 'secret_key', 'ca_path', 'ca_passwd']
         for param in required_params:
             if param not in config:
-                raise ValueError(f"SinopacBroker needs: {param}")
+                raise ValueError(f"SinopacBrokerAPI needs: {param}")
 
         self.api_key = config['api_key']
         self.secret_key = config['secret_key']
         self.ca_path = config['ca_path']
         self.ca_password = config['ca_passwd']
         self.simulation = config.get('simulation', True)
+        self._connected = False
 
         self.api = sj.Shioaji(simulation=self.simulation)
 
@@ -255,12 +256,54 @@ class SinopacBroker(BrokerInterface):
     def cancel_order(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
-        sinopac_trade = cj_sj_order_map.get(order_id)
-        self.api.cancel_order(sinopac_trade)
-        return _from_sinopac_result(sinopac_trade)
+
+        try:
+            # Update status to get latest order information
+            self.api.update_status(self.api.stock_account)
+
+            # Try to get from our mapping first
+            sinopac_trade = cj_sj_order_map.get(order_id)
+
+            # If not in our mapping, search in list_trades
+            if sinopac_trade is None:
+                trades = self.api.list_trades()
+                for trade in trades:
+                    if hasattr(trade, 'status') and hasattr(trade.status, 'id'):
+                        if trade.status.id == order_id:
+                            sinopac_trade = trade
+                            # Update the mapping for future use
+                            cj_sj_order_map[order_id] = trade
+                            break
+
+            # If still not found, return error
+            if sinopac_trade is None:
+                return OrderResult(
+                    status=OrderStatus.FAILED,
+                    message=f"Order {order_id} not found",
+                    metadata={"broker": "sinopac"},
+                    linked_order=order_id
+                )
+
+            # Cancel the order
+            self.api.cancel_order(sinopac_trade)
+
+            # Update status again to get the cancelled status
+            self.api.update_status(self.api.stock_account)
+
+            return _from_sinopac_result(sinopac_trade)
+
+        except Exception as e:
+            return OrderResult(
+                status=OrderStatus.FAILED,
+                message=f"Failed to cancel order: {str(e)}",
+                metadata={"broker": "sinopac", "error": str(e)},
+                linked_order=order_id
+            )
+
 
 
     # TODO: Re-Design the `Order` and `OrderResult`
+    # TODO: We commit all placed orders in Sinopac at once but only return one result here???
     def commit_order(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -324,7 +367,7 @@ class SinopacBroker(BrokerInterface):
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
     # Simple API with default config
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,  # Assuming TSE for simplicity
@@ -346,7 +389,7 @@ class SinopacBroker(BrokerInterface):
         return self.commit_order(temp.linked_order)
 
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,

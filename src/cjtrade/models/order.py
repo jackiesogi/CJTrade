@@ -27,11 +27,11 @@ class OrderLot(str, Enum):
 
 # TODO: more useful and descriptive status set
 class OrderStatus(str, Enum):
-    STAGED = "STAGED"
-    ON_THE_WAY = "ON_THE_WAY"
-    COMMITTED = "COMMITTED"
-    FILLED = "FILLED"
-    PARTIAL = "PARTIAL"
+    STAGED = "STAGED"         # PendingSubmit
+    ON_THE_WAY = "ON_THE_WAY" # PreSubmitted
+    COMMITTED = "COMMITTED"   # Submitted
+    FILLED = "FILLED"         # Filled
+    PARTIAL = "PARTIAL"       # PartialFilled
     CANCELLED = "CANCELLED"
     REJECTED = "REJECTED"
     UNKNOWN = "UNKNOWN"

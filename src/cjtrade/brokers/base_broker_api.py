@@ -10,7 +10,7 @@ from cjtrade.models.kbar import *
 # connect / disconnect / is_connected /
 # get_positions / get_balance / get_quotes /
 # place_order / get_broker_name
-class BrokerInterface(ABC):
+class BrokerAPIBase(ABC):
     """
     An unified interface for different brokers.
     All broker implementations must inherit from
@@ -90,6 +90,10 @@ class BrokerInterface(ABC):
         pass
 
     @abstractmethod
+    def cancel_order(self, order_id: str) -> OrderResult:
+        pass
+
+    @abstractmethod
     def list_orders(self) -> List[Dict]:
         pass
 
@@ -99,9 +103,9 @@ class BrokerInterface(ABC):
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
     @abstractmethod
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         pass
 
     @abstractmethod
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = False) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         pass
