@@ -42,6 +42,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def connect(self) -> bool:
+        if self._connected:  # Avoid reconnecting
+            return True
         try:
             # self._load_trade_history()
 

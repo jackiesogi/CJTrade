@@ -778,8 +778,9 @@ if __name__ == "__main__":
         config["speed"] = 120.0  # 120x speed for mock broker
         client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
+        config["speed"] = 60.0  # 60x speed for mock broker
         real = AccountClient(BrokerType.SINOPAC, **config)
-        client = AccountClient(BrokerType.MOCK, real_account=real)
+        client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         print(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

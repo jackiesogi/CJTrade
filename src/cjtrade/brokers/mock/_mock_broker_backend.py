@@ -2,6 +2,7 @@ import os
 from enum import Enum
 from cjtrade.core.account_client import AccountClient
 from cjtrade.models.position import Position
+from cjtrade.models.product import Product
 from cjtrade.models.quote import Snapshot
 from cjtrade.models.order import Order, OrderAction, OrderResult, OrderStatus
 from cjtrade.models.kbar import Kbar
@@ -60,12 +61,13 @@ class MockBackend_AccountState:
 # Acts as HistoricalPriceEngine - replays historical market data
 # Future: Can create SyntheticPriceEngine as alternative implementation
 class MockBackend_MockMarket:
-    def __init__(self):
+    def __init__(self, real_account: AccountClient = None):
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
         self.real_init_time = 0       # real_current_time - real_init_time = time_offset
         self.mock_init_time = 0       # mock_init_time + time_offset = mock_current_time
         self.start_date = 0
+        self.real_account = real_account if real_account else None
 
     def set_playback_speed(self, speed: float):
         """
@@ -174,54 +176,115 @@ class MockBackend_MockMarket:
         return mock_current_time
 
     def create_historical_market(self, symbol: str):
-        # Check if data already loaded
+        """Load historical market data for a symbol.
+
+        Data source priority:
+        1. Real account (if available) - via get_kbars()
+        2. Yahoo Finance - as fallback
+
+        Args:
+            symbol: Stock symbol to load data for
+        """
+        # Early return if data already loaded
         if symbol in self.historical_data:
             return
 
-        print(f"Loading historical data for {symbol}...")
         NUM_DAYS_PRELOAD = 5
+        end_date = self.start_date + datetime.timedelta(days=NUM_DAYS_PRELOAD)
+
+        # Load historical data from real account for better data quality
+        if self.real_account and self.real_account.is_connected():
+            self._load_from_real_account(symbol, end_date)
+        else:
+            self._load_from_yahoo_finance(symbol, end_date)
+
+    def _load_from_real_account(self, symbol: str, end_date: datetime.datetime):
+        """Load historical data from real broker account."""
+        print(f"Loading historical data for {symbol}... (source: {self.real_account.get_broker_name()})")
+        try:
+            kbars = self.real_account.get_kbars(
+                Product(symbol=symbol),
+                start=self.start_date.strftime("%Y-%m-%d"),
+                end=end_date.strftime("%Y-%m-%d"),
+                interval="1m"
+            )
+
+            # Convert kbars to DataFrame
+            df = pd.DataFrame([{
+                'Open': kbar.open,
+                'High': kbar.high,
+                'Low': kbar.low,
+                'Close': kbar.close,
+                'Volume': kbar.volume
+            } for kbar in kbars], index=[kbar.timestamp for kbar in kbars])
+
+            if not df.empty:
+                self.historical_data[symbol] = {
+                    'data': df,
+                    'timestamps': df.index.to_numpy(),
+                }
+                print(f"Loaded {len(df)} data points for {symbol} from real account")
+            else:
+                self._store_empty_data(symbol, "No data from real account")
+
+        except Exception as e:
+            print(f"Error loading data from real account for {symbol}: {e}")
+            self._store_empty_data(symbol, str(e))
+
+    def _load_from_yahoo_finance(self, symbol: str, end_date: datetime.datetime):
+        """Load historical data from Yahoo Finance."""
+        print(f"Loading historical data for {symbol}... (source: yfinance)")
         yf_symbol = f"{symbol}.TW"
-        end_date = self.start_date + datetime.timedelta(days=NUM_DAYS_PRELOAD)  # preload 1 day of data
 
         try:
-            data = yf.download(yf_symbol,
-                             start=self.start_date.strftime("%Y-%m-%d"),
-                             end=end_date.strftime("%Y-%m-%d"),
-                             interval="1m",
-                             auto_adjust=True,
-                             progress=False)
+            data = yf.download(
+                yf_symbol,
+                start=self.start_date.strftime("%Y-%m-%d"),
+                end=end_date.strftime("%Y-%m-%d"),
+                interval="1m",
+                auto_adjust=True,
+                progress=False
+            )
 
-            if not data.empty:
-                if not isinstance(data.index, pd.DatetimeIndex):
-                    data.index = pd.to_datetime(data.index)
+            if data.empty:
+                self._store_empty_data(symbol, "No data from Yahoo Finance")
+                return
 
-                if data.index.tz is not None:
-                    if str(data.index.tz) in ['UTC', 'UTC+00:00']:
-                        import pytz
-                        taiwan_tz = pytz.timezone('Asia/Taipei')
-                        data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-                    else:
-                        data.index = data.index.tz_localize(None)
+            # Normalize timezone
+            data = self._normalize_timezone(data)
 
-                self.historical_data[symbol] = {
-                    'data': data,
-                    'timestamps': data.index.to_numpy(),  # convert to numpy array for performance
-                }
-
-                print(f"Loaded {len(data)} data points for {symbol}")
-            else:
-                print(f"No data available for {symbol}, will use fallback")
-                self.historical_data[symbol] = {
-                    'data': pd.DataFrame(),
-                    'timestamps': None
-                }
+            self.historical_data[symbol] = {
+                'data': data,
+                'timestamps': data.index.to_numpy(),
+            }
+            print(f"Loaded {len(data)} data points for {symbol}")
 
         except Exception as e:
             print(f"Error loading data for {symbol}: {e}")
-            self.historical_data[symbol] = {
-                'data': pd.DataFrame(),
-                'timestamps': None
-            }
+            self._store_empty_data(symbol, str(e))
+
+    def _normalize_timezone(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Normalize DataFrame timezone to naive Taiwan time."""
+        if not isinstance(data.index, pd.DatetimeIndex):
+            data.index = pd.to_datetime(data.index)
+
+        if data.index.tz is not None:
+            if str(data.index.tz) in ['UTC', 'UTC+00:00']:
+                import pytz
+                taiwan_tz = pytz.timezone('Asia/Taipei')
+                data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
+            else:
+                data.index = data.index.tz_localize(None)
+
+        return data
+
+    def _store_empty_data(self, symbol: str, reason: str):
+        """Store empty data placeholder with consistent structure."""
+        print(f"Using empty data for {symbol}: {reason}")
+        self.historical_data[symbol] = {
+            'data': pd.DataFrame(),
+            'timestamps': None
+        }
 
 
 # Backend = Maintain Account State + Provide Market Data
@@ -234,7 +297,7 @@ class MockBrokerBackend:
 
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
-            self.market = MockBackend_MockMarket()
+            self.market = MockBackend_MockMarket(real_account=self.real_account)
             self.market.set_historical_time(datetime.datetime.now(), days_back=random.randint(1, 20))
             self.market.set_playback_speed(playback_speed)
         else:
@@ -396,7 +459,11 @@ class MockBrokerBackend:
     def snapshot(self, symbol: str) -> Snapshot:
         # Load data if not already loaded
         if symbol not in self.market.historical_data:
+            if self.real_account and not self.real_account.is_connected():
+                self.real_account.connect()
             self.market.create_historical_market(symbol)
+            if self.real_account:
+                self.real_account.disconnect()
 
         time = self.market.get_market_time()
         real_current_time = time['real_current_time']
