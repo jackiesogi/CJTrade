@@ -142,9 +142,18 @@ class SnapshotCommand(CommandBase):
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         products = [Product(symbol=symbol) for symbol in args]
         snapshots = client.get_snapshots(products)
+
+        # Create DataFrame and reorder columns to highlight close price
         df = pd.DataFrame([s.__dict__ for s in snapshots])
         df = df.drop(columns=['exchange'], errors='ignore')
         df = df.drop(columns=['additional_note'], errors='ignore')
+
+        # Reorder columns: symbol, timestamp, close, open, high, low, volume, ...
+        if 'close' in df.columns:
+            cols = ['symbol', 'timestamp', 'close', 'open', 'high', 'low', 'volume']
+            other_cols = [c for c in df.columns if c not in cols]
+            df = df[[c for c in cols if c in df.columns] + other_cols]
+
         print(df)
 
 
@@ -223,15 +232,27 @@ class ListPositionsCommand(CommandBase):
                     if i < len(df):
                         # Get the unrealized_pnl value for this row
                         pnl_value = df.iloc[i]['unrealized_pnl']
-                        pnl_str = f"{pnl_value:.1f}"  # Match the format pandas uses
 
-                        # Apply color to the pnl value in the line
-                        if pnl_value > 0:
-                            colored_line = line.replace(pnl_str, f"\033[91m{pnl_str}\033[0m", 1)
-                        elif pnl_value < 0:
-                            colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
-                        else:
-                            colored_line = line
+                        # Find the pnl string in the line (handle various float formats)
+                        import re
+                        # Match the number with optional sign, decimals
+                        pnl_pattern = re.escape(f"{pnl_value:.1f}")
+                        # Also try matching with more precision in case pandas formats differently
+                        pnl_str_alternatives = [
+                            f"{pnl_value:.1f}",
+                            f"{pnl_value:.2f}",
+                            f"{pnl_value:.0f}",
+                        ]
+
+                        colored_line = line
+                        for pnl_str in pnl_str_alternatives:
+                            if pnl_str in line:
+                                # Apply color to the pnl value in the line
+                                if pnl_value > 0:
+                                    colored_line = line.replace(pnl_str, f"\033[91m{pnl_str}\033[0m", 1)
+                                elif pnl_value < 0:
+                                    colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
+                                break
 
                         print(colored_line)
                     else:
@@ -477,21 +498,22 @@ class CalendarCommand(CommandBase):
         self.optional_params = ["year"]
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        # yellow
-        print("\033[93m")
-        if os.name == 'nt':
-            subprocess.run(['date', '/T'])
-        else:
-            subprocess.run(['date'])
-        print("\033[0m")
-
         if len(args) == 1:
-            exe_arr = ['cal', args[0]]
+            subprocess.run(['ncal', '-b', args[0]])
+            return
+
+        suffix = ""
+        if client.get_broker_name() == "mock":
+            suffix = " (mock time)"
+            ts = client.broker_api.get_system_time()  # Call Mock-specific method
         else:
-            exe_arr = ['cal']
+            ts = datetime.now()
 
-        subprocess.run(exe_arr)
-
+        print("Current datetime" + suffix, end="")
+        print("\033[93m")  # yellow
+        subprocess.run(['date', '-d' , '@' + str(int(ts.timestamp()))])
+        print("\033[0m")
+        subprocess.run(['ncal', '-b', '-H', ts.strftime('%Y-%m-%d'), str(ts.month), str(ts.year)])
 
 
 class InfoCommand(CommandBase):
@@ -753,7 +775,8 @@ if __name__ == "__main__":
     if args.broker == 'sinopac':
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
-        client = AccountClient(BrokerType.MOCK)
+        config["speed"] = 120.0  # 120x speed for mock broker
+        client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.MOCK, real_account=real)

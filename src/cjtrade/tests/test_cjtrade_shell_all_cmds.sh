@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=sinopac"
-# CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=mock"
+# CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=sinopac"
+CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=mock"
 # CMD="uv run python src/cjtrade/tests/cjtrade_shell.py --broker=realistic"
 
 WAIT="&& sleep 1"
@@ -33,6 +33,10 @@ __ "buy 0050 20.25 80" || exit_failed "buy command"
 echo "Testing sell command..."
 __ "sell 0050 30.65 120" || exit_failed "sell command"
 
+# List orders
+echo "Testing lsodr command..."
+__ "lsodr" || exit_failed "lsodr command"
+
 # ohlcv 2330
 echo "Testing ohlcv command..."
 __ "ohlcv 2330" || exit_failed "ohlcv command"
@@ -41,9 +45,9 @@ __ "ohlcv 2330" || exit_failed "ohlcv command"
 echo "Testing bidask command..."
 __ "bidask 2330" || exit_failed "bidask command"
 
-# List orders
-echo "Testing lsodr command..."
-__ "lsodr" || exit_failed "lsodr command"
+# kbar 2330
+echo "Testing kbars command..."
+__ "kbars 2330" || exit_failed "kbar command"
 
 # List positions
 echo "Testing lspos command..."

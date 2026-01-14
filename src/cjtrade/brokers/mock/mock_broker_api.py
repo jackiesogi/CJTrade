@@ -22,7 +22,8 @@ class MockBrokerAPI(BrokerAPIBase):
         super().__init__(**config)
 
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
-        self.api = MockBrokerBackend(real_account=self.real_account)
+        self.mock_playback_speed = config.get('speed', 1.0)
+        self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed)
         self._connected = False
 
     def connect(self) -> bool:
@@ -115,13 +116,21 @@ class MockBrokerAPI(BrokerAPIBase):
         # Caller should handle None return value
         return None
 
-    # Send place_order to the MockBackend to simulate order execution
+    # TODO: Send place_order to the MockBackend to simulate order execution
     def place_order(self, order: Order) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        # Call backend to record the order
-        return self.api.place_order(order)
+        timestamp = int(time.time() * 1000)
+        random_num = random.randint(1000, 9999)
+        order_id = f"mock_order_{timestamp}_{random_num}"
+
+        return OrderResult(
+            status=OrderStatus.ON_THE_WAY,
+            message="Mock order placed successfully",
+            metadata={},
+            linked_order=order.id
+        )
 
     def cancel_order(self, order_id: str) -> OrderResult:
         # Mock
@@ -133,18 +142,22 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
     def commit_order(self, order_id: str) -> OrderResult:
-        # Call backend to commit the order
-        return self.api.commit_order(order_id)
-
-    def cancel_order(self, order_id: str) -> OrderResult:
-        # Call backend to cancel the order
-        return self.api.cancel_order(order_id)
+        return OrderResult(
+            status=OrderStatus.ON_THE_WAY,
+            # linked_order="0xDEADF00D",
+            linked_order=order_id,  # TODO: implement a id-obj mapping to be able to track
+            metadata={},
+            message="Mock order committed successfully"
+        )
 
     def list_orders(self) -> List[Dict]:
         return self.api.list_trades()
 
     def get_broker_name(self) -> str:
-        return "mock_securities"
+        return "mock"
+
+    def get_system_time(self) -> datetime:
+        return self.api.market.get_market_time()['mock_current_time']
 
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
