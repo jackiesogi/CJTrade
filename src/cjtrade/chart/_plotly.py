@@ -92,6 +92,8 @@ class PlotlyKbarChart(KbarChartBase):
         self.fig = None
         self.output_filename = None
         self.theme = "nordic"
+        # indicators: list of dicts {name, values, color, mode, row, trace_index}
+        self.indicators = []
 
     def set_theme(self, theme: str) -> None:
         valid_themes = list(CHART_THEMES.keys())
@@ -259,6 +261,22 @@ class PlotlyKbarChart(KbarChartBase):
         self.fig.add_trace(candlestick, row=1, col=1)
         self.fig.add_trace(volume_bar, row=2, col=1)
 
+        # Add any registered indicators as Scatter traces (on price subplot by default)
+        for ind in self.indicators:
+            aligned = self._align_values(ind['values'])
+            scatter = go.Scatter(
+                x=x_indices,
+                y=aligned,
+                name=ind.get('name', 'indicator'),
+                mode=ind.get('mode', 'lines'),
+                line=dict(color=ind.get('color', 'orange')),
+                showlegend=True
+            )
+            # add to the same price subplot
+            self.fig.add_trace(scatter, row=ind.get('row', 1), col=1)
+            # store trace index for later updates
+            ind['trace_index'] = len(self.fig.data) - 1
+
         self.fig.update_layout(
             width=self.width,
             height=self.height,
@@ -375,6 +393,20 @@ class PlotlyKbarChart(KbarChartBase):
 
         return x_indices, tick_vals, tick_texts
 
+    def _align_values(self, values):
+        """Align a values list to the kbar_data length by padding the left with None if shorter.
+        If longer, it will be truncated to match the kbar_data length.
+        """
+        if not hasattr(self, 'kbar_data') or not self.kbar_data:
+            return []
+        n = len(self.kbar_data)
+        vals = list(values) if values is not None else []
+        if len(vals) >= n:
+            return vals[-n:]
+        # pad front with None
+        pad = [None] * (n - len(vals))
+        return pad + vals
+
     def _update_chart_data(self) -> None:
         if not self.fig:
             self._create_chart()
@@ -397,6 +429,17 @@ class PlotlyKbarChart(KbarChartBase):
 
             self.fig.data[1].x = x_indices
             self.fig.data[1].y = volumes
+
+            # update indicator traces if any
+            for ind in self.indicators:
+                ti = ind.get('trace_index')
+                # If trace index not assigned (e.g., indicator added after _create_chart), skip
+                if ti is None or ti >= len(self.fig.data):
+                    continue
+                aligned = self._align_values(ind['values'])
+                self.fig.data[ti].x = x_indices
+                self.fig.data[ti].y = aligned
+
 
             # Update x-axis ticks
             self.fig.update_xaxes(
