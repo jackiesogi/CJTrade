@@ -409,6 +409,7 @@ class MockBrokerBackend:
         return self.account_state.balance
 
     # TODO: Use same data from the MockBackend_MockMarket
+    # TODO: Enable kbar aggregation for real account data source like what .snapshot() does
     # TODO: Move the market data generation logic to MockBackend_MockMarket
     # since kbars() right now are separate from the data used in snapshot()
     # it does not have time progression simulation
@@ -461,7 +462,10 @@ class MockBrokerBackend:
         if symbol not in self.market.historical_data:
             if self.real_account and not self.real_account.is_connected():
                 self.real_account.connect()
+
+            # This will fetch from `real_account` or `yfinance`
             self.market.create_historical_market(symbol)
+
             if self.real_account:
                 self.real_account.disconnect()
 
