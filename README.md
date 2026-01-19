@@ -44,3 +44,10 @@ python3 src/cjtrade/tests/cjtrade_shell.py --broker=mock # Will become main CLI 
 # For testing all the features in cjtrade shell
 bash src/cjtrade/tests/test_cjtrade_shell_all_cmds.sh  # Test all CLI commands
 ```
+
+### For clear, maintainable branch design
+- `master`: Master branch. (Changes to some important generic datatypes under `models` is better to change)
+- `broker/{brokername}`: Broker's API bridging, data handling, broker-specific features and tests.
+- `test/{optinonal-name}`: Generic test script and integration test. (For testing broker's API stability -> `broker/{brokername}`)
+- `ui/{ui-type}`: Rendering chart, web interface, etc.
+- `misc/{misc-type}`: LLM / analytics features.
