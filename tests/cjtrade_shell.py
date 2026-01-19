@@ -12,9 +12,12 @@ import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from dotenv import load_dotenv
+
+# TODO: Simplify the import structure by adding __init__.py to commonly-used modules
 from cjtrade.analytics.informational.news_client import *
 from cjtrade.chart.kbar_client import KbarChartClient, KbarChartType
-from cjtrade.tests.test_basic_flow import *
+from cjtrade.models import *
+from cjtrade.core.account_client import *
 from cjtrade.analytics.technical.strategies.fixed_price import *
 from cjtrade.analytics.technical.models import *
 from cjtrade.analytics.fundamental import *

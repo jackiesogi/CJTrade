@@ -1,3 +1,0 @@
-from cjtrade.modules.candidate.candidate_manager import CandidateManager
-
-from .candidate_manager import CandidateManager

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `cjtrade` project provides a unified programming interface for developers to design trading strategies that work across different securities brokers (證券商). This abstraction layer (抽象層) allows you to write strategy code once and deploy it across multiple broker platforms.
+The `cjtrade` project provides a unified programming interface for developers to design trading strategies that work across different securities brokers (證券商). This abstraction layer (抽象層) bridges our CJTrade API to different brokers' backends, which allows user to write their own apps (e.g. trading strategies, account balance alerts ...) and deploy it across multiple broker platforms.
 
 ## Supported Brokers
 
@@ -95,7 +95,7 @@ class YourBroker(BrokerAPIBase):
 
 ### Step 3: Handle Data Conversion
 
-Most broker APIs return data in their own format. You'll need to convert this to our standard models:
+Most broker APIs return data in their own format. You'll need to convert this to our standard models. (Note that CJTrade standard models exists in `models/` directory.)
 
 ```python
 def _convert_to_position(self, broker_position_data) -> Position:
