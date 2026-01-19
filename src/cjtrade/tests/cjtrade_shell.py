@@ -264,12 +264,13 @@ class RunAanalyticsCommand(CommandBase):
         super().__init__()
         self.name = "start"
         self.description = "Run analytics"
-        self.params = ["symbol", "buy_target_price", "sell_target_price"]
+        self.params = ["symbol", "buy_target_price", "sell_target_price", "delay"]
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         buy = float(args[1])
         sell = float(args[2])
+        delay = int(args[3])
 
         strategy = FixedPriceStrategy(buy_target_price=buy, sell_target_price=sell)
         FILL_FLAG = False
@@ -278,7 +279,7 @@ class RunAanalyticsCommand(CommandBase):
 
             snapshots = client.get_snapshots([Product(symbol=symbol)])
             snapshot = snapshots[0]
-            print(f"fetch market state = O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
+            print(f"market state = TS:{snapshot.timestamp} O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
 
             # TODO: To be more accurate, caller may need to construct
             # their kbar of time unit they want, rather than using
@@ -302,7 +303,7 @@ class RunAanalyticsCommand(CommandBase):
                 FILL_FLAG = True
 
             if not FILL_FLAG:
-                sleep(60)
+                sleep(delay)
 
 
 class BalanceCommand(CommandBase):
