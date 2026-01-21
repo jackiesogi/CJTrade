@@ -8,7 +8,7 @@ def _clean_up_test_db():
         os.remove(TEST_DB_PATH)
 
 
-def db_shell(db: SqliteDatabase):
+def db_shell(db: SqliteDatabaseConnection):
     import readline
     MAX_HISTORY_SIZE = 30
 

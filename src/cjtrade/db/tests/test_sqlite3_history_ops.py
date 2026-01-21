@@ -19,7 +19,7 @@ class HistoryEntry:
     details: Dict[str, Any]
 
 
-def test_add_history_entry(conn: SqliteDatabase, entry: HistoryEntry):
+def test_add_history_entry(conn: SqliteDatabaseConnection, entry: HistoryEntry):
     # Helper to quote and escape strings for SQL literals
     def q(s: str) -> str:
         if s is None:
@@ -45,17 +45,13 @@ def test_add_history_entry(conn: SqliteDatabase, entry: HistoryEntry):
         {action_field},
         {details});
     """
-    if conn.is_connected() is False:
-        conn.connect()
     conn.execute(sql)
     conn.commit()
 
 
 
 def test_execute_history_entry_load_store():
-    config = {"database": TEST_DB_PATH}
-    db = SqliteDatabase(**config)
-    db.connect()
+    db = connect_sqlite(TEST_DB_PATH)
     db.execute("""
     CREATE TABLE IF NOT EXISTS transaction_history (
         record_id INTEGER PRIMARY KEY,
@@ -87,17 +83,15 @@ def test_execute_history_entry_load_store():
         details={"note": "Test entry"}
     )
     test_add_history_entry(db, sample_entry)
-    db.disconnect()
+    db.close()
 
 
 if __name__ == "__main__":
     _clean_up_test_db() # <<<<<<<<<<<<<<<<<<<
 
-    config = {"database": TEST_DB_PATH}
-    db = SqliteDatabase(**config)
-    db.connect()
+    db = connect_sqlite(TEST_DB_PATH)
     test_execute_history_entry_load_store()
     db_shell(db)
-    db.disconnect()
+    db.close()
 
     _clean_up_test_db() # <<<<<<<<<<<<<<<<<<<
