@@ -764,7 +764,7 @@ def interactive_shell(client: AccountClient):
     print("Bye!")
 
 
-if __name__ == "__main__":
+def main():
     import sys
     import argparse
 
@@ -822,3 +822,6 @@ if __name__ == "__main__":
         client.disconnect()
 
     sys.exit(exit_code)
+
+if __name__ == "__main__":
+    main()
