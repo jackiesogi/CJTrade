@@ -28,6 +28,11 @@ Provide method to draw, render, save kbar (K線) chart.
 Core service, class, application logic.
 
 
+## `db/`
+
+Database core operations.
+
+
 ## `legacy/`
 
 Don't touch it.
