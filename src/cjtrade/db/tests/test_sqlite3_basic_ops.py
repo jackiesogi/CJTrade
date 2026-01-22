@@ -1,4 +1,6 @@
-from cjtrade.db.models.database import *
+from cjtrade.db.db_base import *
+from cjtrade.db.db_api import connect_sqlite
+from cjtrade.db.sqlite import *
 from cjtrade.db.tests.utils import _clean_up_test_db, TEST_DB_PATH, db_shell
 
 

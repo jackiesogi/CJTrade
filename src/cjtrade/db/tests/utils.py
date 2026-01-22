@@ -1,6 +1,8 @@
-from cjtrade.db.models.database import *
+from cjtrade.db.db_base import *
+from cjtrade.db.sqlite import SqliteDatabaseConnection
 
 TEST_DB_PATH = "src/cjtrade/db/tests/test_sqlite3_ops.db"
+MAX_HISTORY_SIZE = 30
 
 def _clean_up_test_db():
     import os
@@ -10,7 +12,6 @@ def _clean_up_test_db():
 
 def db_shell(db: SqliteDatabaseConnection):
     import readline
-    MAX_HISTORY_SIZE = 30
 
     def init_readline():
         readline.set_history_length(MAX_HISTORY_SIZE)
@@ -22,6 +23,7 @@ def db_shell(db: SqliteDatabaseConnection):
     readline.add_history("select * from non_existing_table")
     readline.add_history("select * from transaction_history")
     readline.add_history("select * from member")
+    readline.add_history("select * from fills")
 
     while True:
         cmd = input("db> ")
