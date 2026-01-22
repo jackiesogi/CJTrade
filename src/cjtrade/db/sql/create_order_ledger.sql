@@ -4,8 +4,8 @@ CREATE TABLE orders (
     order_id            TEXT PRIMARY KEY,
     user_id             TEXT NOT NULL,
     broker              TEXT NOT NULL,             -- e.g. 'sinopac'
-    product_id          TEXT NOT NULL,             -- symbol or internal id
 
+    product_id          TEXT NOT NULL,             -- symbol or internal id
     side                TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
     order_type          TEXT NOT NULL,             -- LIMIT / MARKET / IOC / FOK
     price_type          TEXT NOT NULL,             -- LIMIT / STOP / STOP_LIMIT
