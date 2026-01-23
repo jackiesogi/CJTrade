@@ -11,6 +11,7 @@ import asyncio
 import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
+from pathlib import Path
 from dotenv import load_dotenv
 
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
@@ -32,7 +33,10 @@ config = {
     'secret_key': os.environ["SECRET_KEY"],
     'ca_path': os.environ["CA_CERT_PATH"],
     'ca_passwd': os.environ["CA_PASSWORD"],
-    'simulation': False  # Use production environment to see actual holdings
+    'simulation': False,  # Use production environment to see actual holdings
+
+    'user': 'user001',
+    'mirror_db_path': './data/mock_user001.db',
 }
 
 # ========== Command Pattern Implementation ==========
@@ -534,7 +538,7 @@ class InfoCommand(CommandBase):
         except subprocess.CalledProcessError:
             return
 
-        if Path("cjtrade_shell.py").is_file():
+        if Path("src/cjtrade/core/cjtrade_shell.py").is_file():
             commit = subprocess.check_output(
                 ["git", "rev-parse", "--short", "HEAD"],
                 stderr=subprocess.DEVNULL

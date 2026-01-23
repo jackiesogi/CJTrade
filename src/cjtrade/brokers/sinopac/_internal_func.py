@@ -102,7 +102,8 @@ def _from_sinopac_order(sj_order: sj.Order, sj_contract: sj.contracts.Contract) 
         quantity=sj_order.quantity,
         price_type=price_type,
         order_type=order_type,
-        order_lot=order_lot
+        order_lot=order_lot,
+        broker='sinopac'
     )
 
 

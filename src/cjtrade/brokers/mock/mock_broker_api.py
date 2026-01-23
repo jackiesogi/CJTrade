@@ -10,9 +10,14 @@ from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.kbar import *
 from cjtrade.core.account_client import AccountClient
+from cjtrade.db.db_api import *
+from cjtrade.db.sqlite import *
 # from ._simulation_env import SimulationEnvironment
 from cjtrade.models.rank_type import RankType
 from ._mock_broker_backend import MockBrokerBackend
+
+# CJ order ID to MockBroker Order object
+cj_mk_map = {}
 
 # MockBrokerAPI will not forward `place_order()` call to the real broker,
 # but will fetch data from the real broker if `real_account` is provided.
@@ -26,12 +31,18 @@ class MockBrokerAPI(BrokerAPIBase):
         self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed)
         self._connected = False
 
+        # db connection
+        self.user = config.get('user', 'user001')
+        self.db = config.get('mirror_db_path', f'./data/mock_{self.user}.db')
+
     def connect(self) -> bool:
         """MockBroker's connection simply starts the simulation environment."""
         try:
             self.api.login()
             self._connected = True
             print("MockBroker connected successfully")
+            self.db = connect_sqlite(database=self.db)
+            prepare_cjtrade_tables(conn=self.db)
             return True
         except Exception as e:
             print(f"MockBroker connection failed: {e}")
@@ -43,6 +54,7 @@ class MockBrokerAPI(BrokerAPIBase):
             try:
                 self.api.logout()
                 print("MockBroker disconnected")
+                self.db.close()
             except Exception as e:
                 print(f"Error during disconnect: {e}")
             finally:
@@ -67,7 +79,7 @@ class MockBrokerAPI(BrokerAPIBase):
 
         return BidAsk(
             symbol=product.symbol,
-            datetime=datetime.now(),
+            datetime=datetime.datetime.now(),
             bid_price=[base_price - i*0.5 for i in range(5)],
             bid_volume=[random.randint(50, 500) for _ in range(5)],
             ask_price=[base_price + 0.5 + i*0.5 for i in range(5)],
@@ -117,13 +129,17 @@ class MockBrokerAPI(BrokerAPIBase):
         return None
 
     # TODO: Send place_order to the MockBackend to simulate order execution
-    def place_order(self, order: Order) -> OrderResult:
+    def place_order_legacy(self, order: Order) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
         timestamp = int(time.time() * 1000)
         random_num = random.randint(1000, 9999)
         order_id = f"mock_order_{timestamp}_{random_num}"
+
+        # Keep track of CJ order ID to Mock order object
+        cj_mk_map[order_id] = order
+        insert_new_order_to_db(conn=self.db, order=order)
 
         return OrderResult(
             status=OrderStatus.ON_THE_WAY,
@@ -132,18 +148,48 @@ class MockBrokerAPI(BrokerAPIBase):
             linked_order=order.id
         )
 
-    def cancel_order(self, order_id: str) -> OrderResult:
-        # Mock
-        return OrderResult(
-            status=OrderStatus.CANCELLED,
-            linked_order=order_id,
-            metadata={},
-            message="Mock order cancelled successfully"
-        )
+    # TODO: Order creation timestamp does not mean Order placing timestamp
+    def place_order(self, order: Order) -> OrderResult:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
 
-    def commit_order(self, order_id: str) -> OrderResult:
+        res = self.api.place_order(order)
+
+        # Keep track of CJ order ID to Mock order object
+        cj_mk_map[order.id] = order
+        insert_new_order_to_db(conn=self.db, order=order)
+
+        return res
+
+
+    def cancel_order(self, order_id: str) -> OrderResult:
+        # TODO: Think about the need of cj_mk_map, since we can
+        # simply get the account_state via MockBrokerBackend.
+        res = self.api.cancel_order(order_id=order_id)
+
+        # Behavior: simply remove from cj_mk_map
+        for cjid, order in cj_mk_map.items():
+            if order.id == order_id:
+                del cj_mk_map[cjid]
+                update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED")
+                return OrderResult(
+                    status=OrderStatus.CANCELLED,
+                    linked_order=order_id,
+                    metadata={},
+                    message="Mock order cancelled successfully"
+                )
+        return res
+
+    def commit_order(self) -> List[OrderResult]:
+        res = []
+        for otw_odr in self.api.account_state.orders_placed:
+            res.append(self.api.commit_order(otw_odr.id))
+        return res
+
+
+    def commit_order_legacy(self, order_id: str) -> OrderResult:
         return OrderResult(
-            status=OrderStatus.ON_THE_WAY,
+            status=OrderStatus.COMMITTED,
             # linked_order="0xDEADF00D",
             linked_order=order_id,  # TODO: implement a id-obj mapping to be able to track
             metadata={},
@@ -177,7 +223,8 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         place_result = self.place_order(order)
-        return self.commit_order(place_result.linked_order)
+        # return self.commit_order(place_result.linked_order)
+        return self.commit_order()
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
@@ -197,4 +244,5 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         place_result = self.place_order(order)
-        return self.commit_order(place_result.linked_order)
+        # return self.commit_order(place_result.linked_order)
+        return self.commit_order()

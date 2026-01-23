@@ -11,6 +11,7 @@ from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
+from cjtrade.db.db_api import *
 from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype, _from_sinopac_bidask, _from_sinopac_kbar
 
 # Since the conversion from sj to cj loses information, we need to keep a mapping
@@ -33,6 +34,10 @@ class SinopacBrokerAPI(BrokerAPIBase):
         self.ca_password = config['ca_passwd']
         self.simulation = config.get('simulation', True)
         self._connected = False
+
+        # db connection
+        self.user = config.get('user', 'user001')
+        self.db = config.get('mirror_db_path', f'./data/sinopac_{self.user}.db')
 
         self.api = sj.Shioaji(simulation=self.simulation)
 
@@ -57,6 +62,9 @@ class SinopacBrokerAPI(BrokerAPIBase):
             )
             self._connected = True
 
+            self.db = connect_sqlite(database=self.db)
+            prepare_cjtrade_tables(conn=self.db)
+
             # self._sync_positions_with_broker()
             return True
         except Exception as e:
@@ -70,6 +78,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
             try:
                 self.api.logout()
                 print("Sinopac broker disconnected")
+                self.db.close()
+                print("Local mirror DB disconnected")
             except Exception as e:
                 print(f"Error disconnecting Sinopac broker: {e}")
             finally:
@@ -244,6 +254,9 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             order_result = _from_sinopac_result(sinopac_trade)
             order_result.linked_order = sj_order_id  # Use shioaji order id as linked_order
+
+            # Maintain local records
+            insert_new_order_to_db(conn=self.db, order=order)
             return order_result
 
         except Exception as e:
@@ -254,7 +267,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 linked_order=""
             )
 
-
+    # TODO: Update status to db
     def cancel_order(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -291,6 +304,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             # Update status again to get the cancelled status
             self.api.update_status(self.api.stock_account)
+            update_order_status_to_db(conn=self.db, oid=order_id, status='CANCELLED')
 
             return _from_sinopac_result(sinopac_trade)
 
@@ -306,7 +320,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
     # TODO: Re-Design the `Order` and `OrderResult`
     # TODO: We commit all placed orders in Sinopac at once but only return one result here???
-    def commit_order(self, order_id: str) -> OrderResult:
+    def commit_order_legacy(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
         try:
@@ -324,6 +338,36 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 message=f"Failed to commit order: {str(e)}",
                 metadata={"broker": "sinopac", "error": str(e)},
                 linked_order=order_id
+            )
+
+    # Better version of commit_order()
+    # Commit all staged(placed) order and return each of
+    # the OrderResult as a List
+    def commit_order(self) -> List[OrderResult]:
+        if not self._connected:
+            raise ConnectionError("Not connected to broker")
+        try:
+            # Update status to refresh all trade information
+            self.api.update_status(self.api.stock_account)
+
+            res = []
+            for cj, sj in cj_sj_order_map.items():
+                if sj.status.status not in [sj.constant.OrderStatus.Filled,
+                                            sj.constant.OrderStatus.Cancelled,
+                                            sj.constant.OrderStatus.Rejected]:
+                    res.append(_from_sinopac_result(sj))
+                    update_order_status_to_db(conn=self.db, oid=cj, status='COMMITTED')
+
+            print("--------- Order committed ----------")
+            print(res)
+            return res
+
+        except Exception as e:
+            return OrderResult(
+                status=OrderStatus.REJECTED,
+                message=f"Failed to commit order: {str(e)}",
+                metadata={"broker": "sinopac", "error": str(e)},
+                linked_order='N/A'
             )
 
 
@@ -388,7 +432,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
         )
 
         temp = self.place_order(order)
-        return self.commit_order(temp.linked_order)
+        # return self.commit_order(temp.linked_order)
+        return self.commit_order()
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
@@ -408,7 +453,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common
         )
         temp = self.place_order(order)
-        return self.commit_order(temp.linked_order)
+        # return self.commit_order(temp.linked_order)
+        return self.commit_order()
 
 
     ##### TODO: TRADE HISTORY MANAGEMENT #####

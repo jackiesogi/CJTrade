@@ -63,6 +63,8 @@ class Order:
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: datetime = field(default_factory=datetime.datetime.utcnow)
 
+    broker: str = 'na'
+
     # def __str__(self) -> str:
     #     return (f"ID: {self.id} [{self.action}] {self}")
 
