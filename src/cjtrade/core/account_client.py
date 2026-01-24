@@ -110,8 +110,9 @@ class AccountClient:
     def commit_order(self) -> List[OrderResult]:
         return self.broker_api.commit_order()
 
-    def commit_order_legacy(self, order_id: str) -> OrderResult:
-        return self.broker_api.commit_order_legacy(order_id)
+    # TODO: Plan to remove in next minor version
+    # def commit_order_legacy(self, order_id: str) -> OrderResult:
+    #     return self.broker_api.commit_order_legacy(order_id)
 
     # TODO: Cache order data locally in AccountState
     def cancel_order(self, order_id: str) -> OrderResult:

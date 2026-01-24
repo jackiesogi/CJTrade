@@ -6,6 +6,7 @@ from cjtrade.models.product import Product
 from cjtrade.models.quote import Snapshot
 from cjtrade.models.order import Order, OrderAction, OrderResult, OrderStatus
 from cjtrade.models.kbar import Kbar
+from cjtrade.brokers.mock._mock_market import *
 from typing import Dict, List
 import yfinance as yf
 import datetime
@@ -45,246 +46,18 @@ class MockBackend_AccountState:
     def __init__(self):
         self.positions: List[Position] = []
         self.balance: float = 0.0
-        self.last_sync_time: str = ""
+        self.last_sync_time: str = ""           # Currently NOT used in any context
         self.orders_placed: List[Order] = []    # After `place_order()`
         self.orders_committed: List[Order] = [] # After `commit_order()`
         self.orders_filled: List[Order] = []        # Orders already filled
         self.orders_cancelled: List[Order] = []     # Orders already cancelled
-        self.all_order_status: Dict[str, OrderStatus] = {}        # Orders already filled
+        self.all_order_status: Dict[str, OrderStatus] = {}
+        self.fill_history: List[Dict] = []         # Every transaction: {symbol, quantity, price, time}
 
 # TODO: Consider to add exchange simulation when all time progression features are ready
 # class MockBackend_StockExchange:
 #     def __init__(self):
 #         self.orders_filled: List[Order] = []        # Orders already filled
-
-
-# Acts as HistoricalPriceEngine - replays historical market data
-# Future: Can create SyntheticPriceEngine as alternative implementation
-class MockBackend_MockMarket:
-    def __init__(self, real_account: AccountClient = None):
-        self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
-        self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
-        self.real_init_time = 0       # real_current_time - real_init_time = time_offset
-        self.mock_init_time = 0       # mock_init_time + time_offset = mock_current_time
-        self.start_date = 0
-        self.real_account = real_account if real_account else None
-
-    def set_playback_speed(self, speed: float):
-        """
-        When changing playback speed, we:
-        1. Calculate mock_current_time with old speed
-        2. Reset real_init_time to now
-        3. Reset start_date to current mock_current_time
-        4. Update playback_speed
-        """
-        # 1 second in real world corresponds to `speed` seconds in mock world
-        supported_speeds = [0.5, 1.0, 2.0, 5.0, 10.0,
-                            30.0, 60.0, 120.0, 600.0,
-                            1200.0, 3000.0, 6000.0]
-        if speed not in supported_speeds:
-            raise ValueError(f"Unsupported playback speed: {speed}. Supported speeds: {supported_speeds}")
-
-        # Recalibrate time baseline to prevent time jumps when changing speed
-        if hasattr(self, 'real_init_time') and self.real_init_time != 0:
-            # Calculate current mock time with old speed
-            real_current_time = datetime.datetime.now()
-            time_offset = real_current_time - self.real_init_time
-            mock_current_time = self.start_date + time_offset * self.playback_speed
-
-            # Reset baseline: use current mock time as new start_date
-            self.start_date = mock_current_time
-            self.real_init_time = real_current_time
-
-        self.playback_speed = speed
-
-    def set_historical_time(self, real_init_time: datetime.datetime, days_back: int = 10):
-        # yfinance api only keeps minute data within the last 30 days
-        self.real_init_time = real_init_time
-
-        real_current_time = self.real_init_time
-        self.start_date = real_current_time - datetime.timedelta(days=days_back)
-        self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
-
-        # Skip weekends - make sure to keep hour=9 after recalculation
-        while self.start_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            days_back += 1
-            self.start_date = real_current_time - datetime.timedelta(days=days_back)
-            self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
-
-    def get_market_time(self):
-        real_current_time = datetime.datetime.now()
-        time_offset = real_current_time - self.real_init_time
-        mock_current_time = self.start_date + time_offset * self.playback_speed
-        return {
-            'real_current_time': real_current_time,
-            'real_init_time': self.real_init_time,
-            'mock_init_time': self.start_date,
-            'mock_current_time': mock_current_time,
-            'time_offset': time_offset,
-            'playback_speed': self.playback_speed
-        }
-
-    def adjust_to_market_hours(self, mock_current_time: datetime.datetime) -> datetime.datetime:
-        """Adjust mock time to market hours (9:00-13:30).
-
-        If time is after 13:30, return 13:30 of the same day (market close).
-        If time is before 9:00, return 13:30 of the previous trading day.
-        Otherwise, return the original time.
-
-        Args:
-            mock_current_time: The current mock time to check
-
-        Returns:
-            Adjusted time within market hours or at market close
-        """
-        # Market hours: 9:00 - 13:30
-        market_open_hour = 9
-        market_open_minute = 0
-        market_close_hour = 13
-        market_close_minute = 30
-
-        current_time_of_day = mock_current_time.time()
-        market_open_time = datetime.time(market_open_hour, market_open_minute)
-        market_close_time = datetime.time(market_close_hour, market_close_minute)
-
-        # If after market close (after 13:30), freeze at 13:30 of same day
-        if current_time_of_day > market_close_time:
-            adjusted_time = mock_current_time.replace(
-                hour=market_close_hour,
-                minute=market_close_minute,
-                second=0,
-                microsecond=0
-            )
-            return adjusted_time
-
-        # If before market open (before 9:00), use previous trading day's close (13:30)
-        if current_time_of_day < market_open_time:
-            # Go to previous day
-            prev_day = mock_current_time - datetime.timedelta(days=1)
-            # Skip weekends
-            while prev_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
-                prev_day = prev_day - datetime.timedelta(days=1)
-            adjusted_time = prev_day.replace(
-                hour=market_close_hour,
-                minute=market_close_minute,
-                second=0,
-                microsecond=0
-            )
-            return adjusted_time
-
-        # Within market hours, return as is
-        return mock_current_time
-
-    def create_historical_market(self, symbol: str):
-        """Load historical market data for a symbol.
-
-        Data source priority:
-        1. Real account (if available) - via get_kbars()
-        2. Yahoo Finance - as fallback
-
-        Args:
-            symbol: Stock symbol to load data for
-        """
-        # Early return if data already loaded
-        if symbol in self.historical_data:
-            return
-
-        NUM_DAYS_PRELOAD = 5
-        end_date = self.start_date + datetime.timedelta(days=NUM_DAYS_PRELOAD)
-
-        # Load historical data from real account for better data quality
-        if self.real_account and self.real_account.is_connected():
-            self._load_from_real_account(symbol, end_date)
-        else:
-            self._load_from_yahoo_finance(symbol, end_date)
-
-    def _load_from_real_account(self, symbol: str, end_date: datetime.datetime):
-        """Load historical data from real broker account."""
-        print(f"Loading historical data for {symbol}... (source: {self.real_account.get_broker_name()})")
-        try:
-            kbars = self.real_account.get_kbars(
-                Product(symbol=symbol),
-                start=self.start_date.strftime("%Y-%m-%d"),
-                end=end_date.strftime("%Y-%m-%d"),
-                interval="1m"
-            )
-
-            # Convert kbars to DataFrame
-            df = pd.DataFrame([{
-                'Open': kbar.open,
-                'High': kbar.high,
-                'Low': kbar.low,
-                'Close': kbar.close,
-                'Volume': kbar.volume
-            } for kbar in kbars], index=[kbar.timestamp for kbar in kbars])
-
-            if not df.empty:
-                self.historical_data[symbol] = {
-                    'data': df,
-                    'timestamps': df.index.to_numpy(),
-                }
-                print(f"Loaded {len(df)} data points for {symbol} from real account")
-            else:
-                self._store_empty_data(symbol, "No data from real account")
-
-        except Exception as e:
-            print(f"Error loading data from real account for {symbol}: {e}")
-            self._store_empty_data(symbol, str(e))
-
-    def _load_from_yahoo_finance(self, symbol: str, end_date: datetime.datetime):
-        """Load historical data from Yahoo Finance."""
-        print(f"Loading historical data for {symbol}... (source: yfinance)")
-        yf_symbol = f"{symbol}.TW"
-
-        try:
-            data = yf.download(
-                yf_symbol,
-                start=self.start_date.strftime("%Y-%m-%d"),
-                end=end_date.strftime("%Y-%m-%d"),
-                interval="1m",
-                auto_adjust=True,
-                progress=False
-            )
-
-            if data.empty:
-                self._store_empty_data(symbol, "No data from Yahoo Finance")
-                return
-
-            # Normalize timezone
-            data = self._normalize_timezone(data)
-
-            self.historical_data[symbol] = {
-                'data': data,
-                'timestamps': data.index.to_numpy(),
-            }
-            print(f"Loaded {len(data)} data points for {symbol}")
-
-        except Exception as e:
-            print(f"Error loading data for {symbol}: {e}")
-            self._store_empty_data(symbol, str(e))
-
-    def _normalize_timezone(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Normalize DataFrame timezone to naive Taiwan time."""
-        if not isinstance(data.index, pd.DatetimeIndex):
-            data.index = pd.to_datetime(data.index)
-
-        if data.index.tz is not None:
-            if str(data.index.tz) in ['UTC', 'UTC+00:00']:
-                import pytz
-                taiwan_tz = pytz.timezone('Asia/Taipei')
-                data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-            else:
-                data.index = data.index.tz_localize(None)
-
-        return data
-
-    def _store_empty_data(self, symbol: str, reason: str):
-        """Store empty data placeholder with consistent structure."""
-        print(f"Using empty data for {symbol}: {reason}")
-        self.historical_data[symbol] = {
-            'data': pd.DataFrame(),
-            'timestamps': None
-        }
 
 
 # Backend = Maintain Account State + Provide Market Data
@@ -396,7 +169,8 @@ class MockBrokerBackend:
                 "all_order_status": {
                     order_id: status.value
                     for order_id, status in self.account_state.all_order_status.items()
-                }
+                },
+                "fill_history": self.account_state.fill_history
             }
             json.dump(data, f, indent=4)
         self._connected = False
@@ -458,6 +232,8 @@ class MockBrokerBackend:
     # Note: snapshot() needs to simulate time progression
     # TODO: Move the market data generation logic to MockBackend_MockMarket
     def snapshot(self, symbol: str) -> Snapshot:
+        self._check_if_any_order_filled()
+
         # Load data if not already loaded
         if symbol not in self.market.historical_data:
             if self.real_account and not self.real_account.is_connected():
@@ -535,12 +311,21 @@ class MockBrokerBackend:
         return self._create_fallback_snapshot(symbol, adjusted_mock_time)
 
     def list_positions(self) -> List[Position]:
-        """Get current positions with updated prices from simulation."""
-        # Update prices before returning positions
+        """Get current positions by aggregating fill_history and updating prices."""
+        # 1. Reconstruct positions from fill history
+        self._reconstruct_positions_from_history()
+
+        # 2. Update prices for the newly aggregated positions
         self._update_position_prices()
+
         return self.account_state.positions
 
+    # Just to clarify, `list_trades()` is for lsodr (list order).
+    # since last time I think this might be a duplicate of `list_positions()`
+    # which is totally wrong :)
     def list_trades(self) -> List[Order]:
+        self._check_if_any_order_filled()
+
         # return all orders (placed / committed / filled / cancelled)
         trades = []
         all_orders = (self.account_state.orders_placed +
@@ -565,12 +350,12 @@ class MockBrokerBackend:
             trades.append(order_info)
         return trades
 
-    def update_status(self):
-        # TODO: Update the PnL and market value of current positions (required time progression feature ready)
-        pass
-
     ################## Internal function not originated from Shioaji's design ###################
+    # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
+        # This is for checking order fill status later
+        order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
+
         self.account_state.orders_placed.append(order)
         self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
         return OrderResult(
@@ -670,6 +455,181 @@ class MockBrokerBackend:
 
 
     ########################   Internal functions (start)   ########################
+    # Trigger at some important points to check if order is filled
+    # since we did not implement an event-driven-based exchange simulation
+    def _check_if_any_order_filled(self) -> bool:
+        # iterate through all committed orders and see if any can be filled
+        # (compare the mock market price since last check until current mock time)
+        # Iterate over a shallow copy to avoid mutating the list while iterating
+        committed_copy = list(self.account_state.orders_committed)
+        for odr in committed_copy:
+            target_price = odr.price
+            cmp_time_range_start = odr.opt_field.get('last_check_for_fill', self.market.get_market_time()['mock_init_time'])
+            cmp_time_range_end = self.market.get_market_time()['mock_current_time']
+
+            # skip if time range not advanced
+            if cmp_time_range_end <= cmp_time_range_start:
+                # nothing to check; continue
+                continue
+
+            # compare target price with all unchecked kbar close prices
+            price_filled = False
+            if odr.action == OrderAction.BUY:
+                # Buy order: filled if any close price <= target price
+                price_filled = self._check_price_in_time_range(
+                    odr.product.symbol, cmp_time_range_start, cmp_time_range_end, lambda p: p <= target_price
+                )
+            elif odr.action == OrderAction.SELL:
+                # Sell order: filled if any close price >= target price
+                price_filled = self._check_price_in_time_range(
+                    odr.product.symbol, cmp_time_range_start, cmp_time_range_end, lambda p: p >= target_price
+                )
+
+            # Update last_check_for_fill to end of checked range to avoid rechecking
+            try:
+                odr.opt_field['last_check_for_fill'] = cmp_time_range_end
+            except Exception:
+                odr.opt_field = odr.opt_field if hasattr(odr, 'opt_field') else {}
+                odr.opt_field['last_check_for_fill'] = cmp_time_range_end
+
+            if price_filled:
+                # Move order to filled list
+                try:
+                    self.account_state.orders_filled.append(odr)
+                    # remove from committed if still present
+                    if odr in self.account_state.orders_committed:
+                        self.account_state.orders_committed.remove(odr)
+                    self.account_state.all_order_status[odr.id] = OrderStatus.FILLED
+                    print(f"Order {odr.id} filled (target {target_price})")
+                    qty_signed = odr.quantity if odr.action == OrderAction.BUY else -odr.quantity
+
+                    # Update Balance (Account for cash flow)
+                    # For Buy: balance decreases; For Sell: balance increases
+                    # TODO: Balance should be calculated using fill history.
+                    self.account_state.balance -= (qty_signed * odr.price)
+
+                    # Record in fill history (Source of truth for positions)
+                    self.account_state.fill_history.append({
+                        "id": f"fill_{odr.id}_{int(datetime.datetime.now().timestamp())}",
+                        "order_id": odr.id,
+                        "symbol": odr.product.symbol,
+                        "action": odr.action.value,
+                        "quantity": qty_signed,
+                        "price": odr.price,
+                        "time": cmp_time_range_end.isoformat() if hasattr(cmp_time_range_end, "isoformat") else str(cmp_time_range_end)
+                    })
+
+                    # Sync the aggregated view
+                    self._reconstruct_positions_from_history()
+                except Exception as e:
+                    print(f"Error moving order {odr.id} to filled: {e}")
+
+    def _reconstruct_positions_from_history(self):
+        """Reconstruct the aggregated positions list from fill_history."""
+        if not self.account_state.fill_history:
+            self.account_state.positions = []
+            return
+
+        from collections import defaultdict
+        sym_fills = defaultdict(list)
+        for fill in self.account_state.fill_history:
+            sym_fills[fill['symbol']].append(fill)
+
+        new_positions = []
+        for sym, fills in sym_fills.items():
+            net_qty = 0
+            total_net_cost = 0.0
+
+            for f in fills:
+                q = f['quantity']
+                p = f['price']
+                net_qty += q
+                total_net_cost += (q * p)
+
+            if net_qty == 0:
+                continue
+
+            # Calculate breakeven cost
+            avg_cost = total_net_cost / net_qty
+
+            new_positions.append(Position(
+                symbol=sym,
+                quantity=net_qty,
+                avg_cost=round(avg_cost, 2),
+                current_price=round(avg_cost, 2), # Placeholder until price update
+                market_value=round(net_qty * avg_cost, 1),
+                unrealized_pnl=0.0
+            ))
+
+        self.account_state.positions = new_positions
+
+    def _check_price_in_time_range(self, symbol: str, start_time: datetime.datetime, end_time: datetime.datetime, price_condition) -> bool:
+        # Assume data has been preloaded
+        try:
+            # Ensure symbol data exists
+            if symbol not in self.market.historical_data:
+                return False
+
+            data_info = self.market.historical_data[symbol]
+            data = data_info.get('data')
+            timestamps = data_info.get('timestamps')
+
+            if data is None or data.empty or timestamps is None:
+                return False
+
+            # Compute minute offsets relative to market.start_date
+            # Use same logic as snapshot(): map mock datetime -> minutes since start_date
+            start_offset = int((start_time - self.market.start_date).total_seconds() / 60)
+            end_offset = int((end_time - self.market.start_date).total_seconds() / 60)
+
+            # Nothing to check
+            if end_offset <= start_offset:
+                return False
+
+            n = len(data)
+            if n == 0:
+                return False
+
+            # Iterate minute-by-minute from just after start_time up to end_time (inclusive)
+            for minute in range(start_offset + 1, end_offset + 1):
+                idx = minute % n  # circular replay behavior used elsewhere
+                try:
+                    # Prefer 'Close' column (yfinance / pandas convention)
+                    # use .iat or .iloc.item() to get a scalar and avoid FutureWarning
+                    try:
+                        close_price = float(data['Close'].iat[idx])
+                    except Exception:
+                        # fallback to iloc + item
+                        close_price = float(data['Close'].iloc[idx].item())
+                except Exception:
+                    # Fallback to uppercase/lowercase column name positional access
+                    try:
+                        close_price = float(data.iloc[idx]['Close'])
+                    except Exception:
+                        try:
+                            close_price = float(data.iloc[idx]['close'])
+                        except Exception:
+                            # Unable to read price for this index — skip
+                            continue
+
+                if price_condition(close_price):
+                    return True
+
+            return False
+        except Exception as e:
+            print(f"_check_price_in_time_range error: {e}")
+            return False
+
+    def _trigger_order_matching(self):
+        """
+        Manaully trigger order matching process.
+
+        Because we do not have an event-driven exchange simulation,
+        this function should be called periodically to check for order fills.
+        otherwise it will only be checked when `snapshot()` is called. (_check_if_any_order_filled)
+        """
+        self._check_if_any_order_filled()
+
     def _update_position_prices(self):
         """Update current_price, market_value, and unrealized_pnl for all positions.
 
@@ -741,19 +701,29 @@ class MockBrokerBackend:
                     if pos.symbol not in self.market.historical_data:
                         self.market.create_historical_market(pos.symbol)
 
-                # Store position structure (will be updated with prices later)
-                self.account_state.positions = [
-                    Position(
-                        symbol=pos.symbol,
-                        quantity=pos.quantity,
-                        avg_cost=pos.avg_cost,
-                        current_price=0.0,  # Will be updated
-                        market_value=0.0,   # Will be updated
-                        unrealized_pnl=0.0  # Will be updated
-                    )
-                    for pos in real_positions
-                ]
+                    """ Record as initial fill history
+                    We currently assume the position state as a single fill.
+                    """
+                    # TODO: sinopac does NOT provide fill history API!
+                    # while at the same time, in the CJTrade API, we insert a fill history
+                    # to local mirror db when an order is filled. So, it will be quite
+                    # challenging to deal with the data dependency issue if we need to
+                    # import the fill history to `MockBackend`, either (1) it reads from local
+                    # mirror db (which is BAD and not make sense because why would a broker
+                    # backend need the transaction data from an user?), or (2) we just do a
+                    # dependency injection to ONLY pass the history from `MockBrokerAPI` to here.
+                    self.account_state.fill_history.append({
+                        "id": f"init_{pos.symbol}_{int(datetime.datetime.now().timestamp())}",
+                        "order_id": "manual_sync",
+                        "symbol": pos.symbol,
+                        "action": "BUY", # Assume buy for initial positions
+                        "quantity": pos.quantity,
+                        "price": pos.avg_cost,
+                        "time": "initial_sync"
+                    })
 
+                # Sync aggregated view
+                self._reconstruct_positions_from_history()
                 self.real_account.disconnect()
 
                 # Update prices using simulation data
@@ -803,28 +773,17 @@ class MockBrokerBackend:
             with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'w') as f:
                 json.dump(default_data, f, indent=4)
 
-        # Always read from file (whether just created or already exists)
         with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'r') as f:
             data = json.load(f)
             self.account_state.balance = data.get('balance', 100_000.0)
+            self.account_state.fill_history = data.get('fill_history', [])
 
-            # Load position structure only (ignore old prices from file)
-            positions = []
-            for pos_data in data.get('positions', []):
-                position = Position(
-                    symbol=pos_data['symbol'],
-                    quantity=pos_data.get('quantity', 0),
-                    avg_cost=pos_data.get('avg_cost', 0.0),
-                    current_price=0.0,  # Will be updated by _update_position_prices()
-                    market_value=0.0,   # Will be updated
-                    unrealized_pnl=0.0  # Will be updated
-                )
-                positions.append(position)
-            self.account_state.positions = positions
+            # Compute positions from fill history
+            self._reconstruct_positions_from_history()
 
             # Preload historical data for all symbols
-            if positions:
-                for pos in positions:
+            if self.account_state.positions:
+                for pos in self.account_state.positions:
                     if pos.symbol not in self.market.historical_data:
                         self.market.create_historical_market(pos.symbol)
 
@@ -1018,326 +977,3 @@ class MockBrokerBackend:
 
         return result
     ########################   Internal functions (end)   ##########################
-
-
-def test_playback_speed():
-
-    def test_playback_speed_1x(mbb):
-        mbb.market.set_playback_speed(1.0)
-        start = mbb.market.get_market_time()['mock_current_time']
-        time.sleep(10)
-        end = mbb.market.get_market_time()['mock_current_time']
-        print(f"1x test: start={start}, end={end}, delta={(end - start).total_seconds()} seconds")
-        assert 9 <= (end - start).total_seconds() <= 11
-
-    def test_playback_speed_5x(mbb):
-        mbb.market.set_playback_speed(5.0)
-        start = mbb.market.get_market_time()['mock_current_time']
-        time.sleep(10)
-        end = mbb.market.get_market_time()['mock_current_time']
-        print(f"5x test: start={start}, end={end}, delta={(end - start).total_seconds()} seconds")
-        assert 48 <= (end - start).total_seconds() <= 52
-
-    def test_playback_speed_10x(mbb):
-        mbb.market.set_playback_speed(10.0)
-        start = mbb.market.get_market_time()['mock_current_time']
-        time.sleep(5)
-        end = mbb.market.get_market_time()['mock_current_time']
-        print(f"10x test: start={start}, end={end}, delta={(end - start).total_seconds()} seconds")
-        assert 48 <= (end - start).total_seconds() <= 52
-
-    import time
-    mbb = MockBrokerBackend(price_mode=PriceMode.HISTORICAL)
-    mbb.market.set_historical_time(datetime.datetime.now(), days_back=10)
-    mbb.market.create_historical_market("2330")
-
-    test_playback_speed_1x(mbb)
-    test_playback_speed_5x(mbb)
-    test_playback_speed_10x(mbb)
-    print("All playback speed tests passed.")
-
-
-def test_snapshot_playback_speed():
-
-    def test_speed_120x(mbb):
-        print("Starting 120x kbar speed test...")
-        mbb.market.set_playback_speed(120.0)
-        start = mbb.market.get_market_time()['mock_current_time']
-        for i in range(10):
-            snapshot = mbb.snapshot("2357")
-            print(f"ts: {snapshot.timestamp}, o: {snapshot.open}, h: {snapshot.high}, l: {snapshot.low}, c: {snapshot.close}, v: {snapshot.volume}")
-            time.sleep(1)
-        end = mbb.market.get_market_time()['mock_current_time']
-        print(f"10x test: start={start}, end={end}, delta={(end - start).total_seconds()} seconds")
-
-    def test_speed_1200x(mbb):
-        print("Starting 1200x kbar speed test...")
-        mbb.market.set_playback_speed(1200.0)
-        start = mbb.market.get_market_time()['mock_current_time']
-        for i in range(10):
-            snapshot = mbb.snapshot("2357")
-            print(f"ts: {snapshot.timestamp}, o: {snapshot.open}, h: {snapshot.high}, l: {snapshot.low}, c: {snapshot.close}, v: {snapshot.volume}")
-            time.sleep(1)
-        end = mbb.market.get_market_time()['mock_current_time']
-        print(f"30x test: start={start}, end={end}, delta={(end - start).total_seconds()} seconds")
-
-    import time
-    mbb = MockBrokerBackend(price_mode=PriceMode.HISTORICAL)
-    mbb.market.set_historical_time(datetime.datetime.now(), days_back=10)
-    mbb.market.create_historical_market("2357")
-
-    test_speed_120x(mbb)
-    test_speed_1200x(mbb)
-
-if __name__ == "__main__":
-    test_playback_speed()
-    test_snapshot_playback_speed()
-
-
-# TODO: Remove this section when stable
-################################## UNUSED #####################################
-    # def get_dummy_snapshot(self, symbol: str) -> Snapshot:
-    #     if symbol not in self._data_loaded:
-    #         self._preload_historical_data(symbol)
-
-    #     current_time = datetime.datetime.now()
-    #     time_offset = current_time - self._init_time
-    #     sampling_time = self._data_start_time + time_offset
-
-    #     minutes_passed = int(time_offset.total_seconds() / 60)
-
-    #     if symbol in self.historical_data:
-    #         data_info = self.historical_data[symbol]
-    #         data = data_info['data']
-    #         timestamps = data_info['timestamps']
-
-    #         if not data.empty and timestamps is not None:
-    #             # Calculate current position in the data
-    #             data_idx = minutes_passed % len(data)
-    #             cycle_number = minutes_passed // len(data)
-    #             position_in_cycle = minutes_passed % len(data)
-
-    #             print(f"Debug: minutes_passed={minutes_passed} (cycle {cycle_number}, position {position_in_cycle}/{len(data)}), "
-    #                   f"simulated_time={sampling_time}")
-
-    #             # Get daily aggregated data from start of day up to current time
-    #             # Use data from beginning of day up to current position
-    #             daily_data = data.iloc[:data_idx + 1]  # from start to current position
-
-    #             if len(daily_data) > 0:
-    #                 # Calculate daily OHLCV
-    #                 daily_open = daily_data['Open'].iloc[0].item()  # first open of the day
-    #                 daily_close = daily_data['Close'].iloc[-1].item()  # current close (last available)
-    #                 daily_high = daily_data['High'].max().item()  # highest high of the day so far
-    #                 daily_low = daily_data['Low'].min().item()  # lowest low of the day so far
-    #                 current_volume = daily_data['Volume'].iloc[-1].item()  # current volume (not cumulative)
-
-    #                 # Current real-time price (last close)
-    #                 current_price = daily_close
-
-    #                 snapshot = Snapshot(
-    #                     symbol=symbol,
-    #                     exchange="TSE",
-    #                     timestamp=sampling_time,
-    #                     open=daily_open,
-    #                     close=current_price,
-    #                     high=daily_high,
-    #                     low=daily_low,
-    #                     volume=int(current_volume),
-    #                     average_price=(daily_high + daily_low) / 2,
-    #                     action=OrderAction.BUY if current_price >= daily_open else OrderAction.SELL,
-    #                     buy_price=current_price,
-    #                     buy_volume=int(current_volume // 10),  # estimated current bid volume
-    #                     sell_price=current_price + 0.5,
-    #                     sell_volume=int(current_volume // 10),  # estimated current ask volume
-    #                 )
-    #                 return snapshot
-
-    #     # use fallback if no historical data
-    #     print(f"No historical data for {symbol} at {sampling_time}, using fallback")
-    #     return self._create_fallback_snapshot(symbol, sampling_time)
-
-    # def get_dummy_kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
-    #     yf_symbol = f"{symbol}.TW"
-
-    #     try:
-    #         # Download data from yfinance for the specified range
-    #         data = yf.download(yf_symbol, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
-
-    #         if data.empty:
-    #             print(f"No data available for {symbol} in range {start} to {end}")
-    #             return []
-
-    #         if not isinstance(data.index, pd.DatetimeIndex):
-    #             data.index = pd.to_datetime(data.index)
-    #         if data.index.tz is not None:
-    #             # If yfinance data is UTC, need to convert to Taiwan time
-    #             if str(data.index.tz) in ['UTC', 'UTC+00:00']:
-    #                 import pytz
-    #                 taiwan_tz = pytz.timezone('Asia/Taipei')
-    #                 data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-    #             else:
-    #                 data.index = data.index.tz_localize(None)
-
-    #         kbars = []
-
-    #         for timestamp, row in data.iterrows():
-    #             kbar = Kbar(
-    #                 timestamp=timestamp.to_pydatetime(),
-    #                 open=round(row['Open'].item(), 2),
-    #                 high=round(row['High'].item(), 2),
-    #                 low=round(row['Low'].item(), 2),
-    #                 close=round(row['Close'].item(), 2),
-    #                 volume=int(row['Volume'].item())
-    #             )
-    #             kbars.append(kbar)
-
-    #         # print(f"Loaded {len(kbars)} kbars for {symbol}")
-    #         return kbars
-
-    #     except Exception as e:
-    #         print(f"Error loading kbars for {symbol}: {e}")
-    #         return []
-
-    # NOT USED
-    # def _reset_to_real_account_state(self, account: AccountClient = None):
-    #     if account:
-    #         self.real_account = account
-    #         self._sync_with_real_account()
-    #     else:
-    #         self.account_state.balance = 100_000.0
-    #         self.account_state.positions = []
-
-
-    # def _preload_historical_data(self, symbol: str):
-    #     if symbol in self._data_loaded:
-    #         return
-
-    #     print(f"Loading historical data for {symbol}...")
-
-    #     yf_symbol = f"{symbol}.TW"
-    #     start_date = self._data_start_time
-    #     end_date = start_date + datetime.timedelta(days=1)  # preload 1 day of data
-
-    #     try:
-    #         data = yf.download(yf_symbol,
-    #                          start=start_date.strftime("%Y-%m-%d"),
-    #                          end=end_date.strftime("%Y-%m-%d"),
-    #                          interval="1m",
-    #                          progress=False)
-
-    #         if data.empty:
-    #             print(f"No 1m data available for {symbol}, trying 1h data...")
-    #             data = yf.download(yf_symbol,
-    #                              start=start_date.strftime("%Y-%m-%d"),
-    #                              end=end_date.strftime("%Y-%m-%d"),
-    #                              interval="1h",
-    #                              progress=False)
-
-    #         if not data.empty:
-    #             if not isinstance(data.index, pd.DatetimeIndex):
-    #                 data.index = pd.to_datetime(data.index)
-
-    #             if data.index.tz is not None:
-    #                 if str(data.index.tz) in ['UTC', 'UTC+00:00']:
-    #                     import pytz
-    #                     taiwan_tz = pytz.timezone('Asia/Taipei')
-    #                     data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-    #                 else:
-    #                     data.index = data.index.tz_localize(None)
-
-    #             self.historical_data[symbol] = {
-    #                 'data': data,
-    #                 'timestamps': data.index.to_numpy(),  # convert to numpy array for performance
-    #             }
-
-    #             print(f"Loaded {len(data)} data points for {symbol}")
-    #         else:
-    #             print(f"No data available for {symbol}, will use fallback")
-    #             self.historical_data[symbol] = {
-    #                 'data': pd.DataFrame(),
-    #                 'timestamps': None
-    #             }
-
-    #     except Exception as e:
-    #         print(f"Error loading data for {symbol}: {e}")
-    #         self.historical_data[symbol] = {
-    #             'data': pd.DataFrame(),
-    #             'timestamps': None
-    #         }
-
-    #     self._data_loaded.add(symbol)
-
-    # def start(self) -> bool:
-    #     try:
-    #         self._connected = True
-
-    #         if self.real_account:
-    #             self._sync_with_real_account()
-    #         else:
-    #             print("---> This is a pure simulation environment. <---")
-    #             self._mock_env_account_init()
-
-    #         print("Simulation environment started")
-    #         return True
-    #     except Exception as e:
-    #         print(f"Failed to start simulation environment: {e}")
-    #         self._connected = False
-    #         return False
-
-    # def stop(self):
-    #     if self.real_account:
-    #         self.real_account.disconnect()
-    #     self._connected = False
-    #     print("Simulation environment stopped")
-
-    # TODO: Remove this when get_dummy_kbars() / kbars() is stable
-    # Legacy method for backward compatibility - now just returns single kbar
-    # Note that it originate from old get_dummy_snapshot() behavior return only one snapshot info.
-    def get_dummy_kbar(self, symbol: str) -> Kbar:
-        if symbol not in self.historical_data:
-            self._preload_historical_data(symbol)
-
-        current_time = datetime.datetime.now()
-        time_offset = current_time - self._init_time
-        sampling_time = self._data_start_time + time_offset
-
-        minutes_passed = int(time_offset.total_seconds() / 60)
-
-        if symbol in self.historical_data:
-            data_info = self.historical_data[symbol]
-            data = data_info['data']
-            timestamps = data_info['timestamps']
-
-            if not data.empty and timestamps is not None:
-                # CIRCULARLY replay historical data
-                data_idx = minutes_passed % len(data)
-
-                actual_data_time = data.index[data_idx]
-                cycle_number = minutes_passed // len(data)
-                position_in_cycle = minutes_passed % len(data)
-
-                print(f"Debug: minutes_passed={minutes_passed} (cycle {cycle_number}, position {position_in_cycle}/{len(data)}), "
-                      f"historical_data_time={actual_data_time}, simulated_time={sampling_time}")
-
-                row = data.iloc[data_idx]
-
-                open_price = round(row['Open'].item(), 2)
-                close_price = round(row['Close'].item(), 2)
-                high_price = round(row['High'].item(), 2)
-                low_price = round(row['Low'].item(), 2)
-                volume = row['Volume'].item()
-
-                kbar = Kbar(
-                    timestamp=sampling_time,
-                    open=open_price,
-                    close=close_price,
-                    high=high_price,
-                    low=low_price,
-                    volume=int(volume),
-                )
-                return kbar
-
-        # use fallback if no historical data
-        print(f"No historical data for {symbol} at {sampling_time}, using fallback")
-        return None

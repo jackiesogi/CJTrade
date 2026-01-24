@@ -61,9 +61,15 @@ class Order:
 
     # Auto generated fields
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    created_at: datetime = field(default_factory=datetime.datetime.utcnow)
+
+    # utc+8 time
+    created_at: datetime = field(default_factory=lambda: datetime.datetime.utcnow() + datetime.timedelta(hours=8))
+    # created_at: datetime = field(default_factory=datetime.datetime.utcnow)
 
     broker: str = 'na'
+
+    # Optional custom field for broker-specific usage
+    opt_field: Dict[str, Any] = field(default_factory=dict)
 
     # def __str__(self) -> str:
     #     return (f"ID: {self.id} [{self.action}] {self}")

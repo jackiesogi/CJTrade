@@ -16,9 +16,6 @@ from cjtrade.db.sqlite import *
 from cjtrade.models.rank_type import RankType
 from ._mock_broker_backend import MockBrokerBackend
 
-# CJ order ID to MockBroker Order object
-cj_mk_map = {}
-
 # MockBrokerAPI will not forward `place_order()` call to the real broker,
 # but will fetch data from the real broker if `real_account` is provided.
 # In other words, `real_account` is read-only.
@@ -138,7 +135,6 @@ class MockBrokerAPI(BrokerAPIBase):
         order_id = f"mock_order_{timestamp}_{random_num}"
 
         # Keep track of CJ order ID to Mock order object
-        cj_mk_map[order_id] = order
         insert_new_order_to_db(conn=self.db, order=order)
 
         return OrderResult(
@@ -155,46 +151,37 @@ class MockBrokerAPI(BrokerAPIBase):
 
         res = self.api.place_order(order)
 
-        # Keep track of CJ order ID to Mock order object
-        cj_mk_map[order.id] = order
         insert_new_order_to_db(conn=self.db, order=order)
 
         return res
 
 
     def cancel_order(self, order_id: str) -> OrderResult:
-        # TODO: Think about the need of cj_mk_map, since we can
-        # simply get the account_state via MockBrokerBackend.
         res = self.api.cancel_order(order_id=order_id)
 
-        # Behavior: simply remove from cj_mk_map
-        for cjid, order in cj_mk_map.items():
-            if order.id == order_id:
-                del cj_mk_map[cjid]
-                update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED")
-                return OrderResult(
-                    status=OrderStatus.CANCELLED,
-                    linked_order=order_id,
-                    metadata={},
-                    message="Mock order cancelled successfully"
-                )
+        if res.status == OrderStatus.CANCELLED:
+            update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED")
+
         return res
 
     def commit_order(self) -> List[OrderResult]:
         res = []
-        for otw_odr in self.api.account_state.orders_placed:
+        # Use list() to avoid mutation during iteration
+        for otw_odr in list(self.api.account_state.orders_placed):
+            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED")
             res.append(self.api.commit_order(otw_odr.id))
         return res
 
 
-    def commit_order_legacy(self, order_id: str) -> OrderResult:
-        return OrderResult(
-            status=OrderStatus.COMMITTED,
-            # linked_order="0xDEADF00D",
-            linked_order=order_id,  # TODO: implement a id-obj mapping to be able to track
-            metadata={},
-            message="Mock order committed successfully"
-        )
+    # TODO: Plan to remove in next minor version
+    # def commit_order_legacy(self, order_id: str) -> OrderResult:
+    #     return OrderResult(
+    #         status=OrderStatus.COMMITTED,
+    #         # linked_order="0xDEADF00D",
+    #         linked_order=order_id,  # TODO: implement a id-obj mapping to be able to track
+    #         metadata={},
+    #         message="Mock order committed successfully"
+    #     )
 
     def list_orders(self) -> List[Dict]:
         return self.api.list_trades()

@@ -81,15 +81,17 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
     if conn is None:
         return
 
+    curr_ts: datetime = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     try:
-        # Update status field ONLY
-        conn.execute(
+        sqlcmd = \
         f"""
             UPDATE orders
-            SET status = '{status}', updated_at = CURRENT_TIMESTAMP
+            SET status = '{status}', updated_at = '{curr_ts.strftime("%Y-%m-%d %H:%M:%S")}'
             WHERE order_id = '{oid}'
         """
-        )
+        print(sqlcmd)
+        # Update status field ONLY
+        conn.execute(sqlcmd)
         conn.commit()
         print(f"Order {oid} status updated to {status} in local DB.")
     except Exception as e:
