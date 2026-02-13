@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Any
 from pathlib import Path
 from dotenv import load_dotenv
+from cjtrade.core.config_loader import load_supported_config_files
 
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
 from cjtrade.analytics.informational.news_client import *
@@ -25,15 +26,15 @@ from cjtrade.analytics.fundamental import *
 
 exit_flag = False
 
-
-load_dotenv()
+# Load supported config files (recursive search for *.cjconf under directories)
+loaded = load_supported_config_files()
 
 config = {
     'api_key': os.environ["API_KEY"],
     'secret_key': os.environ["SECRET_KEY"],
     'ca_path': os.environ["CA_CERT_PATH"],
     'ca_passwd': os.environ["CA_PASSWORD"],
-    'simulation': False,  # Use production environment to see actual holdings
+    'simulation': True if os.environ.get("SIMULATION") == "y" else False,
 
     'user': 'user001',
     'mirror_db_path': './data/mock_user001.db',
