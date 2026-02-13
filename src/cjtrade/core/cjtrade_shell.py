@@ -201,12 +201,12 @@ class ListOrdersCommand(CommandBase):
                 print("\nRecent 5 orders:")
                 for i, order in enumerate(orders[-5:]):
                     print(f"\nOrder {i+1}:")
-                    print(f"  Order ID: {order.get('id', 'N/A')}")
-                    print(f"  Symbol: {order.get('symbol', 'N/A')}")
-                    print(f"  Action: {order.get('action', 'N/A')}")
-                    print(f"  Quantity: {order.get('quantity', 'N/A')}")
-                    print(f"  Price: {order.get('price', 'N/A')}")
-                    print(f"  Status: {order.get('status', 'N/A')}")
+                    print(f"  Order ID: {order.id}")
+                    print(f"  Symbol: {order.symbol}")
+                    print(f"  Action: {order.action}")
+                    print(f"  Quantity: {order.quantity}")
+                    print(f"  Price: {order.price}")
+                    print(f"  Status: {order.status}")
             else:
                 print("No orders found")
         except Exception as e:
@@ -452,9 +452,9 @@ class CancelAllCommand(CommandBase):
             cancelled_count = 0
             for i, order in enumerate(orders):
                 try:
-                    order_id = order.get('id') or order.get('ordno')
-                    status = order.get('status', 'UNKNOWN')
-                    symbol = order.get('symbol', 'N/A')
+                    order_id = order.id
+                    status = order.status
+                    symbol = order.symbol
 
                     print(f"\nProcessing {i+1}/{len(orders)}")
                     print(f"  ID: {order_id}")

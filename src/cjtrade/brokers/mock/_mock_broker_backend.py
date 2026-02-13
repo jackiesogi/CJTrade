@@ -6,7 +6,9 @@ from cjtrade.models.product import Product
 from cjtrade.models.quote import Snapshot
 from cjtrade.models.order import Order, OrderAction, OrderResult, OrderStatus
 from cjtrade.models.kbar import Kbar
+from cjtrade.models.trade import Trade
 from cjtrade.brokers.mock._mock_market import *
+from cjtrade.brokers.mock._mock_broker_order_gen import *
 from typing import Dict, List
 import yfinance as yf
 import datetime
@@ -62,6 +64,8 @@ class MockBackend_AccountState:
 
 # Backend = Maintain Account State + Provide Market Data
 # Note that the backend API scheme originates from Shioaji's design.
+# TODO: Define data source spec to extract price input layer,
+# to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend:
     def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0):
         self.real_account = real_account
@@ -320,10 +324,11 @@ class MockBrokerBackend:
 
         return self.account_state.positions
 
+
     # Just to clarify, `list_trades()` is for lsodr (list order).
     # since last time I think this might be a duplicate of `list_positions()`
     # which is totally wrong :)
-    def list_trades(self) -> List[Order]:
+    def list_trades(self) -> List[Trade]:
         self._check_if_any_order_filled()
 
         # return all orders (placed / committed / filled / cancelled)
@@ -333,59 +338,56 @@ class MockBrokerBackend:
                      self.account_state.orders_filled +
                      self.account_state.orders_cancelled)
         for order in all_orders:
-            order_info = {
-                'id': order.id,
-                'symbol': order.product.symbol,
-                'action': order.action.value,
-                'quantity': order.quantity,
-                'price': order.price,
-                'status': self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
-                'order_type': order.order_type.value,
-                'price_type': order.price_type.value,
-                'order_lot': order.order_lot,
-                'order_datetime': order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'deals': 0, # TODO: Not sure what this field means in SJ
-                'ordno': order.id
-            }
+            order_info = Trade(
+                id=order.id,
+                symbol=order.product.symbol,
+                action=order.action.value,
+                quantity=order.quantity,
+                price=order.price,
+                status=self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
+                order_type=order.order_type.value,
+                price_type=order.price_type.value,
+                order_lot=order.order_lot,
+                order_datetime=order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                deals=0, # TODO: Not sure what this field means in SJ
+                ordno=order.id
+            )
             trades.append(order_info)
         return trades
 
-    ################## Internal function not originated from Shioaji's design ###################
     # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
+        # Check account balance / inventory stock / trading limit per day
+        if not self._is_within_trading_limit(order):
+            return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
+
+        if order.action == OrderAction.BUY:
+            if not self._is_sufficient_account_balance(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_BALANCE(order)
+        elif order.action == OrderAction.SELL:
+            if not self._is_sufficient_account_inventory(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order)
+
         # This is for checking order fill status later
         order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
 
         self.account_state.orders_placed.append(order)
         self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
-        return OrderResult(
-            status=OrderStatus.ON_THE_WAY,
-            message="Mock order placed successfully",
-            metadata={},
-            linked_order=order.id
-        )
+        return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
     def commit_order(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
-            return OrderResult(
-                status=OrderStatus.REJECTED,
-                linked_order=order_id,
-                metadata={},
-                message="Order not found for commit"
-            )
+            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order)
 
         self.account_state.orders_committed.append(order)
         self.account_state.orders_placed.remove(order)
         self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
 
-        return OrderResult(
-            status=OrderStatus.COMMITTED,
-            linked_order=order_id,
-            metadata={},
-            message="Mock order committed successfully"
-        )
+        res = COMMITTED_ORDER_STANDARD(order)
+        # print(res)
+        return res
 
     def cancel_order(self, order_id: str) -> OrderResult:
         """Cancel an order that is not yet filled.
@@ -419,21 +421,11 @@ class MockBrokerBackend:
         if not order_to_cancel:
             for order in self.account_state.orders_filled:
                 if order.id == order_id:
-                    return OrderResult(
-                        status=OrderStatus.FAILED,
-                        linked_order=order_id,
-                        metadata={},
-                        message="Cannot cancel order: order is already filled"
-                    )
+                    return REJECTED_ORDER_HAS_BEEN_FILLED(order)
 
         # Order not found at all
         if not order_to_cancel:
-            return OrderResult(
-                status=OrderStatus.FAILED,
-                linked_order=order_id,
-                metadata={},
-                message="Order not found"
-            )
+            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order)
 
         # Remove from source list and add to cancelled
         source_list.remove(order_to_cancel)
@@ -443,18 +435,45 @@ class MockBrokerBackend:
         self.account_state.all_order_status[order_id] = OrderStatus.CANCELLED
 
         print(f"Order {order_id} cancelled successfully")
-        return OrderResult(
-            status=OrderStatus.CANCELLED,
-            linked_order=order_id,
-            metadata={},
-            message="Order cancelled successfully"
-        )
+        return CANCELLED_ORDER_STANDARD(order_to_cancel)
 
     ########################   Functions for mock_broker_api to call (end)   #########################
 
 
 
     ########################   Internal functions (start)   ########################
+    def _is_sufficient_account_balance(self, order: Order) -> bool:
+        # Check if the account has enough balance to place the order
+        required_amount = order.price * order.quantity
+        if self.account_state.balance >= required_amount:
+            return True
+        else:
+            # print(f"Insufficient balance to place BUY order {order.id}: requires {required_amount}, available {self.account_state.balance}")
+            return False
+
+    def _is_sufficient_account_inventory(self, order: Order) -> bool:
+        # Check if the account has enough inventory to place the SELL order
+        position = next((pos for pos in self.account_state.positions if pos.symbol == order.product.symbol), None)
+        if position and position.quantity >= order.quantity:
+            return True
+        else:
+            available_qty = position.quantity if position else 0
+            # print(f"Insufficient inventory to place SELL order {order.id}: requires {order.quantity}, available {available_qty}")
+            return False
+
+    def _is_within_trading_limit(self, order: Order) -> bool:
+        # Default trading limit per day
+        TRADE_LIMIT = 1_000_000.0  # 1 million
+        # Accumulate today's traded cost for all orders
+        odrs = self.list_trades()
+        today_str = self.market.get_market_time()['mock_current_time'].strftime('%Y-%m-%d')
+        sum = 0.0
+        for odr in odrs:
+            # Consider committed + filled + this order
+            if odr.status in [OrderStatus.COMMITTED, OrderStatus.FILLED] and odr.order_datetime.startswith(today_str):
+                sum += odr.price * odr.quantity
+        return sum + (order.price * order.quantity) <= TRADE_LIMIT
+
     # Trigger at some important points to check if order is filled
     # since we did not implement an event-driven-based exchange simulation
     def _check_if_any_order_filled(self) -> bool:
@@ -976,4 +995,32 @@ class MockBrokerBackend:
             result.append(kbar)
 
         return result
+
+    # TODO: Remove this when `list_trades()` is confirmed working
+    # def list_trades_legacy(self) -> List[Dict]:
+    #     self._check_if_any_order_filled()
+
+    #     # return all orders (placed / committed / filled / cancelled)
+    #     trades = []
+    #     all_orders = (self.account_state.orders_placed +
+    #                  self.account_state.orders_committed +
+    #                  self.account_state.orders_filled +
+    #                  self.account_state.orders_cancelled)
+    #     for order in all_orders:
+    #         order_info = {
+    #             'id': order.id,
+    #             'symbol': order.product.symbol,
+    #             'action': order.action.value,
+    #             'quantity': order.quantity,
+    #             'price': order.price,
+    #             'status': self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
+    #             'order_type': order.order_type.value,
+    #             'price_type': order.price_type.value,
+    #             'order_lot': order.order_lot,
+    #             'order_datetime': order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+    #             'deals': 0, # TODO: Not sure what this field means in SJ
+    #             'ordno': order.id
+    #         }
+    #         trades.append(order_info)
+    #     return trades
     ########################   Internal functions (end)   ##########################

@@ -387,6 +387,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             orders = []
             for trade in trades:
+                # TODO: Currently `list_trades()` to `list_orders()` loses too much info
+                # Need to redesign the data structure later
                 order_info = {
                     'id': trade.status.id,
                     'symbol': getattr(trade.contract, 'code', 'N/A') if hasattr(trade, 'contract') else 'N/A',

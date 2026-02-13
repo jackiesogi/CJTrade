@@ -152,7 +152,8 @@ class MockBrokerAPI(BrokerAPIBase):
         res = self.api.place_order(order)
 
         insert_new_order_to_db(conn=self.db, order=order)
-
+        if res.status == OrderStatus.REJECTED:
+            update_order_status_to_db(conn=self.db, oid=order.id, status="REJECTED")
         return res
 
 
@@ -209,9 +210,11 @@ class MockBrokerAPI(BrokerAPIBase):
             price=price
         )
 
-        place_result = self.place_order(order)
-        # return self.commit_order(place_result.linked_order)
-        return self.commit_order()
+        tmp = self.place_order(order)
+        if tmp.status != OrderStatus.ON_THE_WAY:
+            return tmp
+        else:
+            return self.commit_order()
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
         product = Product(
@@ -230,6 +233,8 @@ class MockBrokerAPI(BrokerAPIBase):
             price=price
         )
 
-        place_result = self.place_order(order)
-        # return self.commit_order(place_result.linked_order)
-        return self.commit_order()
+        tmp = self.place_order(order)
+        if tmp.status != OrderStatus.ON_THE_WAY:
+            return tmp
+        else:
+            return self.commit_order()
