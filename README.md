@@ -14,7 +14,7 @@ Note that the todos listed here is for those brand new feature, those still don'
 If it is a modification to existing logic, please mark todo directly in that file, and it will be easier to trace using todo tree extension.
 
 - [ ] Add `get_latest_kbar() -> Kbar` or related feature that can fetch exact one kbar.
-- [ ] Add abstraction to database interaction and think about what and how to record. (sqlite3 first)
+- [x] Add abstraction to database interaction and think about what and how to record. (sqlite3 first)
 - [ ] Add candidate manager related feature.
 - [ ] Add `Dash` package and work with stateful UI (not only kbar chart but also some buttons and fields).
 
@@ -26,23 +26,45 @@ Consider to align `AccountClient` requirements with yfinance so that there won't
 
 ## Run
 ```sh
-git clone git@github.com:jackiesogi/cjtrade
-cd cjtrade
+git clone https://github.com/jackiesogi/CJTrade
+cd CJTrade
+uv python install 3.12
+uv venv --python 3.12
 uv sync
 source .venv/bin/activate
+mkdir data
+```
 
-# For sinopac user:
-echo "API_KEY=${YOUR_SINOPAC_API_KEY}" >> .env
-echo "SECRET_KEY=${YOUR_SINOPAC_SECRET_KEY}" >> .env
-echo "CA_PATH=${YOUR_SINOPAC_CA_PATH}" >> .env
-echo "CA_PASSWORD=${YOUR_SINOPAC_CA_PASSWORD}" >> .env
+### Play around using mock broker
 
-# For those who don't have a sinopac account but still want to try it out,
+:warning: Note that please paste line by line to avoid issue.
+
+```sh
+# For those who don't have a securities account but still want to try it out,
 # try adding --broker=mock to use the mock environment (no login required):
-python3 src/cjtrade/tests/cjtrade_shell.py --broker=mock # Will become main CLI tool in the future.
+bash scripts/gen_config.sh mock  # generate mock environment config template
+uv run cjtrade --broker=mock     # connect to mock broker
 
 # For testing all the features in cjtrade shell
-bash src/cjtrade/tests/test_cjtrade_shell_all_cmds.sh  # Test all CLI commands
+bash tests/test_cjtrade_shell_all_cmds.sh
+```
+
+### Sinopac users
+
+```sh
+# Get your required api keys from https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4:
+bash scripts/gen_config.sh sinopac
+echo "# -------- Overwritten part --------" >> sinopac_system.cjconf
+echo "API_KEY=${YOUR_SINOPAC_API_KEY}" >> sinopac_system.cjconf
+echo "SECRET_KEY=${YOUR_SINOPAC_SECRET_KEY}" >> sinopac_system.cjconf
+echo "CA_CERT_PATH=${YOUR_SINOPAC_CA_PATH}" >> sinopac_system.cjconf
+echo "CA_PASSWORD=${YOUR_SINOPAC_CA_PASSWORD}" >> sinopac_system.cjconf
+
+# After configuring properly, you can connect to sinopac securities
+uv run cjtrade --broker=sinopac
+
+# For testing all the features in cjtrade shell
+bash tests/test_cjtrade_shell_all_cmds.sh
 ```
 
 ### For clear, maintainable branch design

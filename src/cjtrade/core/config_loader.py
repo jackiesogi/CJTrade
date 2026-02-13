@@ -11,7 +11,8 @@ class CJTradeConfiguration:
 
 SUPPORTED_CONFIG_PATHS = [
     Path(".env"),
-    Path(".cjtrade_config"),  # Directory with recursive *.cjconf search
+    Path.cwd(),  # Current working directory
+    # Path(".cjtrade_config"),  # Directory with recursive *.cjconf search
 ]
 
 SUPPORTED_FILE_PATTERN = "*.cjconf"
