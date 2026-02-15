@@ -1,8 +1,12 @@
-import readline
 from cjtrade.db.db_base import *
 from cjtrade.db.db_api import connect_sqlite
 from cjtrade.db.sqlite import *
 from cjtrade.db.tests.utils import _clean_up_test_db, TEST_DB_PATH, db_shell
+try:
+    import readline
+except ImportError:
+    import pyreadline3 as readline
+
 
 def test_create_fill_ledger_sql():
     conn = connect_sqlite(TEST_DB_PATH)

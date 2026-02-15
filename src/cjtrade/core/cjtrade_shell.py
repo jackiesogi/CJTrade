@@ -732,7 +732,11 @@ def print_supported_brokers():
 
 
 # ========== Interactive Shell ==========
-import readline
+try:
+    import readline
+except ImportError:
+    import pyreadline3 as readline
+
 MAX_HISTORY_SIZE = 30
 
 def init_readline():
