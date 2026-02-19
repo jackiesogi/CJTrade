@@ -451,9 +451,9 @@ class CancelAllCommand(CommandBase):
                     print(f"  Status: {status}")
 
                     # Cancel orders that are not yet filled or already cancelled
-                    # OrderStatus: STAGED, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
+                    # OrderStatus: NEW, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
                     # OrderStatus: FILLED, CANCELLED, REJECTED cannot be cancelled
-                    if status in ['STAGED', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
+                    if status in ['NEW', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
                                  'PreSubmitted', 'Submitted', 'PartFilled']:
                         print(f"  → Trying to cancel...")
                         result = client.cancel_order(order_id)

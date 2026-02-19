@@ -32,7 +32,8 @@ class MockBrokerAPI(BrokerAPIBase):
 
         # db connection
         self.username = config.get('username', 'user000')
-        self.db = config.get('mirror_db_path', f'./data/mock.db')
+        self.db_path = config.get('mirror_db_path', f'./data/mock.db')
+        self.db = None
 
     def connect(self) -> bool:
         """MockBroker's connection simply starts the simulation environment."""
@@ -40,7 +41,7 @@ class MockBrokerAPI(BrokerAPIBase):
             self.api.login()
             self._connected = True
             print("MockBroker connected successfully")
-            self.db = connect_sqlite(database=self.db)
+            self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
             return True
         except Exception as e:

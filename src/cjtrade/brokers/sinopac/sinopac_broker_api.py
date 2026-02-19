@@ -38,7 +38,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         # db connection
         self.username = config.get('username', 'user999')
-        self.db = config.get('mirror_db_path', f'./data/sinopac.db')
+        self.db_path = config.get('mirror_db_path', f'./data/sinopac.db')
+        self.db = None
 
         self.api = sj.Shioaji(simulation=self.simulation)
 
@@ -63,7 +64,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             )
             self._connected = True
 
-            self.db = connect_sqlite(database=self.db)
+            self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
 
             # self._sync_positions_with_broker()
@@ -297,7 +298,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 trades = self.api.list_trades()
                 for trade in trades:
                     if hasattr(trade, 'status') and hasattr(trade.status, 'id'):
-                        if trade.status.status in [sj.constant.Status.Submitted, sj.constant.Status.PreSubmitted, sj.constant.Status.PendingSubmit, sj.constant.Status.PartFilled] and trade.status.id == sj_id: 
+                        if trade.status.status in [sj.constant.Status.Submitted, sj.constant.Status.PreSubmitted, sj.constant.Status.PendingSubmit, sj.constant.Status.PartFilled] and trade.status.id == sj_id:
                             sinopac_trade = trade
                             # Update the mapping for future use
                             cj_sj_order_map[order_id] = trade
@@ -364,6 +365,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             res = []
             print(cj_sj_order_map)
+            # TODO: Not only check in-mem but also check in DB
             for c, s in cj_sj_order_map.items():
                 if s.status.status not in [sj.constant.Status.Submitted,
                                            sj.constant.Status.Cancelled,
@@ -402,6 +404,10 @@ class SinopacBrokerAPI(BrokerAPIBase):
             orders = []
 
             for trade in trades:
+                # Convert Sinopac status to CJ status
+                from ._internal_func import STATUS_MAP
+                cj_status = STATUS_MAP.get(trade.status.status, OrderStatus.UNKNOWN)
+
                 order_info = Trade(
                     # id=trade.status.id,
                     # id=cj_order_id,
@@ -410,7 +416,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
                     action=trade.order.action.value if hasattr(trade.order, 'action') else 'N/A',
                     quantity=trade.order.quantity,
                     price=trade.order.price,
-                    status=trade.status.status.value,
+                    status=cj_status.value,  # Use converted CJ status
                     order_type=trade.order.order_type.value if hasattr(trade.order, 'order_type') else 'N/A',
                     price_type=trade.order.price_type.value if hasattr(trade.order, 'price_type') else 'N/A',
                     order_lot=trade.order.order_lot.value if hasattr(trade.order, 'order_lot') else 'N/A',

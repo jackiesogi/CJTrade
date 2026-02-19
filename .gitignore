@@ -11,3 +11,10 @@ wheels/
 
 # Secret
 .env
+
+# Logs
+*.log
+logs/
+
+# JSON files
+*.json

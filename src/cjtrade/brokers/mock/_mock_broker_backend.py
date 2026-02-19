@@ -73,9 +73,6 @@ class MockBrokerBackend:
         self.account_state = MockBackend_AccountState()
         self.account_state_default_file = state_file
 
-        print(f"!!!!!!!!! Initialized MockBrokerBackend with price_mode={price_mode.value}, playback_speed={playback_speed}x, state_file='{state_file}'")
-        # self.ACCOUNT_STATE_DEFAULT_FILE = "mock_account_state.json"
-
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
             self.market = MockBackend_MockMarket(real_account=self.real_account)
@@ -360,6 +357,11 @@ class MockBrokerBackend:
 
     # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
+        if not self._is_valid_price(order):
+            return REJECTED_ORDER_NEGATIVE_PRICE(order)
+        if not self._is_valid_quantity(order):
+            return REJECTED_ORDER_NEGATIVE_QUANTITY(order)
+
         # Check account balance / inventory stock / trading limit per day
         if not self._is_within_trading_limit(order):
             return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
@@ -375,20 +377,34 @@ class MockBrokerBackend:
         order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
 
         self.account_state.orders_placed.append(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
+        self.account_state.all_order_status[order.id] = OrderStatus.NEW
         return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
     def commit_order(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
-            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order)
+            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
 
         self.account_state.orders_committed.append(order)
         self.account_state.orders_placed.remove(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
 
-        res = COMMITTED_ORDER_STANDARD(order)
+        # Status depends on market hours (mimics Sinopac behavior)
+        if self.market.is_market_open():
+            # Market open: order immediately committed to exchange
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
+            status = OrderStatus.COMMITTED
+        else:
+            # Market closed: order pending, will be sent when market opens
+            self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
+            status = OrderStatus.ON_THE_WAY
+
+        res = OrderResult(
+            status=status,
+            message="Order committed successfully." if status == OrderStatus.COMMITTED else "Order pending market open.",
+            metadata={"market_open": self.market.is_market_open()},
+            linked_order=order.id
+        )
         # print(res)
         return res
 
@@ -463,6 +479,13 @@ class MockBrokerBackend:
             available_qty = position.quantity if position else 0
             # print(f"Insufficient inventory to place SELL order {order.id}: requires {order.quantity}, available {available_qty}")
             return False
+
+    # Currently we only check if the price is positive
+    def _is_valid_price(self, order: Order) -> bool:
+        return order.price > 0
+
+    def _is_valid_quantity(self, order: Order) -> bool:
+        return order.quantity > 0
 
     def _is_within_trading_limit(self, order: Order) -> bool:
         # Default trading limit per day

@@ -80,12 +80,12 @@ def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id:
         return None
     try:
         sqlcmd = f"SELECT cj_order_id FROM CJ_OrderMap WHERE broker_order_id = '{bkr_order_id}'"
-        print(sqlcmd)
+        # print(sqlcmd)
         result = conn.execute(sqlcmd)
         if result:
             return result[0][0]  # TODO: this is currently a workaround for mal-design DB API that returns a tuple
         else:
-            print(f"No mapping found for broker order {bkr_order_id} in local DB.")
+            # print(f"No mapping found for broker order {bkr_order_id} in local DB.")
             return None
     except Exception as e:
         print(f"Failed to get CJ order ID for broker order {bkr_order_id} from local DB: {e}")

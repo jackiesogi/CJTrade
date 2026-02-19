@@ -28,13 +28,13 @@ class OrderLot(str, Enum):
 # TODO: more useful and descriptive status set
 # TODO: align with SINOPAC status as much as possible, and add more custom status if needed
 class OrderStatus(str, Enum):
-    STAGED = "STAGED"         # PendingSubmit
+    NEW = "NEW"               # PendingSubmit (aligns with DB status)
     ON_THE_WAY = "ON_THE_WAY" # PreSubmitted
     COMMITTED = "COMMITTED"   # Submitted
     FILLED = "FILLED"         # Filled
     PARTIAL = "PARTIAL"       # PartFilled
     CANCELLED = "CANCELLED"
-    REJECTED = "REJECTED"
+    REJECTED = "REJECTED"     # Failed
     UNKNOWN = "UNKNOWN"
 
 
