@@ -117,7 +117,7 @@ def test_sinopac_cancel_all_orders():
                 print(f"  Price: {trade.order.price}")
 
                 # Only cancel orders that are not yet filled
-                if status in ['PreSubmitted', 'Submitted', 'PartialFilled']:
+                if status in ['PreSubmitted', 'Submitted', 'PartFilled']:
                     print(f"  → Trying to cancel...")
                     result = api.cancel_order(trade)
                     print(f"  → Cancel result: {result}")
@@ -135,7 +135,7 @@ def test_sinopac_cancel_all_orders():
         print("\n=== Check cancellation results ===")
         api.update_status()
         remaining_trades = api.list_trades()
-        active_orders = [t for t in remaining_trades if t.status.status.value in ['PreSubmitted', 'Submitted', 'PartialFilled']]
+        active_orders = [t for t in remaining_trades if t.status.status.value in ['PreSubmitted', 'Submitted', 'PartFilled']]
         print(f"Remaining active orders: {len(active_orders)}")
 
         if active_orders:

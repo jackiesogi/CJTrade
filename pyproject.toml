@@ -28,10 +28,10 @@ dependencies = [
     "yfinance>=0.2.66",
 ]
 
-
 [project.scripts]
 cjtrade = "cjtrade:cli"
 main = "cjtrade:cli"
+test = "cjtrade.test_runner:main"
 
 
 [build-system]
