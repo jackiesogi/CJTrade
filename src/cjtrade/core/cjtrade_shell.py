@@ -423,7 +423,6 @@ class MoversCommand(CommandBase):
         print(df)
 
 
-# TODO: Also need to test mock broker
 class CancelAllCommand(CommandBase):
     def __init__(self):
         super().__init__()

@@ -274,14 +274,11 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 linked_order=""
             )
 
-    # TODO: Update status to db (order_id is cj order id, not sj order id)
     # TODO: Currently CJ ID is not permanently stored, so sometimes we cannot find the order to cancel.
     # We need to find a better way to store the mapping (e.g. store in DB permanently instead of in-memory dict)
     def cancel_order(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
-
-        # print(f"cancel_order({order_id}) called")
 
         try:
             # Update status to get latest order information
@@ -331,28 +328,6 @@ class SinopacBrokerAPI(BrokerAPIBase):
             )
 
 
-    # TODO: Re-Design the `Order` and `OrderResult`
-    # TODO: We commit all placed orders in Sinopac at once but only return one result here???
-    def commit_order_legacy(self, order_id: str) -> OrderResult:
-        if not self._connected:
-            raise ConnectionError("Not connected to broker")
-        try:
-            # Update status to refresh all trade information
-            self.api.update_status(self.api.stock_account)
-
-            # In order to get the order result, we look up the mapping
-            trade_obj = cj_sj_order_map.get(order_id)
-            # print(f"--- commit_order() -> {trade_obj}")
-            return _from_sinopac_result(trade_obj)
-
-        except Exception as e:
-            return OrderResult(
-                status=OrderStatus.REJECTED,
-                message=f"Failed to commit order: {str(e)}",
-                metadata={"broker": "sinopac", "error": str(e)},
-                linked_order=order_id
-            )
-
     # Better version of commit_order()
     # Commit all staged(placed) order and return each of
     # the OrderResult as a List
@@ -390,7 +365,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
     def get_broker_name(self) -> str:
         return "sinopac"
 
-    # TODO: Decouple from sj API/objects, use cj internal class instead
+    # NOTE: Decouple from sj API/objects, use cj internal obj (`Trade`) instead
     # This is quite important since other equivalent feature have been
     # abstracted in cjtrade-based dataclass. (Don't simply use List[Dict])
     def list_orders(self) -> List[Trade]:

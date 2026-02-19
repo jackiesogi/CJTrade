@@ -45,19 +45,19 @@ def create_test_suite():
     loader = unittest.TestLoader()
 
     # Normal operations (test_01-05)
-    # suite.addTests(loader.loadTestsFromTestCase(TestNormalOperations))
+    suite.addTests(loader.loadTestsFromTestCase(TestNormalOperations))
 
     # Edge cases (test_10-19)
-    # suite.addTests(loader.loadTestsFromTestCase(TestEdgeCases))
+    suite.addTests(loader.loadTestsFromTestCase(TestEdgeCases))
 
     # State consistency (test_20-33)
     suite.addTests(loader.loadTestsFromTestCase(TestStateConsistency))
 
     # Stress tests (test_40-41)
-    # suite.addTests(loader.loadTestsFromTestCase(TestStressScenarios))
+    suite.addTests(loader.loadTestsFromTestCase(TestStressScenarios))
 
     # Integration tests (test_50-51)
-    # suite.addTests(loader.loadTestsFromTestCase(TestIntegrationFlows))
+    suite.addTests(loader.loadTestsFromTestCase(TestIntegrationFlows))
 
     return suite
 

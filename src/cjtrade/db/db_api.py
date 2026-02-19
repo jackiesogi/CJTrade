@@ -1,3 +1,4 @@
+# TODO: Avoid SQL injection
 from cjtrade.db.db_base import *
 from cjtrade.models.order import *
 
@@ -101,7 +102,6 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
     created_at_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        # TODO: How to pass user into this function?
         sqlcmd = \
         f"""
             INSERT INTO orders (

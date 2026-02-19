@@ -320,8 +320,9 @@ def _aggregate_kbars(kbars: List[Kbar], target_interval: str) -> List[Kbar]:
     # For intraday intervals, use standard time-based aggregation
     return _aggregate_by_time_windows(kbars, target_mins)
 
-# TODO: `replay 0050 100 1d` open does not match yesterday's close,
+# NOTE: `replay 0050 100 1d` open does not match yesterday's close,
 # need to verify the aggregation logic or inspect sinopac's data quality.
+# -> Turns out that most of the financial data has same quality issue.
 def _aggregate_by_trading_session(kbars: List[Kbar], interval: str) -> List[Kbar]:
     """
     Aggregate kbars by trading sessions (daily, weekly, monthly).
