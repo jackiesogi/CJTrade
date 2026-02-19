@@ -1,5 +1,8 @@
 # Broker Implementation Guide
 
+> Order state graph
+![order_lifecycle_graph](../../../img/order_lifecycle.png)
+
 ## Overview
 
 The `cjtrade` project provides a unified programming interface for developers to design trading strategies that work across different securities brokers (證券商). This abstraction layer (抽象層) bridges our CJTrade API to different brokers' backends, which allows user to write their own apps (e.g. trading strategies, account balance alerts ...) and deploy it across multiple broker platforms.
