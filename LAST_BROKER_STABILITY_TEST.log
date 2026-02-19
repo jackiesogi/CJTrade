@@ -1,0 +1,1910 @@
+======================================================================
+CJTrade Broker API Stability Tests - Detailed Log
+======================================================================
+
+test_01_order_placement_basic (__main__.TestBrokerAPIStability.test_01_order_placement_basic)
+Test basic order placement flow ... 
+======================================================================
+test_01_order_placement_basic: Test basic order placement flow
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp7181cy1k.db
+[SETUP] Created temporary account state at /tmp/tmpj6ks71y_.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpj6ks71y_.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Basic order placement
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'f2fbd2a58c3e4dbf939c03370fc39988', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order f2fbd2a58c3e4dbf939c03370fc39988 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_02_order_commit_flow (__main__.TestBrokerAPIStability.test_02_order_commit_flow)
+Test order commit after placement ... 
+======================================================================
+test_02_order_commit_flow: Test order commit after placement
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpgewj7jxv.db
+[SETUP] Created temporary account state at /tmp/tmp10y1aqay.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp10y1aqay.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Order commit flow
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'e14955a33f4249388d72deef6a5f70f0', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order e14955a33f4249388d72deef6a5f70f0 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = 'e14955a33f4249388d72deef6a5f70f0'
+        
+Order e14955a33f4249388d72deef6a5f70f0 status updated to COMMITTED in local DB.
+Order e14955a3: DB=COMMITTED, Expected=COMMITTED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_03_order_cancellation (__main__.TestBrokerAPIStability.test_03_order_cancellation)
+Test order cancellation ... 
+======================================================================
+test_03_order_cancellation: Test order cancellation
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpodmgrury.db
+[SETUP] Created temporary account state at /tmp/tmpt3umx29s.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpt3umx29s.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Order cancellation
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '8b8485a094c54dc5b0ac4b5356e31fb1', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 8b8485a094c54dc5b0ac4b5356e31fb1 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '8b8485a094c54dc5b0ac4b5356e31fb1'
+        
+Order 8b8485a094c54dc5b0ac4b5356e31fb1 status updated to COMMITTED in local DB.
+Order 8b8485a094c54dc5b0ac4b5356e31fb1 cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '8b8485a094c54dc5b0ac4b5356e31fb1'
+        
+Order 8b8485a094c54dc5b0ac4b5356e31fb1 status updated to CANCELLED in local DB.
+Order 8b8485a0: DB=CANCELLED, Expected=CANCELLED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_04_multiple_orders_sequential (__main__.TestBrokerAPIStability.test_04_multiple_orders_sequential)
+Test placing multiple orders sequentially ... 
+======================================================================
+test_04_multiple_orders_sequential: Test placing multiple orders sequentially
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpd5g4gf0b.db
+[SETUP] Created temporary account state at /tmp/tmphk036_9w.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmphk036_9w.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Multiple orders sequential
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '478f1f8aa8054bb98c8895f065a2bc2c', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '100.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 478f1f8aa8054bb98c8895f065a2bc2c inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '9dedeea5d1964aae9cabdbdeb6cd85c7', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '101.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 9dedeea5d1964aae9cabdbdeb6cd85c7 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '0a480f899a8a4051bb543d391f8d2d24', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '102.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 0a480f899a8a4051bb543d391f8d2d24 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a932f7fdc333432ba405d0c21db0b294', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '103.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order a932f7fdc333432ba405d0c21db0b294 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '6e7d325ff55545808d9eaae491cbf3a1', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '104.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 6e7d325ff55545808d9eaae491cbf3a1 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '478f1f8aa8054bb98c8895f065a2bc2c'
+        
+Order 478f1f8aa8054bb98c8895f065a2bc2c status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '9dedeea5d1964aae9cabdbdeb6cd85c7'
+        
+Order 9dedeea5d1964aae9cabdbdeb6cd85c7 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '0a480f899a8a4051bb543d391f8d2d24'
+        
+Order 0a480f899a8a4051bb543d391f8d2d24 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = 'a932f7fdc333432ba405d0c21db0b294'
+        
+Order a932f7fdc333432ba405d0c21db0b294 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '6e7d325ff55545808d9eaae491cbf3a1'
+        
+Order 6e7d325ff55545808d9eaae491cbf3a1 status updated to COMMITTED in local DB.
+Order 478f1f8a: DB=COMMITTED, Expected=COMMITTED
+Order 9dedeea5: DB=COMMITTED, Expected=COMMITTED
+Order 0a480f89: DB=COMMITTED, Expected=COMMITTED
+Order a932f7fd: DB=COMMITTED, Expected=COMMITTED
+Order 6e7d325f: DB=COMMITTED, Expected=COMMITTED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_05_buy_and_sell_operations (__main__.TestBrokerAPIStability.test_05_buy_and_sell_operations)
+Test buy and sell stock operations ... 
+======================================================================
+test_05_buy_and_sell_operations: Test buy and sell stock operations
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpwmb7mvs2.db
+[SETUP] Created temporary account state at /tmp/tmpzg4xyvxo.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpzg4xyvxo.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Buy and sell operations
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '053c043a5dc249589e3a4e8066201638', 'test_user', 'na',
+              '2330', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 053c043a5dc249589e3a4e8066201638 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '053c043a5dc249589e3a4e8066201638'
+        
+Order 053c043a5dc249589e3a4e8066201638 status updated to COMMITTED in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '3f692cdb361c4f03aeeb34c749c92c7e', 'test_user', 'na',
+              '2330', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '55.0', '50',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 3f692cdb361c4f03aeeb34c749c92c7e inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '3f692cdb361c4f03aeeb34c749c92c7e'
+        
+Order 3f692cdb361c4f03aeeb34c749c92c7e status updated to REJECTED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_10_cancel_nonexistent_order (__main__.TestBrokerAPIStability.test_10_cancel_nonexistent_order)
+Test cancelling an order that doesn't exist ... 
+======================================================================
+test_10_cancel_nonexistent_order: Test cancelling an order that doesn't exist
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpncttrxeq.db
+[SETUP] Created temporary account state at /tmp/tmp3cl83c2u.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp3cl83c2u.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Cancel non-existent order
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_11_cancel_already_cancelled_order (__main__.TestBrokerAPIStability.test_11_cancel_already_cancelled_order)
+Test cancelling an already cancelled order (idempotency) ... 
+======================================================================
+test_11_cancel_already_cancelled_order: Test cancelling an already cancelled order (idempotency)
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpewut4jgl.db
+[SETUP] Created temporary account state at /tmp/tmpe19elgx6.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpe19elgx6.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Cancel already cancelled order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '2517088ad4464e89a9cc0ca9f02cfefe', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 2517088ad4464e89a9cc0ca9f02cfefe inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '2517088ad4464e89a9cc0ca9f02cfefe'
+        
+Order 2517088ad4464e89a9cc0ca9f02cfefe status updated to COMMITTED in local DB.
+Order 2517088ad4464e89a9cc0ca9f02cfefe cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '2517088ad4464e89a9cc0ca9f02cfefe'
+        
+Order 2517088ad4464e89a9cc0ca9f02cfefe status updated to CANCELLED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_12_cancel_filled_order (__main__.TestBrokerAPIStability.test_12_cancel_filled_order)
+Test cancelling an order that is already filled ... 
+======================================================================
+test_12_cancel_filled_order: Test cancelling an order that is already filled
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp8o06yxoj.db
+[SETUP] Created temporary account state at /tmp/tmpny0ieoi8.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpny0ieoi8.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Cancel filled order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '67626550f2d54091b220fef838f2613c', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '45.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 67626550f2d54091b220fef838f2613c inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '67626550f2d54091b220fef838f2613c'
+        
+Order 67626550f2d54091b220fef838f2613c status updated to COMMITTED in local DB.
+Order 67626550f2d54091b220fef838f2613c cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '67626550f2d54091b220fef838f2613c'
+        
+Order 67626550f2d54091b220fef838f2613c status updated to CANCELLED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_13_invalid_order_parameters_zero_quantity (__main__.TestBrokerAPIStability.test_13_invalid_order_parameters_zero_quantity)
+Test order with zero quantity ... 
+======================================================================
+test_13_invalid_order_parameters_zero_quantity: Test order with zero quantity
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpo3z5vu8w.db
+[SETUP] Created temporary account state at /tmp/tmpg3crqz7t.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpg3crqz7t.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Zero quantity order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '039b89f865034110bdad2d1d5c87112f', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '0',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 039b89f865034110bdad2d1d5c87112f inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_14_invalid_order_parameters_negative_price (__main__.TestBrokerAPIStability.test_14_invalid_order_parameters_negative_price)
+Test order with negative price ... 
+======================================================================
+test_14_invalid_order_parameters_negative_price: Test order with negative price
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpmhk6gw79.db
+[SETUP] Created temporary account state at /tmp/tmp3dpz8hui.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp3dpz8hui.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Negative price order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'b77d58f08aec4c1e9249de2d9e2d6689', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '-100.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order b77d58f08aec4c1e9249de2d9e2d6689 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_15_invalid_order_parameters_negative_quantity (__main__.TestBrokerAPIStability.test_15_invalid_order_parameters_negative_quantity)
+Test order with negative quantity ... 
+======================================================================
+test_15_invalid_order_parameters_negative_quantity: Test order with negative quantity
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpoqhs5o4b.db
+[SETUP] Created temporary account state at /tmp/tmpbvwspbgi.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpbvwspbgi.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Negative quantity order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'bc6341ebb3de47eeb3bd2c14f77d067f', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '-1000',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order bc6341ebb3de47eeb3bd2c14f77d067f inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_16_commit_without_pending_orders (__main__.TestBrokerAPIStability.test_16_commit_without_pending_orders)
+Test committing when there are no pending orders ... 
+======================================================================
+test_16_commit_without_pending_orders: Test committing when there are no pending orders
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpn100e9qg.db
+[SETUP] Created temporary account state at /tmp/tmp909aridx.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp909aridx.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Commit without pending orders
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_17_place_order_after_disconnect (__main__.TestBrokerAPIStability.test_17_place_order_after_disconnect)
+Test placing order after disconnecting ... 
+======================================================================
+test_17_place_order_after_disconnect: Test placing order after disconnecting
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp6pvwc_1_.db
+[SETUP] Created temporary account state at /tmp/tmppfem_cz9.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmppfem_cz9.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Place order after disconnect
+Simulation environment stopped
+MockBroker disconnected
+Simulation environment started
+MockBroker connected successfully
+MockBroker connection failed: expected str, bytes or os.PathLike object, not SqliteDatabaseConnection
+ok
+
+Result: PASSED
+test_18_large_quantity_order (__main__.TestBrokerAPIStability.test_18_large_quantity_order)
+Test order with very large quantity ... 
+======================================================================
+test_18_large_quantity_order: Test order with very large quantity
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp098zlsm5.db
+[SETUP] Created temporary account state at /tmp/tmp58w4pui3.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp58w4pui3.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Large quantity order
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ac9fbbca4a194846860497b19933e51b', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '0.01', '999999',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order ac9fbbca4a194846860497b19933e51b inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_19_extreme_price_values (__main__.TestBrokerAPIStability.test_19_extreme_price_values)
+Test orders with extreme price values ... 
+======================================================================
+test_19_extreme_price_values: Test orders with extreme price values
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp_m7zkdx0.db
+[SETUP] Created temporary account state at /tmp/tmpt4bbss22.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpt4bbss22.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Extreme price values
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a18a9892660e4c32af130d1444c94d1b', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '9999.99', '1',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order a18a9892660e4c32af130d1444c94d1b inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '9914e3b8daed4c298c07be3efb006612', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '0.01', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 9914e3b8daed4c298c07be3efb006612 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_20_db_order_persistence (__main__.TestBrokerAPIStability.test_20_db_order_persistence)
+Test that orders persist correctly in database ... 
+======================================================================
+test_20_db_order_persistence: Test that orders persist correctly in database
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpbjskto43.db
+[SETUP] Created temporary account state at /tmp/tmp441omf5w.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp441omf5w.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Order persistence in DB
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'cbaa2f7534b94dc38ec316b41470669a', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order cbaa2f7534b94dc38ec316b41470669a inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '14255ebb2a2f4671b2d16d0e64268839', 'test_user', 'na',
+              '0051', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 14255ebb2a2f4671b2d16d0e64268839 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '36c85cec45d849e5a8620bed6d3a7665', 'test_user', 'na',
+              '0052', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 36c85cec45d849e5a8620bed6d3a7665 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_21_db_status_update_consistency (__main__.TestBrokerAPIStability.test_21_db_status_update_consistency)
+Test that status updates are consistent ... 
+======================================================================
+test_21_db_status_update_consistency: Test that status updates are consistent
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp8043j85h.db
+[SETUP] Created temporary account state at /tmp/tmpx9eqe_6q.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpx9eqe_6q.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Status update consistency
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a392539a51e24dbda87b2dda4c29b892', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order a392539a51e24dbda87b2dda4c29b892 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = 'a392539a51e24dbda87b2dda4c29b892'
+        
+Order a392539a51e24dbda87b2dda4c29b892 status updated to COMMITTED in local DB.
+Order a392539a51e24dbda87b2dda4c29b892 cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = 'a392539a51e24dbda87b2dda4c29b892'
+        
+Order a392539a51e24dbda87b2dda4c29b892 status updated to CANCELLED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_22_db_timestamp_updates (__main__.TestBrokerAPIStability.test_22_db_timestamp_updates)
+Test that timestamps are correctly updated ... 
+======================================================================
+test_22_db_timestamp_updates: Test that timestamps are correctly updated
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpn25xauea.db
+[SETUP] Created temporary account state at /tmp/tmpq3vcj754.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpq3vcj754.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Timestamp updates
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '1c7d2af148c54aea91b1f8d304f75019', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 1c7d2af148c54aea91b1f8d304f75019 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '1c7d2af148c54aea91b1f8d304f75019'
+        
+Order 1c7d2af148c54aea91b1f8d304f75019 status updated to COMMITTED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_23_db_connection_recovery (__main__.TestBrokerAPIStability.test_23_db_connection_recovery)
+Test database operations after reconnection ... 
+======================================================================
+test_23_db_connection_recovery: Test database operations after reconnection
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp_nbgoow7.db
+[SETUP] Created temporary account state at /tmp/tmpcswd2uic.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpcswd2uic.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] DB connection recovery
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'eb3cd5cf260c441d90afdb360fc62296', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order eb3cd5cf260c441d90afdb360fc62296 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+Simulation environment started
+MockBroker connected successfully
+MockBroker connection failed: expected str, bytes or os.PathLike object, not SqliteDatabaseConnection
+Reconnect result: False
+ERROR
+
+Result: ERROR
+Error Details:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/case.py", line 58, in testPartExecutor
+    yield
+  File "/usr/lib/python3.12/unittest/case.py", line 634, in run
+    self._callTestMethod(testMethod)
+  File "/usr/lib/python3.12/unittest/case.py", line 589, in _callTestMethod
+    if method() is not None:
+       ^^^^^^^^
+  File "/home/jck/Downloads/cjtrade/tests/test_broker_api_stability.py", line 522, in test_23_db_connection_recovery
+    result = self.client.place_order(order2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jck/Downloads/cjtrade/src/cjtrade/core/account_client.py", line 107, in place_order
+    return self.broker_api.place_order(order)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jck/Downloads/cjtrade/src/cjtrade/brokers/mock/mock_broker_api.py", line 134, in place_order
+    raise ConnectionError("Not connected to broker")
+ConnectionError: Not connected to broker
+
+test_24_db_order_count_accuracy (__main__.TestBrokerAPIStability.test_24_db_order_count_accuracy)
+Test that order count in DB matches operations ... 
+======================================================================
+test_24_db_order_count_accuracy: Test that order count in DB matches operations
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp20dsk6mf.db
+[SETUP] Created temporary account state at /tmp/tmpfr29kfda.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpfr29kfda.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Order count accuracy
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '1f750f6b98254030a9be800a8275cbbe', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 1f750f6b98254030a9be800a8275cbbe inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '04cff8363d0142eb8dc942412ea8506c', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 04cff8363d0142eb8dc942412ea8506c inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'b5308141eef64ec3a8f0d0fca056e279', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order b5308141eef64ec3a8f0d0fca056e279 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '4d797a9f9bdf4aa594e55013ce4ec252', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 4d797a9f9bdf4aa594e55013ce4ec252 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'd9ee24456a834fb1aa07cebbb6193309', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order d9ee24456a834fb1aa07cebbb6193309 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a97a3ee3bcd34fbcbbc531cc588a640c', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order a97a3ee3bcd34fbcbbc531cc588a640c inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '0a38c64999c24c4fa1e4f10810737fbc', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 0a38c64999c24c4fa1e4f10810737fbc inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_30_internal_state_vs_db_consistency (__main__.TestBrokerAPIStability.test_30_internal_state_vs_db_consistency)
+Test that internal state matches database state ... 
+======================================================================
+test_30_internal_state_vs_db_consistency: Test that internal state matches database state
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp5vgf7i1w.db
+[SETUP] Created temporary account state at /tmp/tmpqn8t3uw1.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpqn8t3uw1.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Internal state vs DB consistency
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '501899c52f724212929fc548b5e650c9', 'test_user', 'na',
+              '2380', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 501899c52f724212929fc548b5e650c9 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '0b97c973895a4300b82499840aeece8d', 'test_user', 'na',
+              '2381', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order 0b97c973895a4300b82499840aeece8d inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'b1b197ae237a43d9868aa819fa1372fb', 'test_user', 'na',
+              '2382', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:53', NULL
+            )
+        
+Order b1b197ae237a43d9868aa819fa1372fb inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '501899c52f724212929fc548b5e650c9'
+        
+Order 501899c52f724212929fc548b5e650c9 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = '0b97c973895a4300b82499840aeece8d'
+        
+Order 0b97c973895a4300b82499840aeece8d status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:53'
+            WHERE order_id = 'b1b197ae237a43d9868aa819fa1372fb'
+        
+Order b1b197ae237a43d9868aa819fa1372fb status updated to COMMITTED in local DB.
+Order 501899c5: DB=COMMITTED, Expected=COMMITTED
+Order 0b97c973: DB=COMMITTED, Expected=COMMITTED
+Order b1b197ae: DB=COMMITTED, Expected=COMMITTED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_31_order_list_completeness (__main__.TestBrokerAPIStability.test_31_order_list_completeness)
+Test that list_orders returns all orders ... 
+======================================================================
+test_31_order_list_completeness: Test that list_orders returns all orders
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp15lxkbcj.db
+[SETUP] Created temporary account state at /tmp/tmp3nknh8p9.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp3nknh8p9.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Order list completeness
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '60b7f983c3a84df8a1f71b193974d205', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 60b7f983c3a84df8a1f71b193974d205 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a7926769183a4f0fb1d18a3e3544a4d4', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order a7926769183a4f0fb1d18a3e3544a4d4 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '5b2867925db04f7fac94652cbbe6f741', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 5b2867925db04f7fac94652cbbe6f741 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '290673effa7b4a34beb98a0d6a3a61e7', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 290673effa7b4a34beb98a0d6a3a61e7 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '5de0a43ddad64f80a6373e58154c8fab', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 5de0a43ddad64f80a6373e58154c8fab inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '60b7f983c3a84df8a1f71b193974d205'
+        
+Order 60b7f983c3a84df8a1f71b193974d205 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'a7926769183a4f0fb1d18a3e3544a4d4'
+        
+Order a7926769183a4f0fb1d18a3e3544a4d4 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '5b2867925db04f7fac94652cbbe6f741'
+        
+Order 5b2867925db04f7fac94652cbbe6f741 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '290673effa7b4a34beb98a0d6a3a61e7'
+        
+Order 290673effa7b4a34beb98a0d6a3a61e7 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '5de0a43ddad64f80a6373e58154c8fab'
+        
+Order 5de0a43ddad64f80a6373e58154c8fab status updated to COMMITTED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_32_balance_consistency (__main__.TestBrokerAPIStability.test_32_balance_consistency)
+Test that balance remains consistent ... 
+======================================================================
+test_32_balance_consistency: Test that balance remains consistent
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp1zjitavj.db
+[SETUP] Created temporary account state at /tmp/tmpfcvsjcj8.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpfcvsjcj8.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Balance consistency
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '5843e737b01d49f9b0063b48f9bd1c92', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 5843e737b01d49f9b0063b48f9bd1c92 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '19a4acf1e6774ecb88a727f7305a95bf', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 19a4acf1e6774ecb88a727f7305a95bf inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'e848a5e58cf446a4ad9f2d2aa0821679', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order e848a5e58cf446a4ad9f2d2aa0821679 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_33_position_consistency (__main__.TestBrokerAPIStability.test_33_position_consistency)
+Test that positions are tracked consistently ... 
+======================================================================
+test_33_position_consistency: Test that positions are tracked consistently
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpg7isaygd.db
+[SETUP] Created temporary account state at /tmp/tmpvqz34a8i.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpvqz34a8i.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Position consistency
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'c561d637d64a4cbab329dfbd04e7880a', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '100.0', '1000',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order c561d637d64a4cbab329dfbd04e7880a inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'c561d637d64a4cbab329dfbd04e7880a'
+        
+Order c561d637d64a4cbab329dfbd04e7880a status updated to COMMITTED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_40_rapid_order_submission (__main__.TestBrokerAPIStability.test_40_rapid_order_submission)
+Test submitting many orders rapidly ... 
+======================================================================
+test_40_rapid_order_submission: Test submitting many orders rapidly
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpol51efn6.db
+[SETUP] Created temporary account state at /tmp/tmpu090d9l1.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpu090d9l1.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Rapid order submission
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a2cca0227c1f4ecd961d63308d6498de', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '100.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order a2cca0227c1f4ecd961d63308d6498de inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'e81c74373e1e410cbe4e27174b42b4a7', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '100.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order e81c74373e1e410cbe4e27174b42b4a7 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'cb1cb64461044642a91c7b9b48056256', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '101.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order cb1cb64461044642a91c7b9b48056256 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '63302d7e0c2c4e9881e0187db4e9c514', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '101.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 63302d7e0c2c4e9881e0187db4e9c514 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a98a006daa76439d85bc50f5b43b7a2a', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '102.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order a98a006daa76439d85bc50f5b43b7a2a inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'd0e05c0682f24d5aa661eb5b09bdefea', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '102.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order d0e05c0682f24d5aa661eb5b09bdefea inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'd31ec1c7516d48eaba963c9960880a2b', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '103.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order d31ec1c7516d48eaba963c9960880a2b inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'bd5034a2f0a54404a424fa36d0df4906', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '103.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order bd5034a2f0a54404a424fa36d0df4906 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '0057550d4ca64e1a82e58cd9e8af3c31', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '104.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 0057550d4ca64e1a82e58cd9e8af3c31 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ada590b7053b4648981b2a7d8c8c2a76', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '104.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order ada590b7053b4648981b2a7d8c8c2a76 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ed6d38c9819e45298104fcdbc986f799', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '105.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order ed6d38c9819e45298104fcdbc986f799 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '01da38ef12e04f4d98d498c1dcca7939', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '105.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 01da38ef12e04f4d98d498c1dcca7939 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'f347ec9a0d0547e593a0fa7273dbeb6f', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '106.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order f347ec9a0d0547e593a0fa7273dbeb6f inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '8fd38219933141f5a5623fe480136498', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '106.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 8fd38219933141f5a5623fe480136498 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '7c38e59c66af41c89ebb1fba97c52b0a', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '107.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 7c38e59c66af41c89ebb1fba97c52b0a inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'fa9f4a19946b465ab9e8dba0c573a3fb', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '107.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order fa9f4a19946b465ab9e8dba0c573a3fb inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '77536e406ec64f93aff2e75e40fe2494', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '108.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 77536e406ec64f93aff2e75e40fe2494 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'bd6240a99be84765851a0949842f7f24', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '108.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order bd6240a99be84765851a0949842f7f24 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '99c66d54868c4c1685b86d8a2d8e27ae', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '109.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 99c66d54868c4c1685b86d8a2d8e27ae inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'af9d96aa20354e89923e34de47fe00a8', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '109.5', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order af9d96aa20354e89923e34de47fe00a8 inserted in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_41_alternating_buy_sell (__main__.TestBrokerAPIStability.test_41_alternating_buy_sell)
+Test alternating buy and sell orders ... 
+======================================================================
+test_41_alternating_buy_sell: Test alternating buy and sell orders
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmpyx5hbo95.db
+[SETUP] Created temporary account state at /tmp/tmpn5nrkig3.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpn5nrkig3.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Alternating buy/sell
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'b0dad590f81646c7a89767f371ffd447', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '100.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order b0dad590f81646c7a89767f371ffd447 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ad63c3b92b6d4e4cb9a41ad44fe647bb', 'test_user', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '101.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order ad63c3b92b6d4e4cb9a41ad44fe647bb inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'ad63c3b92b6d4e4cb9a41ad44fe647bb'
+        
+Order ad63c3b92b6d4e4cb9a41ad44fe647bb status updated to REJECTED in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '18c4edbe455842e18ed21663afb69db6', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '102.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 18c4edbe455842e18ed21663afb69db6 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '7051c32a27b647e68201b0c1a4833bb5', 'test_user', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '103.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 7051c32a27b647e68201b0c1a4833bb5 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '7051c32a27b647e68201b0c1a4833bb5'
+        
+Order 7051c32a27b647e68201b0c1a4833bb5 status updated to REJECTED in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '7a7cde9717664973bfe09382c46d4653', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '104.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 7a7cde9717664973bfe09382c46d4653 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'b3433407049a46fa921aabcea05b842c', 'test_user', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '105.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order b3433407049a46fa921aabcea05b842c inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'b3433407049a46fa921aabcea05b842c'
+        
+Order b3433407049a46fa921aabcea05b842c status updated to REJECTED in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'a5f7c399c38046bf9f462798d0bf1e96', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '106.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order a5f7c399c38046bf9f462798d0bf1e96 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '74d41e1ffe754793b7621fcb3d36e399', 'test_user', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '107.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 74d41e1ffe754793b7621fcb3d36e399 inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '74d41e1ffe754793b7621fcb3d36e399'
+        
+Order 74d41e1ffe754793b7621fcb3d36e399 status updated to REJECTED in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'c2a914a70d064f6d8cefe21ba563f182', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '108.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order c2a914a70d064f6d8cefe21ba563f182 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '905b21d3f6374fb3acb44b7222ec299b', 'test_user', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '109.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 905b21d3f6374fb3acb44b7222ec299b inserted in local DB.
+
+            UPDATE orders
+            SET status = 'REJECTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '905b21d3f6374fb3acb44b7222ec299b'
+        
+Order 905b21d3f6374fb3acb44b7222ec299b status updated to REJECTED in local DB.
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_50_full_order_lifecycle (__main__.TestBrokerAPIStability.test_50_full_order_lifecycle)
+Test complete order lifecycle: place -> commit -> cancel ... 
+======================================================================
+test_50_full_order_lifecycle: Test complete order lifecycle: place -> commit -> cancel
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp38yfirhw.db
+[SETUP] Created temporary account state at /tmp/tmp6g0hgqsx.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmp6g0hgqsx.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Full order lifecycle
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '8ced08852ceb4e049d581b6ef11f1177', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 8ced08852ceb4e049d581b6ef11f1177 inserted in local DB.
+Order 8ced0885: DB=NEW, Expected=NEW
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '8ced08852ceb4e049d581b6ef11f1177'
+        
+Order 8ced08852ceb4e049d581b6ef11f1177 status updated to COMMITTED in local DB.
+Order 8ced0885: DB=COMMITTED, Expected=COMMITTED
+Order 8ced08852ceb4e049d581b6ef11f1177 cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '8ced08852ceb4e049d581b6ef11f1177'
+        
+Order 8ced08852ceb4e049d581b6ef11f1177 status updated to CANCELLED in local DB.
+Order 8ced0885: DB=CANCELLED, Expected=CANCELLED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+test_51_mixed_operations_sequence (__main__.TestBrokerAPIStability.test_51_mixed_operations_sequence)
+Test mixed sequence of operations ... 
+======================================================================
+test_51_mixed_operations_sequence: Test mixed sequence of operations
+======================================================================
+
+[SETUP] Created temporary database at /tmp/tmp9sfv_ou_.db
+[SETUP] Created temporary account state at /tmp/tmpzn6ob4qw.json
+!!!!!!!!! Initialized MockBrokerBackend with price_mode=historical, playback_speed=120.0x, state_file='/tmp/tmpzn6ob4qw.json'
+Simulation environment started
+MockBroker connected successfully
+Orders and Fills tables are ready in local DB.
+
+[TEST] Mixed operations sequence
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'e428918586194a6eb7b3b81e81d2325a', 'test_user', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order e428918586194a6eb7b3b81e81d2325a inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ea156612862c4421ad82bd37ceb8a771', 'test_user', 'na',
+              '0056', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order ea156612862c4421ad82bd37ceb8a771 inserted in local DB.
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '95ba329cfb794ce5bfa41f4913f9e53b', 'test_user', 'na',
+              '2330', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '50.0', '100',
+              'NEW', '2026-02-19 16:22:54', NULL
+            )
+        
+Order 95ba329cfb794ce5bfa41f4913f9e53b inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'e428918586194a6eb7b3b81e81d2325a'
+        
+Order e428918586194a6eb7b3b81e81d2325a status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'ea156612862c4421ad82bd37ceb8a771'
+        
+Order ea156612862c4421ad82bd37ceb8a771 status updated to COMMITTED in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = '95ba329cfb794ce5bfa41f4913f9e53b'
+        
+Order 95ba329cfb794ce5bfa41f4913f9e53b status updated to COMMITTED in local DB.
+Order ea156612862c4421ad82bd37ceb8a771 cancelled successfully
+
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = '2026-02-19 16:22:54'
+            WHERE order_id = 'ea156612862c4421ad82bd37ceb8a771'
+        
+Order ea156612862c4421ad82bd37ceb8a771 status updated to CANCELLED in local DB.
+Order e4289185: DB=COMMITTED, Expected=COMMITTED
+Order ea156612: DB=CANCELLED, Expected=CANCELLED
+Order 95ba329c: DB=COMMITTED, Expected=COMMITTED
+Simulation environment stopped
+MockBroker disconnected
+ok
+
+Result: PASSED
+
+======================================================================
+ERROR: test_23_db_connection_recovery (__main__.TestBrokerAPIStability.test_23_db_connection_recovery)
+Test database operations after reconnection
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/jck/Downloads/cjtrade/tests/test_broker_api_stability.py", line 522, in test_23_db_connection_recovery
+    result = self.client.place_order(order2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jck/Downloads/cjtrade/src/cjtrade/core/account_client.py", line 107, in place_order
+    return self.broker_api.place_order(order)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jck/Downloads/cjtrade/src/cjtrade/brokers/mock/mock_broker_api.py", line 134, in place_order
+    raise ConnectionError("Not connected to broker")
+ConnectionError: Not connected to broker
+
+
+======================================================================
+TEST SUMMARY
+======================================================================
+Tests run: 28
+Successes: 27
+Failures: 0
+Errors: 1
+Skipped: 0
+======================================================================

@@ -32,12 +32,12 @@ def REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order, msg="Specified order id not found
         linked_order=order.id
     )
 
-def REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order, msg="Specified order id not found for cancel.", metadata={}):
+def REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order_id, msg="Specified order id not found for cancel.", metadata={}):
     return OrderResult(
         status=OrderStatus.REJECTED,
         message=msg,
         metadata=metadata,
-        linked_order=order.id
+        linked_order=order_id
     )
 
 def REJECTED_ORDER_HAS_BEEN_FILLED(order, msg="Order cannot be cancelled because it has already been filled.", metadata={}):

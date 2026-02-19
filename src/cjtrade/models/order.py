@@ -26,12 +26,13 @@ class OrderLot(str, Enum):
     Common = "Common"            # 一般交易
 
 # TODO: more useful and descriptive status set
+# TODO: align with SINOPAC status as much as possible, and add more custom status if needed
 class OrderStatus(str, Enum):
     STAGED = "STAGED"         # PendingSubmit
     ON_THE_WAY = "ON_THE_WAY" # PreSubmitted
     COMMITTED = "COMMITTED"   # Submitted
     FILLED = "FILLED"         # Filled
-    PARTIAL = "PARTIAL"       # PartialFilled
+    PARTIAL = "PARTIAL"       # PartFilled
     CANCELLED = "CANCELLED"
     REJECTED = "REJECTED"
     UNKNOWN = "UNKNOWN"

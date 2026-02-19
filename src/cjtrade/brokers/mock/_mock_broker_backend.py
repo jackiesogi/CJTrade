@@ -67,10 +67,14 @@ class MockBackend_AccountState:
 # TODO: Define data source spec to extract price input layer,
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend:
-    def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0):
+    def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
         self.real_account = real_account
         self.price_mode = price_mode
         self.account_state = MockBackend_AccountState()
+        self.account_state_default_file = state_file
+
+        print(f"!!!!!!!!! Initialized MockBrokerBackend with price_mode={price_mode.value}, playback_speed={playback_speed}x, state_file='{state_file}'")
+        # self.ACCOUNT_STATE_DEFAULT_FILE = "mock_account_state.json"
 
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
@@ -82,7 +86,6 @@ class MockBrokerBackend:
             raise NotImplementedError(f"Price mode {price_mode} not yet implemented")
 
         self._connected = False
-        self.ACCOUNT_STATE_DEFAULT_FILE = "mock_account_state.json"
 
     ########################   Functions for mock_broker_api to call (start)   ########################
     def login(self) -> bool:
@@ -104,7 +107,7 @@ class MockBrokerBackend:
     def logout(self):
         if self.real_account:
             self.real_account.disconnect()
-        with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'w') as f:
+        with open(self.account_state_default_file, 'w') as f:
             import json
             data = {
                 "balance": self.account_state.balance,
@@ -425,7 +428,7 @@ class MockBrokerBackend:
 
         # Order not found at all
         if not order_to_cancel:
-            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order)
+            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order_id)
 
         # Remove from source list and add to cancelled
         source_list.remove(order_to_cancel)
@@ -779,7 +782,7 @@ class MockBrokerBackend:
         from cjtrade.models.product import Product, ProductType, Exchange
         from cjtrade.models.order import OrderAction, PriceType, OrderType, OrderLot
 
-        if not os.path.exists(self.ACCOUNT_STATE_DEFAULT_FILE):
+        if not os.path.exists(self.account_state_default_file):
             default_data = {
                 "balance": 100_000.0,
                 "positions": [],
@@ -789,10 +792,10 @@ class MockBrokerBackend:
                 "orders_cancelled": [],
                 "all_order_status": {}
             }
-            with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'w') as f:
+            with open(self.account_state_default_file, 'w') as f:
                 json.dump(default_data, f, indent=4)
 
-        with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'r') as f:
+        with open(self.account_state_default_file, 'r') as f:
             data = json.load(f)
             self.account_state.balance = data.get('balance', 100_000.0)
             self.account_state.fill_history = data.get('fill_history', [])
