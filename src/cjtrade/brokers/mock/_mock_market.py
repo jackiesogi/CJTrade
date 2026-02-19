@@ -129,6 +129,25 @@ class MockBackend_MockMarket:
         # Within market hours, return as is
         return mock_current_time
 
+    def is_market_open(self) -> bool:
+        """Check if market is currently open (9:00-13:30 on weekdays)
+
+        Returns:
+            True if within market hours, False otherwise
+        """
+        mock_current_time = self.get_market_time()['mock_current_time']
+
+        # Check if weekend
+        if mock_current_time.weekday() >= 5:  # Saturday or Sunday
+            return False
+
+        # Market hours: 9:00 - 13:30
+        current_time = mock_current_time.time()
+        market_open = datetime.time(9, 0)
+        market_close = datetime.time(13, 30)
+
+        return market_open <= current_time <= market_close
+
     def create_historical_market(self, symbol: str):
         """Load historical market data for a symbol.
 

@@ -3,6 +3,7 @@ from typing import Any
 
 from cjtrade.db.db_base import DatabaseConnection
 
+# TODO: execute / query_one / query_all
 class SqliteDatabaseConnection(DatabaseConnection):
     def __init__(self, connection: sqlite3.Connection):
         super().__init__(connection)

@@ -25,20 +25,7 @@ from cjtrade.analytics.technical.models import *
 from cjtrade.analytics.fundamental import *
 
 exit_flag = False
-
-# Load supported config files (recursive search for *.cjconf under directories)
-loaded = load_supported_config_files()
-
-config = {
-    'api_key': os.environ["API_KEY"],
-    'secret_key': os.environ["SECRET_KEY"],
-    'ca_path': os.environ["CA_CERT_PATH"],
-    'ca_passwd': os.environ["CA_PASSWORD"],
-    'simulation': True if os.environ.get("SIMULATION") == "y" else False,
-
-    'user': 'user001',
-    'mirror_db_path': './data/mock_user001.db',
-}
+interactive_mode = False  # Track if running in interactive mode
 
 # ========== Command Pattern Implementation ==========
 class CommandBase(ABC):
@@ -453,6 +440,7 @@ class CancelAllCommand(CommandBase):
             cancelled_count = 0
             for i, order in enumerate(orders):
                 try:
+                    # print(order)
                     order_id = order.id
                     status = order.status
                     symbol = order.symbol
@@ -463,10 +451,10 @@ class CancelAllCommand(CommandBase):
                     print(f"  Status: {status}")
 
                     # Cancel orders that are not yet filled or already cancelled
-                    # OrderStatus: STAGED, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
+                    # OrderStatus: NEW, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
                     # OrderStatus: FILLED, CANCELLED, REJECTED cannot be cancelled
-                    if status in ['STAGED', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
-                                 'PreSubmitted', 'Submitted', 'PartialFilled']:
+                    if status in ['NEW', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
+                                 'PreSubmitted', 'Submitted', 'PartFilled']:
                         print(f"  → Trying to cancel...")
                         result = client.cancel_order(order_id)
                         if result.status == OrderStatus.CANCELLED:
@@ -557,7 +545,16 @@ class ClearCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        import sys
+
+        # Flush all output buffers before clearing to avoid mixed output
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        # Only actually clear screen in interactive mode
+        # In non-interactive mode (testing), just acknowledge the command
+        if interactive_mode:
+            os.system('cls' if os.name == 'nt' else 'clear')
 
 
 class ExitCommand(CommandBase):
@@ -777,6 +774,26 @@ def main():
     import sys
     import argparse
 
+    # Force line buffering for stdout and stderr to keep output in order
+    # This prevents stderr (errors/warnings from yfinance) and stdout (our logs)
+    # from appearing out of order
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
+    # Load supported config files (recursive search for *.cjconf under directories)
+    loaded = load_supported_config_files()
+
+    config = {
+        'api_key': os.environ["API_KEY"],
+        'secret_key': os.environ["SECRET_KEY"],
+        'ca_path': os.environ["CA_CERT_PATH"],
+        'ca_passwd': os.environ["CA_PASSWORD"],
+        'simulation': True if os.environ.get("SIMULATION") == "y" else False,
+
+        'username': os.environ.get('USERNAME', 'user000'),
+        # 'mirror_db_path': './data/mock_user000.db',
+    }
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-B", "--broker", type=str, required=True)
     args, shell_argv = parser.parse_known_args()
@@ -810,7 +827,10 @@ def main():
 
         # Check if command line arguments are provided
         if shell_argv:
-            # Direct command execution mode
+            # Direct command execution mode (non-interactive)
+            global interactive_mode
+            interactive_mode = False
+
             # shell_argv[0] is command, shell_argv[1:] are its arguments
             command = shell_argv[0]
             args = shell_argv[1:]
@@ -822,6 +842,7 @@ def main():
                 exit_code = 1
         else:
             # Regular interactive mode
+            interactive_mode = True
             interactive_shell(client)
 
     except Exception as e:

@@ -9,6 +9,7 @@ from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.kbar import *
+from cjtrade.models.trade import *
 from cjtrade.core.account_client import AccountClient
 from cjtrade.db.db_api import *
 from cjtrade.db.sqlite import *
@@ -25,12 +26,14 @@ class MockBrokerAPI(BrokerAPIBase):
 
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
         self.mock_playback_speed = config.get('speed', 1.0)
-        self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed)
+        self.state_file = config.get('state_file', "mock_account_state.json")
+        self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file)
         self._connected = False
 
         # db connection
-        self.user = config.get('user', 'user001')
-        self.db = config.get('mirror_db_path', f'./data/mock_{self.user}.db')
+        self.username = config.get('username', 'user000')
+        self.db_path = config.get('mirror_db_path', f'./data/mock.db')
+        self.db = None
 
     def connect(self) -> bool:
         """MockBroker's connection simply starts the simulation environment."""
@@ -38,7 +41,7 @@ class MockBrokerAPI(BrokerAPIBase):
             self.api.login()
             self._connected = True
             print("MockBroker connected successfully")
-            self.db = connect_sqlite(database=self.db)
+            self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
             return True
         except Exception as e:
@@ -125,24 +128,6 @@ class MockBrokerAPI(BrokerAPIBase):
         # Caller should handle None return value
         return None
 
-    # TODO: Send place_order to the MockBackend to simulate order execution
-    def place_order_legacy(self, order: Order) -> OrderResult:
-        if not self._connected:
-            raise ConnectionError("Not connected to broker")
-
-        timestamp = int(time.time() * 1000)
-        random_num = random.randint(1000, 9999)
-        order_id = f"mock_order_{timestamp}_{random_num}"
-
-        # Keep track of CJ order ID to Mock order object
-        insert_new_order_to_db(conn=self.db, order=order)
-
-        return OrderResult(
-            status=OrderStatus.ON_THE_WAY,
-            message="Mock order placed successfully",
-            metadata={},
-            linked_order=order.id
-        )
 
     # TODO: Order creation timestamp does not mean Order placing timestamp
     def place_order(self, order: Order) -> OrderResult:
@@ -151,7 +136,7 @@ class MockBrokerAPI(BrokerAPIBase):
 
         res = self.api.place_order(order)
 
-        insert_new_order_to_db(conn=self.db, order=order)
+        insert_new_order_to_db(conn=self.db, username=self.username, order=order)
         if res.status == OrderStatus.REJECTED:
             update_order_status_to_db(conn=self.db, oid=order.id, status="REJECTED")
         return res
@@ -184,7 +169,7 @@ class MockBrokerAPI(BrokerAPIBase):
     #         message="Mock order committed successfully"
     #     )
 
-    def list_orders(self) -> List[Dict]:
+    def list_orders(self) -> List[Trade]:
         return self.api.list_trades()
 
     def get_broker_name(self) -> str:
@@ -212,7 +197,7 @@ class MockBrokerAPI(BrokerAPIBase):
 
         tmp = self.place_order(order)
         if tmp.status != OrderStatus.ON_THE_WAY:
-            return tmp
+            return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()
 
@@ -235,6 +220,6 @@ class MockBrokerAPI(BrokerAPIBase):
 
         tmp = self.place_order(order)
         if tmp.status != OrderStatus.ON_THE_WAY:
-            return tmp
+            return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()

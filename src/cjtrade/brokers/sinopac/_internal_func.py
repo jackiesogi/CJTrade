@@ -45,12 +45,13 @@ ACTION_MAP = {
 }
 
 STATUS_MAP = {
-    sj.constant.Status.PendingSubmit: OrderStatus.STAGED,
+    sj.constant.Status.PendingSubmit: OrderStatus.NEW,
     sj.constant.Status.PreSubmitted: OrderStatus.ON_THE_WAY,
     sj.constant.Status.Submitted: OrderStatus.COMMITTED,
     sj.constant.Status.Filled: OrderStatus.FILLED,
     sj.constant.Status.PartFilled: OrderStatus.PARTIAL,
     sj.constant.Status.Cancelled: OrderStatus.CANCELLED,
+    sj.constant.Status.Failed: OrderStatus.REJECTED,
 }
 
 ORDER_LOT_MAP = {

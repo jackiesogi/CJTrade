@@ -67,10 +67,11 @@ class MockBackend_AccountState:
 # TODO: Define data source spec to extract price input layer,
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend:
-    def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0):
+    def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
         self.real_account = real_account
         self.price_mode = price_mode
         self.account_state = MockBackend_AccountState()
+        self.account_state_default_file = state_file
 
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
@@ -82,7 +83,6 @@ class MockBrokerBackend:
             raise NotImplementedError(f"Price mode {price_mode} not yet implemented")
 
         self._connected = False
-        self.ACCOUNT_STATE_DEFAULT_FILE = "mock_account_state.json"
 
     ########################   Functions for mock_broker_api to call (start)   ########################
     def login(self) -> bool:
@@ -104,7 +104,7 @@ class MockBrokerBackend:
     def logout(self):
         if self.real_account:
             self.real_account.disconnect()
-        with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'w') as f:
+        with open(self.account_state_default_file, 'w') as f:
             import json
             data = {
                 "balance": self.account_state.balance,
@@ -357,6 +357,11 @@ class MockBrokerBackend:
 
     # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
+        if not self._is_valid_price(order):
+            return REJECTED_ORDER_NEGATIVE_PRICE(order)
+        if not self._is_valid_quantity(order):
+            return REJECTED_ORDER_NEGATIVE_QUANTITY(order)
+
         # Check account balance / inventory stock / trading limit per day
         if not self._is_within_trading_limit(order):
             return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
@@ -372,20 +377,34 @@ class MockBrokerBackend:
         order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
 
         self.account_state.orders_placed.append(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
+        self.account_state.all_order_status[order.id] = OrderStatus.NEW
         return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
     def commit_order(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
-            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order)
+            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
 
         self.account_state.orders_committed.append(order)
         self.account_state.orders_placed.remove(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
 
-        res = COMMITTED_ORDER_STANDARD(order)
+        # Status depends on market hours (mimics Sinopac behavior)
+        if self.market.is_market_open():
+            # Market open: order immediately committed to exchange
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
+            status = OrderStatus.COMMITTED
+        else:
+            # Market closed: order pending, will be sent when market opens
+            self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
+            status = OrderStatus.ON_THE_WAY
+
+        res = OrderResult(
+            status=status,
+            message="Order committed successfully." if status == OrderStatus.COMMITTED else "Order pending market open.",
+            metadata={"market_open": self.market.is_market_open()},
+            linked_order=order.id
+        )
         # print(res)
         return res
 
@@ -425,7 +444,7 @@ class MockBrokerBackend:
 
         # Order not found at all
         if not order_to_cancel:
-            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order)
+            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order_id)
 
         # Remove from source list and add to cancelled
         source_list.remove(order_to_cancel)
@@ -460,6 +479,13 @@ class MockBrokerBackend:
             available_qty = position.quantity if position else 0
             # print(f"Insufficient inventory to place SELL order {order.id}: requires {order.quantity}, available {available_qty}")
             return False
+
+    # Currently we only check if the price is positive
+    def _is_valid_price(self, order: Order) -> bool:
+        return order.price > 0
+
+    def _is_valid_quantity(self, order: Order) -> bool:
+        return order.quantity > 0
 
     def _is_within_trading_limit(self, order: Order) -> bool:
         # Default trading limit per day
@@ -779,7 +805,7 @@ class MockBrokerBackend:
         from cjtrade.models.product import Product, ProductType, Exchange
         from cjtrade.models.order import OrderAction, PriceType, OrderType, OrderLot
 
-        if not os.path.exists(self.ACCOUNT_STATE_DEFAULT_FILE):
+        if not os.path.exists(self.account_state_default_file):
             default_data = {
                 "balance": 100_000.0,
                 "positions": [],
@@ -789,10 +815,10 @@ class MockBrokerBackend:
                 "orders_cancelled": [],
                 "all_order_status": {}
             }
-            with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'w') as f:
+            with open(self.account_state_default_file, 'w') as f:
                 json.dump(default_data, f, indent=4)
 
-        with open(self.ACCOUNT_STATE_DEFAULT_FILE, 'r') as f:
+        with open(self.account_state_default_file, 'r') as f:
             data = json.load(f)
             self.account_state.balance = data.get('balance', 100_000.0)
             self.account_state.fill_history = data.get('fill_history', [])

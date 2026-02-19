@@ -10,6 +10,7 @@ from cjtrade.brokers.base_broker_api import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
+from cjtrade.models.trade import *
 from cjtrade.models.quote import BidAsk
 from cjtrade.db.db_api import *
 from ._internal_func import _from_sinopac_result, _to_sinopac_order, _to_sinopac_product, _from_sinopac_snapshot, _to_sinopac_ranktype, _from_sinopac_bidask, _from_sinopac_kbar
@@ -36,8 +37,9 @@ class SinopacBrokerAPI(BrokerAPIBase):
         self._connected = False
 
         # db connection
-        self.user = config.get('user', 'user001')
-        self.db = config.get('mirror_db_path', f'./data/sinopac_{self.user}.db')
+        self.username = config.get('username', 'user999')
+        self.db_path = config.get('mirror_db_path', f'./data/sinopac.db')
+        self.db = None
 
         self.api = sj.Shioaji(simulation=self.simulation)
 
@@ -62,7 +64,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             )
             self._connected = True
 
-            self.db = connect_sqlite(database=self.db)
+            self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
 
             # self._sync_positions_with_broker()
@@ -235,10 +237,13 @@ class SinopacBrokerAPI(BrokerAPIBase):
             raise ValueError(f"Cannot get market movers from Sinopac: {e}") from e
 
 
-
-
+    # TODO: Remove comments when it is stable
     def place_order(self, order: Order) -> OrderResult:
-        """Place order"""
+        """Place order
+        1. Convert CJ Order -> Sinopac order + Sinopac contract (product)
+        2. Store the mapping between CJ ID and Sinopac order obj through cj_sj_order_map (in-memory dict) and DB (permanent storage)
+        3. Place order via Sinopac API
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -249,14 +254,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             # Store mapping using shioaji order id, not cj order id
             sj_order_id = sinopac_trade.order.id
-            cj_sj_order_map[sj_order_id] = sinopac_trade
-            # print(f"--- place_order() -> {sinopac_trade}")
+            # cj_sj_order_map[sj_order_id] = sinopac_trade  # -
+            cj_sj_order_map[order.id] = sinopac_trade       # +
+            insert_new_ordermap_item_to_db(conn=self.db, cj_order_id=order.id, bkr_order_id=sj_order_id, broker='sinopac')  # Store mapping in DB
 
             order_result = _from_sinopac_result(sinopac_trade)
-            order_result.linked_order = sj_order_id  # Use shioaji order id as linked_order
+            # order_result.linked_order = sj_order_id  # Use shioaji order id as linked_order # -
+            order_result.linked_order = order.id  # Use cj order id as linked_order           # +
 
             # Maintain local records
-            insert_new_order_to_db(conn=self.db, order=order)
+            insert_new_order_to_db(conn=self.db, username=self.username, order=order)
             return order_result
 
         except Exception as e:
@@ -267,10 +274,14 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 linked_order=""
             )
 
-    # TODO: Update status to db
+    # TODO: Update status to db (order_id is cj order id, not sj order id)
+    # TODO: Currently CJ ID is not permanently stored, so sometimes we cannot find the order to cancel.
+    # We need to find a better way to store the mapping (e.g. store in DB permanently instead of in-memory dict)
     def cancel_order(self, order_id: str) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
+
+        # print(f"cancel_order({order_id}) called")
 
         try:
             # Update status to get latest order information
@@ -281,10 +292,13 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             # If not in our mapping, search in list_trades
             if sinopac_trade is None:
+                sj_id = get_bkr_order_id_from_db(conn=self.db, cj_order_id=order_id)
+                # print(f"Looking for order with CJ ID {order_id}:  SJ ID {sj_id}")
+
                 trades = self.api.list_trades()
                 for trade in trades:
                     if hasattr(trade, 'status') and hasattr(trade.status, 'id'):
-                        if trade.status.id == order_id:
+                        if trade.status.status in [sj.constant.Status.Submitted, sj.constant.Status.PreSubmitted, sj.constant.Status.PendingSubmit, sj.constant.Status.PartFilled] and trade.status.id == sj_id:
                             sinopac_trade = trade
                             # Update the mapping for future use
                             cj_sj_order_map[order_id] = trade
@@ -293,7 +307,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             # If still not found, return error
             if sinopac_trade is None:
                 return OrderResult(
-                    status=OrderStatus.FAILED,
+                    status=OrderStatus.REJECTED,
                     message=f"Order {order_id} not found",
                     metadata={"broker": "sinopac"},
                     linked_order=order_id
@@ -310,12 +324,11 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         except Exception as e:
             return OrderResult(
-                status=OrderStatus.FAILED,
+                status=OrderStatus.REJECTED,
                 message=f"Failed to cancel order: {str(e)}",
                 metadata={"broker": "sinopac", "error": str(e)},
                 linked_order=order_id
             )
-
 
 
     # TODO: Re-Design the `Order` and `OrderResult`
@@ -351,15 +364,18 @@ class SinopacBrokerAPI(BrokerAPIBase):
             self.api.update_status(self.api.stock_account)
 
             res = []
-            for cj, sj in cj_sj_order_map.items():
-                if sj.status.status not in [sj.constant.OrderStatus.Filled,
-                                            sj.constant.OrderStatus.Cancelled,
-                                            sj.constant.OrderStatus.Rejected]:
-                    res.append(_from_sinopac_result(sj))
-                    update_order_status_to_db(conn=self.db, oid=cj, status='COMMITTED')
+            print(cj_sj_order_map)
+            # TODO: Not only check in-mem but also check in DB
+            for c, s in cj_sj_order_map.items():
+                if s.status.status not in [sj.constant.Status.Submitted,
+                                           sj.constant.Status.Cancelled,
+                                           sj.constant.Status.Failed,
+                                           sj.constant.Status.Filled]:
+                    res.append(_from_sinopac_result(s))
+                    update_order_status_to_db(conn=self.db, oid=c, status='COMMITTED')
 
-            print("--------- Order committed ----------")
-            print(res)
+            # print("--------- Order committed ----------")
+            # print(res)
             return res
 
         except Exception as e:
@@ -377,7 +393,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
     # TODO: Decouple from sj API/objects, use cj internal class instead
     # This is quite important since other equivalent feature have been
     # abstracted in cjtrade-based dataclass. (Don't simply use List[Dict])
-    def list_orders(self) -> List[Dict]:
+    def list_orders(self) -> List[Trade]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -386,30 +402,36 @@ class SinopacBrokerAPI(BrokerAPIBase):
             trades = self.api.list_trades()
 
             orders = []
+
             for trade in trades:
-                # TODO: Currently `list_trades()` to `list_orders()` loses too much info
-                # Need to redesign the data structure later
-                order_info = {
-                    'id': trade.status.id,
-                    'symbol': getattr(trade.contract, 'code', 'N/A') if hasattr(trade, 'contract') else 'N/A',
-                    'action': trade.order.action.value if hasattr(trade.order, 'action') else 'N/A',
-                    'quantity': trade.order.quantity,
-                    'price': trade.order.price,
-                    'status': trade.status.status.value,
-                    'order_type': trade.order.order_type.value if hasattr(trade.order, 'order_type') else 'N/A',
-                    'price_type': trade.order.price_type.value if hasattr(trade.order, 'price_type') else 'N/A',
-                    'order_lot': trade.order.order_lot.value if hasattr(trade.order, 'order_lot') else 'N/A',
-                    'order_datetime': trade.status.order_datetime.strftime('%Y-%m-%d %H:%M:%S') if hasattr(trade.status, 'order_datetime') else 'N/A',
-                    'deals': len(trade.status.deals) if hasattr(trade.status, 'deals') else 0,
-                    'ordno': trade.order.ordno if hasattr(trade.order, 'ordno') else 'N/A'
-                }
+                # Convert Sinopac status to CJ status
+                from ._internal_func import STATUS_MAP
+                cj_status = STATUS_MAP.get(trade.status.status, OrderStatus.UNKNOWN)
+
+                order_info = Trade(
+                    # id=trade.status.id,
+                    # id=cj_order_id,
+                    id=get_cj_order_id_from_db(conn=self.db, bkr_order_id=trade.status.id) or 'N/A',
+                    symbol=getattr(trade.contract, 'code', 'N/A') if hasattr(trade, 'contract') else 'N/A',
+                    action=trade.order.action.value if hasattr(trade.order, 'action') else 'N/A',
+                    quantity=trade.order.quantity,
+                    price=trade.order.price,
+                    status=cj_status.value,  # Use converted CJ status
+                    order_type=trade.order.order_type.value if hasattr(trade.order, 'order_type') else 'N/A',
+                    price_type=trade.order.price_type.value if hasattr(trade.order, 'price_type') else 'N/A',
+                    order_lot=trade.order.order_lot.value if hasattr(trade.order, 'order_lot') else 'N/A',
+                    order_datetime=trade.status.order_datetime.strftime('%Y-%m-%d %H:%M:%S') if hasattr(trade.status, 'order_datetime') else 'N/A',
+                    deals=len(trade.status.deals) if hasattr(trade.status, 'deals') else 0,
+                    ordno=trade.order.ordno if hasattr(trade.order, 'ordno') else 'N/A'
+                )
+
                 orders.append(order_info)
 
             return orders
 
         except Exception as e:
             # TODO: Consider raising exception/error here
-            logger.error(f"list_orders() exception: {e}")
+            print(f"list_orders() exception: {e}")
             return []
 
 
@@ -457,98 +479,3 @@ class SinopacBrokerAPI(BrokerAPIBase):
         temp = self.place_order(order)
         # return self.commit_order(temp.linked_order)
         return self.commit_order()
-
-
-    ##### TODO: TRADE HISTORY MANAGEMENT #####
-    # def _load_trade_history(self):
-    #     """Load trade history from local file"""
-    #     try:
-    #         if os.path.exists(self.trade_history_path):
-    #             with open(self.trade_history_path, 'r', encoding='utf-8') as f:
-    #                 self.trade_history = json.load(f)
-    #             print(f"Loaded trade history from {self.trade_history_path}")
-    #         else:
-    #             self.trade_history = {}
-    #             print(f"No existing trade history found, starting fresh")
-    #     except Exception as e:
-    #         print(f"Failed to load trade history: {e}")
-    #         self.trade_history = {}
-
-    # def _save_trade_history(self):
-    #     """Save trade history to local file"""
-    #     try:
-    #         with open(self.trade_history_path, 'w', encoding='utf-8') as f:
-    #             json.dump(self.trade_history, f, indent=2, ensure_ascii=False)
-    #         print(f"Saved trade history to {self.trade_history_path}")
-    #     except Exception as e:
-    #         print(f"Failed to save trade history: {e}")
-
-    # def _sync_positions_with_broker(self):
-    #     """Sync local trade history with broker positions
-    #     If broker has positions not in our history, add them with current info
-    #     """
-    #     try:
-    #         positions = self.api.list_positions()
-    #         for pos in positions:
-    #             symbol = pos.code
-    #             shares = pos.quantity * 1000
-
-    #             if symbol not in self.trade_history:
-    #                 # New position not in our history, add it
-    #                 self.trade_history[symbol] = [{
-    #                     "shares": shares,
-    #                     "price": pos.price,
-    #                     "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    #                     "side": "buy",
-    #                     "note": "synced_from_broker"
-    #                 }]
-    #                 print(f"Added {symbol} to trade history from broker sync")
-
-    #         self._save_trade_history()
-    #     except Exception as e:
-    #         print(f"Failed to sync positions with broker: {e}")
-
-    # def _get_cost_basis(self, symbol: str, shares: int, fallback_price: float) -> float:
-    #     """Calculate cost basis from trade history
-    #     If no history available, use fallback price from broker
-    #     """
-    #     if symbol in self.trade_history and self.trade_history[symbol]:
-    #         # Calculate weighted average cost from trade history
-    #         total_cost = 0
-    #         total_shares = 0
-
-    #         for trade in self.trade_history[symbol]:
-    #             if trade.get("side") == "buy":
-    #                 trade_shares = trade.get("shares", 0)
-    #                 trade_price = trade.get("price", 0)
-    #                 total_cost += trade_shares * trade_price
-    #                 total_shares += trade_shares
-
-    #         if total_shares > 0:
-    #             return total_cost
-
-    #     # Fallback to broker's average price
-    #     return shares * fallback_price
-
-    # def record_trade(self, symbol: str, shares: int, price: float, side: str):
-    #     """Record a trade in history for accurate cost tracking
-    #     Call this after each successful trade execution
-
-    #     Args:
-    #         symbol: Stock symbol
-    #         shares: Number of shares (not contracts)
-    #         price: Execution price per share
-    #         side: 'buy' or 'sell'
-    #     """
-    #     if symbol not in self.trade_history:
-    #         self.trade_history[symbol] = []
-
-    #     self.trade_history[symbol].append({
-    #         "shares": shares,
-    #         "price": price,
-    #         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    #         "side": side
-    #     })
-
-    #     self._save_trade_history()
-    #     print(f"Recorded {side} {shares} shares of {symbol} at {price}")
