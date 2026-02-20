@@ -26,6 +26,8 @@ dependencies = [
     "shioaji>=1.2.8",
     "ta-lib>=0.6.7",
     "yfinance>=0.2.66",
+
+     "pyreadline3; platform_system == 'Windows'",
 ]
 
 [project.scripts]

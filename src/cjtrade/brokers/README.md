@@ -1,9 +1,8 @@
 # Broker Implementation Guide
 
-> Order state graph
-![order_lifecycle_graph](../../../img/order_lifecycle.png)
-
 ## Overview
+
+![cjtrade_abstraction](../../../img/cjtrade_intro.png)
 
 The `cjtrade` project provides a unified programming interface for developers to design trading strategies that work across different securities brokers (證券商). This abstraction layer (抽象層) bridges our CJTrade API to different brokers' backends, which allows user to write their own apps (e.g. trading strategies, account balance alerts ...) and deploy it across multiple broker platforms.
 
@@ -158,6 +157,12 @@ def _create_broker(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
     else:
         raise ValueError(f"Unsupported broker type: {broker_type}")
 ```
+
+While bridging CJTrade API to a well-documented securities broker's API would be easy for a experienced developer, the order state transition is one of the most important thing you need to know before starting to write code.
+
+> Order state transition graph
+![order_lifecycle_graph](../../../img/order_lifecycle.png)
+
 
 ## Best Practices
 Check existing implementations (`sinopac/` and `mock/`) for reference.

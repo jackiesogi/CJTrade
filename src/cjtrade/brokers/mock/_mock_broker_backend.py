@@ -56,11 +56,6 @@ class MockBackend_AccountState:
         self.all_order_status: Dict[str, OrderStatus] = {}
         self.fill_history: List[Dict] = []         # Every transaction: {symbol, quantity, price, time}
 
-# TODO: Consider to add exchange simulation when all time progression features are ready
-# class MockBackend_StockExchange:
-#     def __init__(self):
-#         self.orders_filled: List[Order] = []        # Orders already filled
-
 
 # Backend = Maintain Account State + Provide Market Data
 # Note that the backend API scheme originates from Shioaji's design.
@@ -355,7 +350,6 @@ class MockBrokerBackend:
             trades.append(order_info)
         return trades
 
-    # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
         if not self._is_valid_price(order):
             return REJECTED_ORDER_NEGATIVE_PRICE(order)
@@ -550,7 +544,6 @@ class MockBrokerBackend:
 
                     # Update Balance (Account for cash flow)
                     # For Buy: balance decreases; For Sell: balance increases
-                    # TODO: Balance should be calculated using fill history.
                     self.account_state.balance -= (qty_signed * odr.price)
 
                     # Record in fill history (Source of truth for positions)
@@ -1021,32 +1014,3 @@ class MockBrokerBackend:
             result.append(kbar)
 
         return result
-
-    # TODO: Remove this when `list_trades()` is confirmed working
-    # def list_trades_legacy(self) -> List[Dict]:
-    #     self._check_if_any_order_filled()
-
-    #     # return all orders (placed / committed / filled / cancelled)
-    #     trades = []
-    #     all_orders = (self.account_state.orders_placed +
-    #                  self.account_state.orders_committed +
-    #                  self.account_state.orders_filled +
-    #                  self.account_state.orders_cancelled)
-    #     for order in all_orders:
-    #         order_info = {
-    #             'id': order.id,
-    #             'symbol': order.product.symbol,
-    #             'action': order.action.value,
-    #             'quantity': order.quantity,
-    #             'price': order.price,
-    #             'status': self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
-    #             'order_type': order.order_type.value,
-    #             'price_type': order.price_type.value,
-    #             'order_lot': order.order_lot,
-    #             'order_datetime': order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-    #             'deals': 0, # TODO: Not sure what this field means in SJ
-    #             'ordno': order.id
-    #         }
-    #         trades.append(order_info)
-    #     return trades
-    ########################   Internal functions (end)   ##########################

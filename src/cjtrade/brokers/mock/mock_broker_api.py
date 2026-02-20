@@ -130,6 +130,8 @@ class MockBrokerAPI(BrokerAPIBase):
 
 
     # TODO: Order creation timestamp does not mean Order placing timestamp
+    # Actually, the timestamp of when an order was created is not important,
+    # instead, the timestamp of when the order was placed (sent to broker) is what matters.
     def place_order(self, order: Order) -> OrderResult:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -157,17 +159,6 @@ class MockBrokerAPI(BrokerAPIBase):
             update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED")
             res.append(self.api.commit_order(otw_odr.id))
         return res
-
-
-    # TODO: Plan to remove in next minor version
-    # def commit_order_legacy(self, order_id: str) -> OrderResult:
-    #     return OrderResult(
-    #         status=OrderStatus.COMMITTED,
-    #         # linked_order="0xDEADF00D",
-    #         linked_order=order_id,  # TODO: implement a id-obj mapping to be able to track
-    #         metadata={},
-    #         message="Mock order committed successfully"
-    #     )
 
     def list_orders(self) -> List[Trade]:
         return self.api.list_trades()

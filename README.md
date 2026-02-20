@@ -25,13 +25,19 @@ If it is a modification to existing logic, please mark todo directly in that fil
 Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
 
 ## Run
+Please install `uv` on your os first.
+[https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
+
 ```sh
 git clone https://github.com/jackiesogi/CJTrade
 cd CJTrade
 uv python install 3.12
 uv venv --python 3.12
 uv sync
-source .venv/bin/activate
+
+source .venv/bin/activate # For Linux / macOS
+.\.venv\Scripts\activate  # For Windows
+
 mkdir data
 ```
 
@@ -42,10 +48,17 @@ mkdir data
 ```sh
 # For those who don't have a securities account but still want to try it out,
 # try adding --broker=mock to use the mock environment (no login required):
-bash scripts/gen_config.sh mock  # generate mock environment config template
-uv run cjtrade --broker=mock     # connect to mock broker
 
-# For testing all the features in cjtrade shell
+# generate mock environment config template (Linux)
+bash scripts/gen_config.sh mock
+
+# generate mock environment config template (Windows)
+.\scripts\gen_config.bat mock
+
+# connect to mock broker
+uv run cjtrade --broker=mock
+
+# For testing all the features in cjtrade shell (Linux)
 bash tests/test_cjtrade_shell_all_cmds.sh
 ```
 
@@ -53,7 +66,7 @@ bash tests/test_cjtrade_shell_all_cmds.sh
 
 ```sh
 # Get your required api keys from https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4:
-bash scripts/gen_config.sh sinopac
+bash scripts/gen_config.sh sinopac # or .\scripts\gen_config.bat sinopac on Windows
 echo "# -------- Overwritten part --------" >> sinopac_system.cjconf
 echo "API_KEY=${YOUR_SINOPAC_API_KEY}" >> sinopac_system.cjconf
 echo "SECRET_KEY=${YOUR_SINOPAC_SECRET_KEY}" >> sinopac_system.cjconf

@@ -11,7 +11,10 @@ def _clean_up_test_db():
 
 
 def db_shell(db: SqliteDatabaseConnection):
-    import readline
+    try:
+        import readline
+    except ImportError:
+        import pyreadline3 as readline
 
     def init_readline():
         readline.set_history_length(MAX_HISTORY_SIZE)

@@ -102,23 +102,15 @@ class AccountClient:
     def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:
         return self.broker_api.get_market_movers(top_n, by, ascending)
 
-    # TODO: Cache order data locally in AccountState
     def place_order(self, order: Order) -> OrderResult:
         return self.broker_api.place_order(order)
 
-    # TODO: Cache order data locally in AccountState
     def commit_order(self) -> List[OrderResult]:
         return self.broker_api.commit_order()
 
-    # TODO: Plan to remove in next minor version
-    # def commit_order_legacy(self, order_id: str) -> OrderResult:
-    #     return self.broker_api.commit_order_legacy(order_id)
-
-    # TODO: Cache order data locally in AccountState
     def cancel_order(self, order_id: str) -> OrderResult:
         return self.broker_api.cancel_order(order_id)
 
-    # TODO: Cache order data locally in AccountState
     def list_orders(self) -> List[Dict[str, Any]]:
         return self.broker_api.list_orders()
 

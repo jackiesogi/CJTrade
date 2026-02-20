@@ -423,7 +423,6 @@ class MoversCommand(CommandBase):
         print(df)
 
 
-# TODO: Also need to test mock broker
 class CancelAllCommand(CommandBase):
     def __init__(self):
         super().__init__()
@@ -729,7 +728,11 @@ def print_supported_brokers():
 
 
 # ========== Interactive Shell ==========
-import readline
+try:
+    import readline
+except ImportError:
+    import pyreadline3 as readline
+
 MAX_HISTORY_SIZE = 30
 
 def init_readline():
