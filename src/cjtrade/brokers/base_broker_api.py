@@ -71,6 +71,16 @@ class BrokerAPIBase(ABC):
         """
         pass
 
+    # TODO: Finish this
+    @abstractmethod
+    # Event:
+    # - time_period (e.g. every 15 sec)
+    # - price_change (e.g. +1% change) 
+    # - fill_period (e.g. every 100 trade ticks) 
+    # - volume_thresh (e.g. more than 100 shares traded)
+    def set_price_callback():
+        pass
+
     @abstractmethod
     def place_order(self, order: Order) -> OrderResult:
         """
