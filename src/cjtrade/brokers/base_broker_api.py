@@ -71,14 +71,27 @@ class BrokerAPIBase(ABC):
         """
         pass
 
-    # TODO: Finish this
-    @abstractmethod
+    # @abstractmethod  # TODO: Un-comment this when implementation is done
     # Event:
     # - time_period (e.g. every 15 sec)
     # - price_change (e.g. +1% change) 
     # - fill_period (e.g. every 100 trade ticks) 
     # - volume_thresh (e.g. more than 100 shares traded)
-    def set_price_callback():
+    def register_price_callback():
+        """
+        Define what things to do when a certain price event happens.
+        """
+        pass
+
+    # @abstractmethod  # TODO: Un-comment this when implementation is done
+    def register_fill_callback():
+        """
+        Define what things to do when a certain order fill event happens.
+        """
+        pass
+
+    # @abstractmethod  # TODO: Un-comment this when implementation is done
+    def unregister_callback():
         pass
 
     @abstractmethod
