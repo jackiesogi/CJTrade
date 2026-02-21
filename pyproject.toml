@@ -20,14 +20,12 @@ dependencies = [
     "ollama>=0.6.0",
     "pandas-datareader>=0.10.0",
     "plotly>=6.5.1",
-    "pytest>=9.0.2",
     "python-dotenv>=1.1.1",
     "seaborn>=0.13.2",
     "shioaji>=1.2.8",
     "ta-lib>=0.6.7",
     "yfinance>=0.2.66",
-
-     "pyreadline3; platform_system == 'Windows'",
+    "pyreadline3; platform_system == 'Windows'",
 ]
 
 [project.scripts]
@@ -39,3 +37,9 @@ test = "cjtrade.test_runner:main"
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+]

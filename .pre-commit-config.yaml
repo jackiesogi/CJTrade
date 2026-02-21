@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: "mock-shell"
+        name: Run CJTrade shell basic check (mock broker)
+        entry: uv run test --broker=mock --group=all
+        language: system
+        pass_filenames: false
+      - id: "sinopac-shell"
+        name: Run CJTrade shell basic check (sinopac broker)
+        entry: uv run test --broker=sinopac --group=all
+        language: system
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
