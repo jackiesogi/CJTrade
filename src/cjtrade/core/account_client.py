@@ -9,6 +9,7 @@ from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.rank_type import *
+from cjtrade.models.event import *
 
 
 class BrokerType(Enum):
@@ -59,7 +60,7 @@ class AccountClient:
     def _sync_all(self) -> bool:
         self.account_state.balance = self.broker_api.get_balance()
         self.account_state.positions = self.broker_api.get_positions()
-        self.account_state.last_sync_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.account_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # self.account_state.pending_orders = self.broker_api.list_orders()
         # self.account_state.order_history = []
 
@@ -91,6 +92,12 @@ class AccountClient:
 
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         return self.broker_api.get_snapshots(products)
+
+    def register_fill_callback(self, callback: FillCallback) -> None:
+        return self.broker_api.register_fill_callback(callback)
+
+    def register_order_callback(self, callback: OrderCallback) -> None:
+        return self.broker_api.register_order_callback(callback)
 
     def get_kbars(self, product: Product, start: str, end: str, interval: str):
         # note that the range is [start,end), end is exclusive.

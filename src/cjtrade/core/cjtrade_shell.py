@@ -779,6 +779,10 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-B", "--broker", type=str, required=True)
+    args, shell_argv = parser.parse_known_args()
+
     # Load supported config files (recursive search for *.cjconf under directories)
     loaded = load_supported_config_files()
 
@@ -792,11 +796,6 @@ def main():
         'username': os.environ.get('USERNAME', 'user000'),
         # 'mirror_db_path': './data/mock_user000.db',
     }
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-B", "--broker", type=str, required=True)
-    args, shell_argv = parser.parse_known_args()
-    # print(args)
 
     exit_code = 0  # Default success
 
