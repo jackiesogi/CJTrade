@@ -80,7 +80,21 @@ uv run cjtrade --broker=sinopac
 bash tests/test_cjtrade_shell_all_cmds.sh
 ```
 
-### For clear, maintainable branch design
+## Test
+1. Run basic tests: all command in cjtrade shell
+```sh
+uv run test --broker=sinopac --group=all
+```
+
+2. Run full tests: test hotpaths (normal input / edge cases / stress tests)
+```sh
+# Note that this will execute stress tests
+# Add --delay=n to wait n sec after each test case done to avoid running out of API quota
+./tests/test_broker_api_stability.py --broker=mock --delay=8
+```
+
+
+## For clear, maintainable branch design
 - `master`: Master branch.
 - `broker/{brokername}`: Broker's API bridging, data handling, broker-specific features and tests.
 - `test/{optinonal-name}`: Generic test script and integration test. (For testing broker's API stability -> `broker/{brokername}`)
