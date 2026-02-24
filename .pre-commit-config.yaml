@@ -1,4 +1,8 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
   - repo: local
     hooks:
       - id: "mock-shell"
@@ -11,7 +15,3 @@ repos:
         entry: uv run test --broker=sinopac --group=all
         language: system
         pass_filenames: false
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
