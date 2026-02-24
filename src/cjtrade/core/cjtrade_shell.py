@@ -491,24 +491,41 @@ class CalendarCommand(CommandBase):
         self.name = "date"
         self.description = "Show the calendar"
         self.optional_params = ["year"]
+        
+        # Get paths to utility scripts
+        from pathlib import Path
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent.parent.parent
+        self.ncal_script = project_root / 'utils' / 'ncal.py'
+        self.date_script = project_root / 'utils' / 'date.py'
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        import sys
+        
         if len(args) == 1:
-            subprocess.run(['ncal', '-b', args[0]])
+            # Direct call with date argument
+            subprocess.run([sys.executable, str(self.ncal_script), '--sunday', args[0]], shell=False)
             return
 
-        suffix = ""
+        # Get timestamp from broker or system
         if client.get_broker_name() == "mock":
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()  # Call Mock-specific method
+            ts = client.broker_api.get_system_time()
         else:
+            suffix = ""
             ts = datetime.now()
 
+        # Display current date/time
         print("Current datetime" + suffix, end="")
         print("\033[93m")  # yellow
-        subprocess.run(['date', '-d' , '@' + str(int(ts.timestamp()))])
+        
+        # Use Python date script for cross-platform compatibility
+        subprocess.run([sys.executable, str(self.date_script), '-d', f'@{int(ts.timestamp())}'], shell=False)
+        
         print("\033[0m")
-        subprocess.run(['ncal', '-b', '-H', ts.strftime('%Y-%m-%d'), str(ts.month), str(ts.year)])
+        
+        # Display calendar
+        subprocess.run([sys.executable, str(self.ncal_script), '--sunday', ts.strftime('%Y-%m-%d')], shell=False)
 
 
 class InfoCommand(CommandBase):
@@ -779,10 +796,6 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-B", "--broker", type=str, required=True)
-    args, shell_argv = parser.parse_known_args()
-
     # Load supported config files (recursive search for *.cjconf under directories)
     loaded = load_supported_config_files()
 
@@ -796,6 +809,11 @@ def main():
         'username': os.environ.get('USERNAME', 'user000'),
         # 'mirror_db_path': './data/mock_user000.db',
     }
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-B", "--broker", type=str, required=True)
+    args, shell_argv = parser.parse_known_args()
+    # print(args)
 
     exit_code = 0  # Default success
 
