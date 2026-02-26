@@ -28,9 +28,9 @@ class OrderLot(str, Enum):
 # TODO: more useful and descriptive status set
 # TODO: align with SINOPAC status as much as possible, and add more custom status if needed
 class OrderStatus(str, Enum):
-    NEW = "NEW"               # PendingSubmit (aligns with DB status)
-    ON_THE_WAY = "ON_THE_WAY" # PreSubmitted
-    COMMITTED = "COMMITTED"   # Submitted
+    PLACED = "PLACED"         # Order created locally, pending commit (PendingSubmit)
+    COMMITTED_WAIT_MARKET_OPEN = "COMMITTED_WAIT_MARKET_OPEN" # PreSubmitted
+    COMMITTED_WAIT_MATCHING = "COMMITTED_WAIT_MATCHING"   # Submitted
     FILLED = "FILLED"         # Filled
     PARTIAL = "PARTIAL"       # PartFilled
     CANCELLED = "CANCELLED"

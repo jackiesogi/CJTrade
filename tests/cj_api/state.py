@@ -61,8 +61,9 @@ class TestStateConsistency(BaseBrokerTest):
         cancelled_status = db_order3['status']
 
         # Verify progression
-        self.assertEqual(initial_status, 'NEW')
-        self.assertEqual(committed_status, 'COMMITTED')
+        self.assertEqual(initial_status, 'PLACED')
+        # Committed status depends on market hours
+        self.assertIn(committed_status, ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN'])
         self.assertEqual(cancelled_status, 'CANCELLED')
 
     def test_22_db_timestamp_updates(self):
@@ -103,7 +104,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         # Should work after reconnection
         from cjtrade.models.order import OrderStatus
-        self.assertEqual(result.status, OrderStatus.NEW)
+        self.assertEqual(result.status, OrderStatus.PLACED)
 
         # Verify both orders in DB
         all_orders = self._get_all_orders_from_db()
@@ -139,7 +140,10 @@ class TestStateConsistency(BaseBrokerTest):
 
         # Check each order
         for order in orders:
-            self.assertTrue(self._verify_order_consistency(order.id, 'COMMITTED'))
+            self.assertTrue(self._verify_order_consistency(
+                order.id,
+                ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN']
+            ))
 
     def test_31_order_list_completeness(self):
         """Test that list_orders returns all orders"""

@@ -76,7 +76,7 @@ def REJECTED_ORDER_NEGATIVE_QUANTITY(order, msg="Order rejected due to invalid q
 
 def PLACED_ORDER_STANDARD(order, msg="Order placed successfully.", metadata={}):
     return OrderResult(
-        status=OrderStatus.NEW,
+        status=OrderStatus.PLACED,
         message=msg,
         metadata=metadata,
         linked_order=order.id
@@ -84,7 +84,7 @@ def PLACED_ORDER_STANDARD(order, msg="Order placed successfully.", metadata={}):
 
 def COMMITTED_ORDER_STANDARD(order, msg="Order committed successfully.", metadata={}):
     return OrderResult(
-        status=OrderStatus.COMMITTED,
+        status=OrderStatus.COMMITTED_WAIT_MATCHING,
         message=msg,
         metadata=metadata,
         linked_order=order.id

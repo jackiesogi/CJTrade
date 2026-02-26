@@ -9,6 +9,8 @@ from cjtrade.models.product import *
 from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
 from cjtrade.models.kbar import *
+from cjtrade.db.db_api import *
+from cjtrade.db.db_api import *
 import pandas as pd
 
 
@@ -44,20 +46,60 @@ ACTION_MAP = {
     OrderAction.SELL: sj.constant.Action.Sell,
 }
 
+# Shioaji constant.Status enumeration mapping (for list_trades, place_order result)
 STATUS_MAP = {
-    sj.constant.Status.PendingSubmit: OrderStatus.NEW,
-    sj.constant.Status.PreSubmitted: OrderStatus.ON_THE_WAY,
-    sj.constant.Status.Submitted: OrderStatus.COMMITTED,
+    sj.constant.Status.PendingSubmit: OrderStatus.PLACED,
+    sj.constant.Status.PreSubmitted: OrderStatus.COMMITTED_WAIT_MARKET_OPEN,
+    sj.constant.Status.Submitted: OrderStatus.COMMITTED_WAIT_MATCHING,
     sj.constant.Status.Filled: OrderStatus.FILLED,
     sj.constant.Status.PartFilled: OrderStatus.PARTIAL,
     sj.constant.Status.Cancelled: OrderStatus.CANCELLED,
     sj.constant.Status.Failed: OrderStatus.REJECTED,
 }
 
+# OrderState.operation.op_type mapping (from exchange, used in callback)
+# Ref: https://sinotrade.github.io/zh_TW/tutor/order/Stock/#order-deal-event
+OPERATION_TYPE_MAP = {
+    'New': OrderStatus.COMMITTED_WAIT_MATCHING,
+    'Cancel': OrderStatus.CANCELLED,
+    'Deal': OrderStatus.FILLED,
+    'UpdateQty': OrderStatus.COMMITTED_WAIT_MATCHING,
+    'UpdatePrice': OrderStatus.COMMITTED_WAIT_MATCHING,
+    'Failed': OrderStatus.REJECTED,
+}
+
 ORDER_LOT_MAP = {
     OrderLot.IntraDayOdd: sj.constant.StockOrderLot.IntradayOdd,
     OrderLot.Common: sj.constant.StockOrderLot.Common,
 }
+
+# Since the conversion from sj to cj loses information, we need to keep a mapping
+# between cj Order IDs and sj Order objects to track order status
+cj_sj_order_map = {}
+
+def _retrieve_sinopac_trade_by_cj_order_id(api, db_conn, cj_order_id: str):
+    # Search trade object by CJ ID in cache
+    sinopac_trade = cj_sj_order_map.get(cj_order_id)
+
+    if sinopac_trade is not None:
+        return sinopac_trade
+
+    # Search sinopac trade id by CJ ID in DB (in db_api.py, should return None if not found)
+    sj_id = get_bkr_order_id_from_db(conn=db_conn, cj_order_id=cj_order_id)
+
+    if not sj_id:
+        return None
+
+    # Get sinopac trade object by sinopac trade id
+    trades = api.list_trades()
+    for trade in trades:
+        if hasattr(trade, 'status') and hasattr(trade.status, 'id'):
+            if trade.status.id == sj_id:
+                sinopac_trade = trade
+                cj_sj_order_map[cj_order_id] = trade
+                break
+
+    return sinopac_trade  # May be None if not found
 
 def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
     """
@@ -68,7 +110,7 @@ def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
     for i in range(len(sj_kbar.ts)):
         # Shioaji timestamp needs 8-hour adjustment for correct Taiwan time
         corrected_timestamp = sj_kbar.ts[i] / 1_000_000_000 - 8 * 3600
-        taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
+        taiwan_dt = datetime.datetime.fromtimestamp(corrected_timestamp)
 
         cj_kbars.append(
             Kbar(
@@ -131,7 +173,7 @@ def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
         if ts_value > 0:
             # Subtract 8-hour offset to get correct Taiwan time
             corrected_timestamp = ts_value / 1_000_000_000 - 8 * 3600
-            taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
+            taiwan_dt = datetime.datetime.fromtimestamp(corrected_timestamp)
         else:
             taiwan_dt = datetime.now()
 
@@ -320,9 +362,41 @@ def _aggregate_kbars(kbars: List[Kbar], target_interval: str) -> List[Kbar]:
     # For intraday intervals, use standard time-based aggregation
     return _aggregate_by_time_windows(kbars, target_mins)
 
-# NOTE: `replay 0050 100 1d` open does not match yesterday's close,
+
+# TODO: Consider whether to adopt original thought (for loop aggregation)
+def _aggregate_kbars(kbars: List[Kbar], target_interval: str) -> List[Kbar]:
+    """
+    Aggregate 1-minute K-bars into higher timeframes for Sinopac broker.
+    Special handling for daily intervals to ensure exactly one bar per trading day.
+    """
+    if not kbars:
+        return []
+
+    # Taiwan stock market specific intervals (4.5 hour trading session)
+    interval_minutes = {
+        "1m": 1, "3m": 3, "5m": 5, "10m": 10, "15m": 15,
+        "20m": 20, "30m": 30, "45m": 45, "1h": 60, "90m": 90, "2h": 120,
+        "1d": 270, "1w": 1350, "1M": 5400  # 270 = 4.5h trading day
+    }
+
+    if target_interval not in interval_minutes:
+        raise ValueError(f"Unsupported interval: {target_interval}")
+
+    target_mins = interval_minutes[target_interval]
+
+    # If already at target interval, return as-is
+    if target_mins == 1:
+        return kbars
+
+    # Special handling for daily and longer intervals
+    if target_interval in ["1d", "1w", "1M"]:
+        return _aggregate_by_trading_session(kbars, target_interval)
+
+    # For intraday intervals, use standard time-based aggregation
+    return _aggregate_by_time_windows(kbars, target_mins)
+
+# TODO: `replay 0050 100 1d` open does not match yesterday's close,
 # need to verify the aggregation logic or inspect sinopac's data quality.
-# -> Turns out that most of the financial data has same quality issue.
 def _aggregate_by_trading_session(kbars: List[Kbar], interval: str) -> List[Kbar]:
     """
     Aggregate kbars by trading sessions (daily, weekly, monthly).

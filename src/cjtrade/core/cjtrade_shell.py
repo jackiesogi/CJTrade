@@ -450,9 +450,9 @@ class CancelAllCommand(CommandBase):
                     print(f"  Status: {status}")
 
                     # Cancel orders that are not yet filled or already cancelled
-                    # OrderStatus: NEW, ON_THE_WAY, COMMITTED, PARTIAL can be cancelled
+                    # OrderStatus: PLACED, COMMITTED_WAIT_MARKET_OPEN, COMMITTED_WAIT_MATCHING, PARTIAL can be cancelled
                     # OrderStatus: FILLED, CANCELLED, REJECTED cannot be cancelled
-                    if status in ['NEW', 'ON_THE_WAY', 'COMMITTED', 'PARTIAL',
+                    if status in ['PLACED', 'COMMITTED_WAIT_MARKET_OPEN', 'COMMITTED_WAIT_MATCHING', 'PARTIAL',
                                  'PreSubmitted', 'Submitted', 'PartFilled']:
                         print(f"  → Trying to cancel...")
                         result = client.cancel_order(order_id)
@@ -491,7 +491,7 @@ class CalendarCommand(CommandBase):
         self.name = "date"
         self.description = "Show the calendar"
         self.optional_params = ["year"]
-        
+
         # Get paths to utility scripts
         from pathlib import Path
         current_file = Path(__file__).resolve()
@@ -501,7 +501,7 @@ class CalendarCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import sys
-        
+
         if len(args) == 1:
             # Direct call with date argument
             subprocess.run([sys.executable, str(self.ncal_script), '--sunday', args[0]], shell=False)
@@ -518,12 +518,12 @@ class CalendarCommand(CommandBase):
         # Display current date/time
         print("Current datetime" + suffix, end="")
         print("\033[93m")  # yellow
-        
+
         # Use Python date script for cross-platform compatibility
         subprocess.run([sys.executable, str(self.date_script), '-d', f'@{int(ts.timestamp())}'], shell=False)
-        
+
         print("\033[0m")
-        
+
         # Display calendar
         subprocess.run([sys.executable, str(self.ncal_script), '--sunday', ts.strftime('%Y-%m-%d')], shell=False)
 

@@ -1,3 +1,4 @@
+# TODO: Clean up the code and test file structure, kinda messy now.
 """Base test class for CJTrade Broker API tests
 
 This module provides a common base class with:
@@ -101,7 +102,7 @@ class BaseBrokerTest(unittest.TestCase):
         }
 
         self.client = AccountClient(broker_type, **self.config)
-        
+
         # Connect with retry mechanism for real brokers
         if broker_type != BrokerType.MOCK:
             self._connect_with_retry()
@@ -144,13 +145,13 @@ class BaseBrokerTest(unittest.TestCase):
 
     def _connect_with_retry(self, max_retries=3, retry_delay=5):
         """Connect to broker with retry mechanism for handling connection limits
-        
+
         Args:
             max_retries: Maximum number of connection attempts
             retry_delay: Seconds to wait between retries
         """
         log_buffer = get_log_buffer()
-        
+
         for attempt in range(max_retries):
             try:
                 self.client.connect()
@@ -159,7 +160,7 @@ class BaseBrokerTest(unittest.TestCase):
                 return
             except Exception as e:
                 error_msg = str(e)
-                
+
                 # Check if it's a connection limit error
                 if "Too Many Connections" in error_msg or "status_code': 451" in error_msg:
                     if attempt < max_retries - 1:
@@ -220,8 +221,12 @@ class BaseBrokerTest(unittest.TestCase):
                   'created_at', 'updated_at']
         return [dict(zip(columns, row)) for row in results] if results else []
 
-    def _verify_order_consistency(self, order_id: str, expected_status: str) -> bool:
-        """Verify that order status is consistent between DB and internal state"""
+    def _verify_order_consistency(self, order_id: str, expected_status) -> bool:
+        """Verify that order status is consistent between DB and internal state
+
+        Args:
+            expected_status: Can be a string or a list of strings
+        """
         log_buffer = get_log_buffer()
 
         # Check DB
@@ -237,7 +242,12 @@ class BaseBrokerTest(unittest.TestCase):
 
         # Verify consistency
         db_status = db_order['status']
-        db_match = (db_status == expected_status)
+
+        # Support both single status and list of statuses
+        if isinstance(expected_status, (list, tuple)):
+            db_match = (db_status in expected_status)
+        else:
+            db_match = (db_status == expected_status)
 
         if log_buffer:
             log_buffer.write(f"Order {order_id[:8]}: DB={db_status}, Expected={expected_status}\n")

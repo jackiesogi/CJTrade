@@ -113,7 +113,7 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
               '{order.id}', '{username}', '{order.broker}',
               '{order.product.symbol}', '{order.action}', '{order.order_type}',
               '{order.price_type}', '{order.price}', '{order.quantity}',
-              'NEW', '{created_at_str}', NULL
+              'PLACED', '{created_at_str}', NULL
             )
         """
         print(sqlcmd)

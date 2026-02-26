@@ -56,6 +56,11 @@ class MockBackend_AccountState:
         self.all_order_status: Dict[str, OrderStatus] = {}
         self.fill_history: List[Dict] = []         # Every transaction: {symbol, quantity, price, time}
 
+# TODO: Consider to add exchange simulation when all time progression features are ready
+# class MockBackend_StockExchange:
+#     def __init__(self):
+#         self.orders_filled: List[Order] = []        # Orders already filled
+
 
 # Backend = Maintain Account State + Provide Market Data
 # Note that the backend API scheme originates from Shioaji's design.
@@ -350,6 +355,7 @@ class MockBrokerBackend:
             trades.append(order_info)
         return trades
 
+    # TODO: Check with account balance or trading limit before placing order
     def place_order(self, order: Order) -> OrderResult:
         if not self._is_valid_price(order):
             return REJECTED_ORDER_NEGATIVE_PRICE(order)
@@ -371,7 +377,7 @@ class MockBrokerBackend:
         order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
 
         self.account_state.orders_placed.append(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.NEW
+        self.account_state.all_order_status[order.id] = OrderStatus.PLACED
         return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
@@ -386,16 +392,16 @@ class MockBrokerBackend:
         # Status depends on market hours (mimics Sinopac behavior)
         if self.market.is_market_open():
             # Market open: order immediately committed to exchange
-            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED
-            status = OrderStatus.COMMITTED
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MATCHING
+            status = OrderStatus.COMMITTED_WAIT_MATCHING
         else:
             # Market closed: order pending, will be sent when market opens
-            self.account_state.all_order_status[order.id] = OrderStatus.ON_THE_WAY
-            status = OrderStatus.ON_THE_WAY
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+            status = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
 
         res = OrderResult(
             status=status,
-            message="Order committed successfully." if status == OrderStatus.COMMITTED else "Order pending market open.",
+            message="Order committed successfully." if status == OrderStatus.COMMITTED_WAIT_MATCHING else "Order pending market open.",
             metadata={"market_open": self.market.is_market_open()},
             linked_order=order.id
         )
@@ -490,7 +496,7 @@ class MockBrokerBackend:
         sum = 0.0
         for odr in odrs:
             # Consider committed + filled + this order
-            if odr.status in [OrderStatus.COMMITTED, OrderStatus.FILLED] and odr.order_datetime.startswith(today_str):
+            if odr.status in [OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.FILLED] and odr.order_datetime.startswith(today_str):
                 sum += odr.price * odr.quantity
         return sum + (order.price * order.quantity) <= TRADE_LIMIT
 
@@ -544,6 +550,7 @@ class MockBrokerBackend:
 
                     # Update Balance (Account for cash flow)
                     # For Buy: balance decreases; For Sell: balance increases
+                    # TODO: Balance should be calculated using fill history.
                     self.account_state.balance -= (qty_signed * odr.price)
 
                     # Record in fill history (Source of truth for positions)
@@ -1014,3 +1021,4 @@ class MockBrokerBackend:
             result.append(kbar)
 
         return result
+    ########################   Internal functions (end)   ##########################

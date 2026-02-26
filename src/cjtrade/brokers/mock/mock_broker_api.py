@@ -156,7 +156,7 @@ class MockBrokerAPI(BrokerAPIBase):
         res = []
         # Use list() to avoid mutation during iteration
         for otw_odr in list(self.api.account_state.orders_placed):
-            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED")
+            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED_WAIT_MATCHING")
             res.append(self.api.commit_order(otw_odr.id))
         return res
 
@@ -187,7 +187,7 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         tmp = self.place_order(order)
-        if tmp.status != OrderStatus.ON_THE_WAY:
+        if tmp.status != OrderStatus.COMMITTED_WAIT_MARKET_OPEN:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()
@@ -210,7 +210,7 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         tmp = self.place_order(order)
-        if tmp.status != OrderStatus.ON_THE_WAY:
+        if tmp.status != OrderStatus.COMMITTED_WAIT_MARKET_OPEN:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()

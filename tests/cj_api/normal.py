@@ -27,7 +27,7 @@ class TestNormalOperations(BaseBrokerTest):
 
         # Verify result
         self.assertIsNotNone(result)
-        self.assertIn(result.status, [OrderStatus.ON_THE_WAY, OrderStatus.NEW])
+        self.assertIn(result.status, [OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.PLACED])
 
         # Verify DB persistence
         db_order = self._get_order_from_db(order.id)
@@ -44,16 +44,19 @@ class TestNormalOperations(BaseBrokerTest):
 
         order = self._create_test_order()
         place_result = self.client.place_order(order)
-        # After place: should be NEW (pending commit)
-        self.assertEqual(place_result.status, OrderStatus.NEW)
+        # After place: should be PLACED (pending commit)
+        self.assertEqual(place_result.status, OrderStatus.PLACED)
 
         # Commit the order
         commit_results = self.client.commit_order()
         self.assertIsInstance(commit_results, list)
         self.assertGreater(len(commit_results), 0)
 
-        # Verify status updated
-        self.assertTrue(self._verify_order_consistency(order.id, 'COMMITTED'))
+        # Verify status updated (depends on market hours)
+        # - Market open: COMMITTED_WAIT_MATCHING
+        # - Market closed: COMMITTED_WAIT_MARKET_OPEN
+        db_order = self._get_order_from_db(order.id)
+        self.assertIn(db_order['status'], ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN'])
 
     def test_03_order_cancellation(self):
         """Test order cancellation"""
@@ -83,7 +86,7 @@ class TestNormalOperations(BaseBrokerTest):
         for i in range(5):
             order = self._create_test_order(symbol="0050", price=100.0 + i)
             result = self.client.place_order(order)
-            self.assertEqual(result.status, OrderStatus.NEW)
+            self.assertEqual(result.status, OrderStatus.PLACED)
             order_ids.append(order.id)
 
         # Commit all orders
@@ -93,8 +96,12 @@ class TestNormalOperations(BaseBrokerTest):
         db_orders = self._get_all_orders_from_db()
         self.assertEqual(len(db_orders), 5)
 
+        # Status depends on market hours
         for order_id in order_ids:
-            self.assertTrue(self._verify_order_consistency(order_id, 'COMMITTED'))
+            self.assertTrue(self._verify_order_consistency(
+                order_id,
+                ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN']
+            ))
 
     def test_05_buy_and_sell_operations(self):
         """Test buy and sell stock operations"""
