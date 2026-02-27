@@ -13,14 +13,22 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
-from .models.announcement import Announcement
-from .models.company_info import CompanyBasicInfo
-from .models.financial_data import BalanceSheetInfo
-from .models.financial_data import EPSInfo
-from .models.financial_data import FinancialRatios
-from .models.financial_data import IncomeStatementInfo
-from .providers.twse import TWSEProvider
-from .utils.parser import TWSEDataParser
+from cjtrade.analytics.fundamental.models.announcement import Announcement
+from cjtrade.analytics.fundamental.models.company_info import CompanyBasicInfo
+from cjtrade.analytics.fundamental.models.financial_data import BalanceSheetInfo
+from cjtrade.analytics.fundamental.models.financial_data import EPSInfo
+from cjtrade.analytics.fundamental.models.financial_data import FinancialRatios
+from cjtrade.analytics.fundamental.models.financial_data import IncomeStatementInfo
+from cjtrade.analytics.fundamental.providers.twse import TWSEProvider
+from cjtrade.analytics.fundamental.utils.parser import TWSEDataParser
+
+# get_company_basic_info(): 公司基本資料（上市時間、負責人、公司全名......）
+# get_financial_ratios(): 財務比率（PE/PB等）
+# get_eps_info(): 每股盈餘資訊
+# get_income_statements(): 綜合損益表資訊
+# get_balance_sheet(): 資產負債表資訊
+# get_recent_announcements(): 最近重大訊息（公告、新聞等）
+# get_company_summary(): 一次獲取公司資訊總結（基本資料、財務比率、EPS、綜損表、資負表等）
 
 
 logger = logging.getLogger(__name__)
@@ -28,25 +36,19 @@ logger = logging.getLogger(__name__)
 
 class CompanyInfoProvider:
     """
-    統一的公司資訊提供者介面
+    Unified company information provider interface
 
-    整合多個資料來源，提供簡單易用的API來獲取公司基本面資訊
+    Integrates multiple data sources and provides a simple API
+    to retrieve company fundamental information
     """
 
     def __init__(self, default_provider: str = "twse", timeout: int = 30):
-        """
-        初始化公司資訊提供者
-
-        Args:
-            default_provider: 預設的資料提供者 ("twse")
-            timeout: HTTP請求超時時間(秒)
-        """
         self.default_provider = default_provider
         self.timeout = timeout
         self._providers: Dict[str, Any] = {}
 
+
     def _get_provider(self, provider_name: str = None):
-        """獲取指定的資料提供者"""
         provider_name = provider_name or self.default_provider
 
         if provider_name not in self._providers:
@@ -57,29 +59,25 @@ class CompanyInfoProvider:
 
         return self._providers[provider_name]
 
+
     async def close(self):
-        """關閉所有providers"""
         for provider in self._providers.values():
             if hasattr(provider, 'close'):
                 await provider.close()
         self._providers.clear()
 
+
     async def __aenter__(self):
         return self
+
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
+
     async def get_company_basic_info(self, symbol: str, provider: str = None) -> Optional[CompanyBasicInfo]:
         """
-        獲取公司基本資訊
-
-        Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
-
-        Returns:
-            CompanyBasicInfo: 公司基本資訊，未找到返回None
+        Get company basic information
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -89,16 +87,10 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get company basic info for {symbol}: {e}")
             return None
 
+
     async def get_financial_ratios(self, symbol: str, provider: str = None) -> Optional[FinancialRatios]:
         """
-        獲取公司財務比率 (PE/PB等)
-
-        Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
-
-        Returns:
-            FinancialRatios: 財務比率資訊，未找到返回None
+        Get company financial ratios (PE/PB, etc.)
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -108,16 +100,10 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get financial ratios for {symbol}: {e}")
             return None
 
+
     async def get_eps_info(self, symbol: str, provider: str = None) -> List[EPSInfo]:
         """
-        獲取公司EPS資訊
-
-        Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
-
-        Returns:
-            List[EPSInfo]: EPS資訊列表
+        Get company EPS information
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -126,16 +112,17 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get EPS info for {symbol}: {e}")
             return []
 
+
     async def get_income_statements(self, symbol: str, provider: str = None) -> List[IncomeStatementInfo]:
         """
-        獲取公司綜合損益表
+        Get company consolidated statements of comprehensive income
 
         Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
+            symbol: Stock symbol
+            provider: Specify the data provider
 
         Returns:
-            List[IncomeStatementInfo]: 綜合損益表資訊列表
+            List[IncomeStatementInfo]: List of comprehensive income statement information
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -144,16 +131,10 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get income statements for {symbol}: {e}")
             return []
 
+
     async def get_balance_sheet(self, symbol: str, provider: str = None) -> List[BalanceSheetInfo]:
         """
-        獲取公司資產負債表
-
-        Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
-
-        Returns:
-            List[BalanceSheetInfo]: 資產負債表資訊列表
+        Get company balance sheet
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -162,16 +143,10 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get balance sheet for {symbol}: {e}")
             return []
 
+
     async def get_recent_announcements(self, days: int = 7, provider: str = None) -> List[Announcement]:
         """
         Get recent major announcements
-
-        Args:
-            days: Announcements within how many days
-            provider: Specify the data provider
-
-        Returns:
-            List[Announcement]: Major announcements list
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -192,21 +167,15 @@ class CompanyInfoProvider:
             logger.error(f"Failed to get recent announcements: {e}")
             return []
 
+
     async def get_company_summary(self, symbol: str, provider: str = None) -> Dict[str, Any]:
         """
-        獲取公司完整摘要資訊
-
-        Args:
-            symbol: 股票代號
-            provider: 指定資料提供者
-
-        Returns:
-            Dict: 包含所有公司資訊的字典
+        Get complete company summary information
         """
         try:
             provider_obj = self._get_provider(provider)
 
-            # 並行獲取所有資訊
+            # Fetch all information concurrently
             tasks = [
                 provider_obj.get_company_basic_info(symbol),
                 provider_obj.get_financial_ratios(symbol),
@@ -252,24 +221,21 @@ __all__ = [
 ]
 
 
-# 使用範例
 async def example_usage():
-    """使用範例"""
     async with CompanyInfoProvider() as provider:
-        # 獲取台積電的完整資訊
+        # Get complete information for TSMC (2330)
         summary = await provider.get_company_summary("2330")
-        print("台積電摘要:", summary['basic_info'])
-        print("台積電財務比率:", summary['financial_ratios'])
+        print("TSMC Summary:", summary['basic_info'])
+        print("TSMC Financial Ratios:", summary['financial_ratios'])
 
-        # 獲取最近一週的重大訊息
+        # Get major announcements from the past 7 days
         recent_news = await provider.get_recent_announcements(days=7)
-        print(f"最近一週重大訊息: {len(recent_news)} 筆")
+        print(f"Major announcements from the past 7 days: {len(recent_news)} records")
 
-        for news in recent_news[:3]:  # 顯示前3筆
+        for news in recent_news[:3]:
             print(f"  {news}")
 
 
 if __name__ == "__main__":
-    # 設定logging
     logging.basicConfig(level=logging.INFO)
     asyncio.run(example_usage())

@@ -13,20 +13,19 @@ from typing import List
 from typing import Optional
 
 import aiohttp
-
-from ..models.announcement import Announcement
-from ..models.company_info import CompanyBasicInfo
-from ..models.financial_data import BalanceSheetInfo
-from ..models.financial_data import EPSInfo
-from ..models.financial_data import FinancialRatios
-from ..models.financial_data import IncomeStatementInfo
+from cjtrade.analytics.fundamental.models.announcement import Announcement
+from cjtrade.analytics.fundamental.models.company_info import CompanyBasicInfo
+from cjtrade.analytics.fundamental.models.financial_data import BalanceSheetInfo
+from cjtrade.analytics.fundamental.models.financial_data import EPSInfo
+from cjtrade.analytics.fundamental.models.financial_data import FinancialRatios
+from cjtrade.analytics.fundamental.models.financial_data import IncomeStatementInfo
 
 
 logger = logging.getLogger(__name__)
 
 
 class TWSEProvider:
-    """台灣證券交易所資料提供者"""
+    """台灣證券交易所資料"""
 
     BASE_URL = "https://openapi.twse.com.tw/v1"
 
