@@ -1,30 +1,30 @@
-import shioaji as sj
-from datetime import datetime
-from typing import Any, Dict, List
 import json
-import os
-from pathlib import Path
 import math
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from typing import Dict
+from typing import List
 
+import shioaji as sj
 from cjtrade.brokers.base_broker_api import *
+from cjtrade.brokers.sinopac._internal_func import _from_sinopac_bidask
+from cjtrade.brokers.sinopac._internal_func import _from_sinopac_kbar
+from cjtrade.brokers.sinopac._internal_func import _from_sinopac_result
+from cjtrade.brokers.sinopac._internal_func import _from_sinopac_snapshot
+from cjtrade.brokers.sinopac._internal_func import _retrieve_sinopac_trade_by_cj_order_id
+from cjtrade.brokers.sinopac._internal_func import _to_sinopac_order
+from cjtrade.brokers.sinopac._internal_func import _to_sinopac_product
+from cjtrade.brokers.sinopac._internal_func import _to_sinopac_ranktype
+from cjtrade.brokers.sinopac._internal_func import cj_sj_order_map
+from cjtrade.db.db_api import *
+from cjtrade.models.event import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
+from cjtrade.models.quote import BidAsk
 from cjtrade.models.rank_type import *
 from cjtrade.models.trade import *
-from cjtrade.models.event import *
-from cjtrade.models.quote import BidAsk
-from cjtrade.db.db_api import *
-from cjtrade.brokers.sinopac._internal_func import (
-    _from_sinopac_result,
-    _to_sinopac_order,
-    _to_sinopac_product,
-    _from_sinopac_snapshot,
-    _to_sinopac_ranktype,
-    _from_sinopac_bidask,
-    _from_sinopac_kbar,
-    _retrieve_sinopac_trade_by_cj_order_id,
-    cj_sj_order_map  # Import the shared order map
-)
 
 class SinopacBrokerAPI(BrokerAPIBase):
     def __init__(self, **config: Any):
@@ -627,6 +627,13 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
     ##### INTERNAL METHODS (END) #####
 
+
+def order_cb(stat, msg):
+    print('Below is my order callback !!!!!')
+    print(stat, msg)
+
+# Test cb registration by CJTrade API
+## TODO: When market open, test the same scenarios as the test plan for Sinopac native API
 if __name__ == "__main__":
     from cjtrade.core.account_client import AccountClient, BrokerType
     from cjtrade.models.order import Order, OrderAction, PriceType, OrderType
@@ -646,6 +653,78 @@ if __name__ == "__main__":
     )
     client.connect()
 
+    # 2. Define callbacks
+    def on_fill(event: FillEvent):
+        print(f"\n🎉 Order Filled!")
+        print(f"  Order ID: {event.order_id}")
+        print(f"  Symbol: {event.symbol}")
+        print(f"  Action: {event.action.value}")
+        print(f"  Filled Quantity: {event.filled_quantity}")
+        print(f"  Filled Price: {event.filled_price}")
+        print(f"  Filled Value: {event.filled_value}")
+        print(f"  Order Status: {event.order_status.value}")
+
+        if event.is_complete_fill():
+            print(f"  ✅ Order Completely Filled")
+        else:
+            print(f"  ⏳ Partial Fill, Remaining {event.remaining_quantity}")
+
+    def on_order_change(event: OrderEvent):
+        print(f"\n📝 Order Status Change")
+        print(f"  Order ID: {event.order_id}")
+        print(f"  {event.old_status.value} → {event.new_status.value}")
+
+        if event.is_rejected():
+            print(f"  ❌ Rejection Reason: {event.message}")
+        elif event.is_cancelled():
+            print(f"  ⚠️ Order Cancelled")
+
+    # 3. Register callbacks
+    client.register_fill_callback(on_fill)
+    client.register_order_callback(on_order_change)
+
+    # 4. Place order test
+    order = Order(
+        product=Product(
+            symbol="2890",
+            exchange=Exchange.TSE
+        ),
+        action=OrderAction.BUY,
+        price=31.0,  # close price on 2026-02-26
+        quantity=5,
+        order_lot=OrderLot.IntraDayOdd,
+        price_type=PriceType.LMT,
+        order_type=OrderType.ROD
+    )
+
+    print(f"\n📮 Placing Order: Buy {order.product.symbol} x{order.quantity} @ {order.price}")
+    result = client.place_order(order)
+    print(f"  Order Result: {result.status.value}")
+
+    if result.status == OrderStatus.PLACED:
+        print(f"\n📤 Submitting Order")
+        commit_results = client.commit_order()
+        for res in commit_results:
+            print(f"  Submission Result: {res.status.value}")
+
+    # 5. Keep the program running, waiting for callback triggers
+    print(f"\n⏳ Waiting for order fills (Ctrl+C to exit)...")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print(f"\n👋 Connection closed")
+        client.disconnect()
+
+
+## Test cb registration by sinopac native API
+## TODO: When market open, test these: (required 3 order creations, one will be filled, will cost around 31 * 3 = 93 TWD)
+##   - [ ] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
+##   - [ ] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
+##   - [ ] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
+##   - [ ] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
+##   - [ ] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
+# if __name__ == "__main__":
     # api = sj.Shioaji(simulation=False)
     # api.login(
     #     api_key=os.environ.get("API_KEY", ""),
@@ -656,16 +735,12 @@ if __name__ == "__main__":
     #     ca_passwd=os.environ.get("CA_PASSWORD", ""),
     # )
 
-    # def order_cb(stat, msg):
-    #     print('Below is my order callback !!!!!')
-    #     print(stat, msg)
-
     # api.set_order_callback(order_cb)
 
     # contract = api.Contracts.Stocks.TSE.TSE2890
     # order = api.Order(
-    #     price=16,
-    #     quantity=1,
+    #     price=31,    # close price of 2026-02-26
+    #     quantity=3,  # available to apply multiple order changes
     #     action=sj.constant.Action.Buy,
     #     price_type=sj.constant.StockPriceType.LMT,
     #     order_type=sj.constant.OrderType.ROD,
@@ -674,76 +749,11 @@ if __name__ == "__main__":
     #     account=api.stock_account
     # )
     # trade = api.place_order(contract, order)
-    # time.sleep(10)
-    # api.cancel_order(trade)
 
-    # print(f"\n⏳ 等待訂單狀態變化（Ctrl+C 退出）...")
+    # print(f"\n⏳ Waiting for order status changes (Ctrl+C to exit)...")
     # try:
     #     while True:
     #         time.sleep(1)
     # except KeyboardInterrupt:
-    #     print(f"\n👋 斷開連接")
+    #     print(f"\n👋 Connection closed")
     #     api.logout()
-
-    # # 2. 定义 callback 函数
-    def on_fill(event: FillEvent):
-        print(f"\n🎉 订单成交！")
-        print(f"  订单ID: {event.order_id}")
-        print(f"  商品: {event.symbol}")
-        print(f"  方向: {event.action.value}")
-        print(f"  成交数量: {event.filled_quantity}")
-        print(f"  成交价格: {event.filled_price}")
-        print(f"  成交金额: {event.filled_value}")
-        print(f"  订单状态: {event.order_status.value}")
-
-        if event.is_complete_fill():
-            print(f"  ✅ 订单完全成交")
-        else:
-            print(f"  ⏳ 部分成交，剩余 {event.remaining_quantity}")
-
-    def on_order_change(event: OrderEvent):
-        print(f"\n📝 订单状态变化")
-        print(f"  订单ID: {event.order_id}")
-        print(f"  {event.old_status.value} → {event.new_status.value}")
-
-        if event.is_rejected():
-            print(f"  ❌ 拒绝原因: {event.message}")
-        elif event.is_cancelled():
-            print(f"  ⚠️ 订单已取消")
-
-    # 3. 注册 callback
-    client.register_fill_callback(on_fill)
-    client.register_order_callback(on_order_change)
-
-    # 4. 下单测试
-    order = Order(
-        product=Product(
-            symbol="0050",  # 台积电
-            exchange=Exchange.TSE
-        ),
-        action=OrderAction.BUY,
-        price=50.0,
-        quantity=1,
-        order_lot=OrderLot.IntraDayOdd,
-        price_type=PriceType.LMT,
-        order_type=OrderType.ROD
-    )
-
-    print(f"\n📮 下单: 买进 {order.product.symbol} x{order.quantity} @ {order.price}")
-    result = client.place_order(order)
-    print(f"  下单结果: {result.status.value}")
-
-    if result.status == OrderStatus.PLACED:
-        print(f"\n📤 提交订单")
-        commit_results = client.commit_order()
-        for res in commit_results:
-            print(f"  提交结果: {res.status.value}")
-
-    # 5. 保持程序运行，等待 callback 触发
-    print(f"\n⏳ 等待订单成交（Ctrl+C 退出）...")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print(f"\n👋 断开连接")
-        client.disconnect()

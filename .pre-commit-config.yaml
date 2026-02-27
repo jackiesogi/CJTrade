@@ -11,6 +11,11 @@ repos:
       - id: reorder-python-imports
   - repo: local
     hooks:
+      - id: "mock-broker-unittest"  # We skip the sinopac unit test
+        name: Run CJTrade mock broker unit test
+        entry: uv run python tests/test_broker_api_stability.py --broker=mock
+        language: system
+        pass_filenames: false
       - id: "mock-shell"
         name: Run CJTrade shell functional test (mock broker)
         entry: uv run test --broker=mock --group=all
