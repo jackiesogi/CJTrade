@@ -3,15 +3,21 @@ repos:
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+  - repo: https://github.com/asottile/reorder-python-imports
+    rev: v3.16.0
+    hooks:
+      - id: reorder-python-imports
   - repo: local
     hooks:
       - id: "mock-shell"
-        name: Run CJTrade shell basic check (mock broker)
+        name: Run CJTrade shell functional test (mock broker)
         entry: uv run test --broker=mock --group=all
         language: system
         pass_filenames: false
       - id: "sinopac-shell"
-        name: Run CJTrade shell basic check (sinopac broker)
+        name: Run CJTrade shell functional test (sinopac broker)
         entry: uv run test --broker=sinopac --group=all
         language: system
         pass_filenames: false
