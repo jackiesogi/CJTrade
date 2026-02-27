@@ -1,7 +1,9 @@
-from cjtrade.db.db_base import *
 from cjtrade.db.db_api import connect_sqlite
+from cjtrade.db.db_base import *
 from cjtrade.db.sqlite import *
-from cjtrade.db.tests.utils import _clean_up_test_db, TEST_DB_PATH, db_shell
+from cjtrade.db.tests.utils import _clean_up_test_db
+from cjtrade.db.tests.utils import db_shell
+from cjtrade.db.tests.utils import TEST_DB_PATH
 
 
 def test_execute():

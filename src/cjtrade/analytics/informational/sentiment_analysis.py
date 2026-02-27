@@ -1,9 +1,9 @@
+import asyncio
+import os
+
 from cjtrade.analytics.informational.news_client import *
 from cjtrade.llm.gemini import GeminiClient
-from cjtrade.analytics.informational.news_client import *
 from dotenv import load_dotenv
-import os
-import asyncio
 
 load_dotenv()
 

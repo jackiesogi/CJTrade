@@ -1,5 +1,5 @@
-from cjtrade.brokers.mock.mock_broker_api import *
 from cjtrade.brokers.mock._mock_broker_backend import *
+from cjtrade.brokers.mock.mock_broker_api import *
 
 def test_playback_speed():
 

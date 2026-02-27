@@ -1,19 +1,25 @@
 import os
+import random
+from datetime import datetime
+from datetime import timedelta
 from enum import Enum
+from typing import Dict
+from typing import List
+
+import pandas as pd
+import yfinance as yf
+from cjtrade.brokers.mock._mock_broker_order_gen import *
+from cjtrade.brokers.mock._mock_market import *
 from cjtrade.core.account_client import AccountClient
+from cjtrade.models.kbar import Kbar
+from cjtrade.models.order import Order
+from cjtrade.models.order import OrderAction
+from cjtrade.models.order import OrderResult
+from cjtrade.models.order import OrderStatus
 from cjtrade.models.position import Position
 from cjtrade.models.product import Product
 from cjtrade.models.quote import Snapshot
-from cjtrade.models.order import Order, OrderAction, OrderResult, OrderStatus
-from cjtrade.models.kbar import Kbar
 from cjtrade.models.trade import Trade
-from cjtrade.brokers.mock._mock_market import *
-from cjtrade.brokers.mock._mock_broker_order_gen import *
-from typing import Dict, List
-import yfinance as yf
-import datetime
-import random
-import pandas as pd
 
 # Price generation modes for mock broker
 class PriceMode(str, Enum):
@@ -76,7 +82,7 @@ class MockBrokerBackend:
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
             self.market = MockBackend_MockMarket(real_account=self.real_account)
-            self.market.set_historical_time(datetime.datetime.now(), days_back=random.randint(1, 20))
+            self.market.set_historical_time(datetime.now(), days_back=random.randint(1, 20))
             self.market.set_playback_speed(playback_speed)
         else:
             # Future: self.market = MockBackend_SyntheticMarket()
@@ -555,7 +561,7 @@ class MockBrokerBackend:
 
                     # Record in fill history (Source of truth for positions)
                     self.account_state.fill_history.append({
-                        "id": f"fill_{odr.id}_{int(datetime.datetime.now().timestamp())}",
+                        "id": f"fill_{odr.id}_{int(datetime.now().timestamp())}",
                         "order_id": odr.id,
                         "symbol": odr.product.symbol,
                         "action": odr.action.value,
@@ -608,7 +614,7 @@ class MockBrokerBackend:
 
         self.account_state.positions = new_positions
 
-    def _check_price_in_time_range(self, symbol: str, start_time: datetime.datetime, end_time: datetime.datetime, price_condition) -> bool:
+    def _check_price_in_time_range(self, symbol: str, start_time: datetime, end_time: datetime, price_condition) -> bool:
         # Assume data has been preloaded
         try:
             # Ensure symbol data exists
@@ -758,7 +764,7 @@ class MockBrokerBackend:
                     # backend need the transaction data from an user?), or (2) we just do a
                     # dependency injection to ONLY pass the history from `MockBrokerAPI` to here.
                     self.account_state.fill_history.append({
-                        "id": f"init_{pos.symbol}_{int(datetime.datetime.now().timestamp())}",
+                        "id": f"init_{pos.symbol}_{int(datetime.now().timestamp())}",
                         "order_id": "manual_sync",
                         "symbol": pos.symbol,
                         "action": "BUY", # Assume buy for initial positions
@@ -850,7 +856,7 @@ class MockBrokerBackend:
                     price_type=PriceType(order_data['price_type']),
                     order_type=OrderType(order_data['order_type']),
                     order_lot=order_lot,
-                    created_at=datetime.datetime.fromisoformat(order_data['created_at'])
+                    created_at=datetime.fromisoformat(order_data['created_at'])
                 )
                 self.account_state.orders_placed.append(order)
 
@@ -872,7 +878,7 @@ class MockBrokerBackend:
                     price_type=PriceType(order_data['price_type']),
                     order_type=OrderType(order_data['order_type']),
                     order_lot=order_lot,
-                    created_at=datetime.datetime.fromisoformat(order_data['created_at'])
+                    created_at=datetime.fromisoformat(order_data['created_at'])
                 )
                 self.account_state.orders_committed.append(order)
 
@@ -894,7 +900,7 @@ class MockBrokerBackend:
                     price_type=PriceType(order_data['price_type']),
                     order_type=OrderType(order_data['order_type']),
                     order_lot=order_lot,
-                    created_at=datetime.datetime.fromisoformat(order_data['created_at'])
+                    created_at=datetime.fromisoformat(order_data['created_at'])
                 )
                 self.account_state.orders_filled.append(order)
 
@@ -916,7 +922,7 @@ class MockBrokerBackend:
                     price_type=PriceType(order_data['price_type']),
                     order_type=OrderType(order_data['order_type']),
                     order_lot=order_lot,
-                    created_at=datetime.datetime.fromisoformat(order_data['created_at'])
+                    created_at=datetime.fromisoformat(order_data['created_at'])
                 )
                 self.account_state.orders_cancelled.append(order)
 
@@ -926,7 +932,7 @@ class MockBrokerBackend:
             }
 
             # Clean up cancelled orders older than 30 minutes
-            now = datetime.datetime.now()
+            now = datetime.now()
             self.account_state.orders_cancelled = [
                 order for order in self.account_state.orders_cancelled
                 if (now - order.created_at).total_seconds() < 1800  # 30 minutes = 1800 seconds
@@ -943,7 +949,7 @@ class MockBrokerBackend:
         if self.account_state.positions:
             self._update_position_prices()
 
-    def _create_fallback_snapshot(self, symbol: str, timestamp: datetime.datetime) -> Snapshot:
+    def _create_fallback_snapshot(self, symbol: str, timestamp: datetime) -> Snapshot:
         import random
         base_price = 100.0 + random.uniform(-10, 10)
         price_change = random.uniform(-2, 2)

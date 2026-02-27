@@ -1,20 +1,21 @@
 # main.py (skeleton, put under src/cjtrade or project root)
 import asyncio
-import signal
 import logging
-import random
 import os
-#import cjtrade.tasks
+import random
+import signal
+from datetime import datetime
+from datetime import timedelta
 from threading import Thread
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
 
-import cjtrade.modules.analysis as ANALYSIS
 import cjtrade.modules.account as ACCOUNT
+import cjtrade.modules.analysis as ANALYSIS
+import cjtrade.modules.candidate as CAND
 import cjtrade.modules.database as DATABASE
 import cjtrade.modules.stockdata as STOCK
-import cjtrade.modules.candidate as CAND
 import cjtrade.modules.ui.web as WEB
+from dotenv import load_dotenv
+#import cjtrade.tasks
 
 # TODO: Gradually take new modules from service_oriented branch to here to make it a system.
 

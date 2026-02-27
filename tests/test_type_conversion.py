@@ -1,11 +1,12 @@
+import logging
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
-from cjtrade.core.account_client import *
-from shioaji import Shioaji as sj
-import logging
+
 from cjtrade.brokers.sinopac._internal_func import _from_sinopac_product
+from cjtrade.core.account_client import *
+from dotenv import load_dotenv
+from shioaji import Shioaji as sj
 
 load_dotenv()
 

@@ -17,11 +17,10 @@ Usage:
 Or via bash script:
     ./tests/run_broker_stability_tests.sh
 """
-
+import argparse
 import os
 import sys
 import unittest
-import argparse
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

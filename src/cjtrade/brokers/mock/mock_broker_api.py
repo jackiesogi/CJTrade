@@ -1,21 +1,24 @@
-from typing import Any, Dict, List
-import time
 import random
+import time
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import List
 
 from cjtrade.brokers.base_broker_api import BrokerAPIBase
+from cjtrade.core.account_client import AccountClient
+from cjtrade.db.db_api import *
+from cjtrade.db.sqlite import *
+from cjtrade.models.kbar import *
 from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
-from cjtrade.models.kbar import *
-from cjtrade.models.trade import *
-from cjtrade.core.account_client import AccountClient
-from cjtrade.db.db_api import *
-from cjtrade.db.sqlite import *
-# from ._simulation_env import SimulationEnvironment
 from cjtrade.models.rank_type import RankType
+from cjtrade.models.trade import *
+
 from ._mock_broker_backend import MockBrokerBackend
+# from ._simulation_env import SimulationEnvironment
 
 # MockBrokerAPI will not forward `place_order()` call to the real broker,
 # but will fetch data from the real broker if `real_account` is provided.
@@ -79,7 +82,7 @@ class MockBrokerAPI(BrokerAPIBase):
 
         return BidAsk(
             symbol=product.symbol,
-            datetime=datetime.datetime.now(),
+            datetime=datetime.now(),
             bid_price=[base_price - i*0.5 for i in range(5)],
             bid_volume=[random.randint(50, 500) for _ in range(5)],
             ask_price=[base_price + 0.5 + i*0.5 for i in range(5)],

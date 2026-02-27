@@ -1,8 +1,11 @@
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+from typing import List
+from typing import Optional
 
-from abc import ABC, abstractmethod
-from typing import List, Optional, Any
-from cjtrade.models.product import Product
 from cjtrade.chart.models.kbar_data import KbarData
+from cjtrade.models.product import Product
 
 
 class KbarChartBase(ABC):

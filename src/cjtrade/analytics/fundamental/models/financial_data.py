@@ -2,8 +2,10 @@
 Financial data models for companies
 """
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 
 @dataclass

@@ -2,8 +2,9 @@
 Company basic information data models
 """
 from dataclasses import dataclass
-from typing import Optional, List
 from datetime import datetime
+from typing import List
+from typing import Optional
 
 
 @dataclass

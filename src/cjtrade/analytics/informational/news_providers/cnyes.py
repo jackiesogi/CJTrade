@@ -1,12 +1,15 @@
 # 鉅亨網 CNYES: No official API, so we do web scraping
-from typing import List
-from ._base import NewsInterface, News
-import random
 import asyncio
-import time
-import requests
-import aiohttp
+import random
 import re
+import time
+from typing import List
+
+import aiohttp
+import requests
+
+from ._base import News
+from ._base import NewsInterface
 
 ##############################################################################
 

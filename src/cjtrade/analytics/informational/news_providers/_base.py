@@ -1,5 +1,7 @@
-from abc import ABC, abstractmethod
-from typing import Any, List
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+from typing import List
 
 class News:
     def __init__(self, title: str, content: str):
@@ -24,12 +26,12 @@ class NewsInterface(ABC):
     def fetch_headline_news(self, n: int = 10) -> List[News]:
         """Fetch latest news. (blocking call)"""
         pass
-    
+
     @abstractmethod
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         """Search news by keyword."""
         pass
-    
+
     @abstractmethod
     def get_provider_name(self) -> str:
         """Get the provider name."""

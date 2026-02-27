@@ -3,10 +3,9 @@
 date.py - Cross-platform date utility
 Mimics the behavior of GNU date command with Unix timestamp support
 """
-
+import locale
 import sys
 from datetime import datetime
-import locale
 
 
 def format_date(dt: datetime, format_str: str = None) -> str:

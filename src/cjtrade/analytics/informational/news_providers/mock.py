@@ -1,7 +1,9 @@
-from typing import List
-from ._base import NewsInterface, News
-import random
 import asyncio
+import random
+from typing import List
+
+from ._base import News
+from ._base import NewsInterface
 
 class MockNewsProvider(NewsInterface):
     def __init__(self, **config):

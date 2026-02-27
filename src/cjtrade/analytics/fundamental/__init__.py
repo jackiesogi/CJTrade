@@ -5,17 +5,22 @@ This module provides access to company fundamental data from Taiwan Stock Exchan
 and other public sources. It includes company basic information, financial ratios,
 EPS data, and major announcements.
 """
-
-from .providers.twse import TWSEProvider
-from .models.company_info import CompanyBasicInfo
-from .models.financial_data import FinancialRatios, EPSInfo, BalanceSheetInfo, IncomeStatementInfo
-from .models.announcement import Announcement
-from .utils.parser import TWSEDataParser
-
 import asyncio
 import logging
-from typing import Dict, List, Optional, Any
 from datetime import datetime
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
+from .models.announcement import Announcement
+from .models.company_info import CompanyBasicInfo
+from .models.financial_data import BalanceSheetInfo
+from .models.financial_data import EPSInfo
+from .models.financial_data import FinancialRatios
+from .models.financial_data import IncomeStatementInfo
+from .providers.twse import TWSEProvider
+from .utils.parser import TWSEDataParser
 
 
 logger = logging.getLogger(__name__)

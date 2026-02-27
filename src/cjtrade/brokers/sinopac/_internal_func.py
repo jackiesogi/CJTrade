@@ -1,17 +1,18 @@
-import shioaji as sj
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
+from typing import Dict
+from typing import List
 
+import pandas as pd
+import shioaji as sj
 from cjtrade.brokers.base_broker_api import *
+from cjtrade.db.db_api import *
+from cjtrade.models.kbar import *
 from cjtrade.models.order import *
 from cjtrade.models.product import *
-from cjtrade.models.rank_type import *
 from cjtrade.models.quote import BidAsk
-from cjtrade.models.kbar import *
-from cjtrade.db.db_api import *
-from cjtrade.db.db_api import *
-import pandas as pd
+from cjtrade.models.rank_type import *
 
 
 ##### Cjtrade -> Shioaji #####
@@ -110,7 +111,7 @@ def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
     for i in range(len(sj_kbar.ts)):
         # Shioaji timestamp needs 8-hour adjustment for correct Taiwan time
         corrected_timestamp = sj_kbar.ts[i] / 1_000_000_000 - 8 * 3600
-        taiwan_dt = datetime.datetime.fromtimestamp(corrected_timestamp)
+        taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
 
         cj_kbars.append(
             Kbar(
@@ -173,7 +174,7 @@ def _from_sinopac_snapshot(sj_snapshot) -> Snapshot:
         if ts_value > 0:
             # Subtract 8-hour offset to get correct Taiwan time
             corrected_timestamp = ts_value / 1_000_000_000 - 8 * 3600
-            taiwan_dt = datetime.datetime.fromtimestamp(corrected_timestamp)
+            taiwan_dt = datetime.fromtimestamp(corrected_timestamp)
         else:
             taiwan_dt = datetime.now()
 

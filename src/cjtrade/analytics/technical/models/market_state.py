@@ -1,5 +1,4 @@
 # Some classes that can represent the market state
-
 from datetime import datetime
 
 

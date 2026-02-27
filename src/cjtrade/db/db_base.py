@@ -1,8 +1,11 @@
 # For simplicity, base class and their children class implementation
 # are all in this file. In the future, if the file is too large,
 # we can split them into multiple files.
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+from typing import Dict
+from typing import List
 
 
 # Database connection base class

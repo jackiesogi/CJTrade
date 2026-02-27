@@ -1,5 +1,6 @@
-from cjtrade.analytics.technical.models import *
 import asyncio
+
+from cjtrade.analytics.technical.models import *
 
 class FixedPriceStrategy:
     """A simple fixed price strategy based on OHLCV data."""

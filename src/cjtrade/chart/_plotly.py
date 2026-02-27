@@ -1,11 +1,11 @@
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from typing import List
 from datetime import datetime
+from typing import List
 
+import plotly.graph_objects as go
 from cjtrade.chart._chart_base import KbarChartBase
 from cjtrade.chart.models.kbar_data import KbarData
 from cjtrade.models.product import Product
+from plotly.subplots import make_subplots
 
 # Theme configurations moved outside the class
 CHART_THEMES = {
@@ -477,4 +477,3 @@ class PlotlyKbarChart(KbarChartBase):
             if not filename.endswith('.html'):
                 filename = f"{filename}.html"
             self._save_html_with_template(filename)
-

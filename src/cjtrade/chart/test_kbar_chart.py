@@ -1,10 +1,15 @@
-from datetime import datetime, time, timedelta
 import os
+from datetime import datetime
+from datetime import time
+from datetime import timedelta
 from time import sleep
-from cjtrade.chart import KbarChartClient, KbarChartType, KbarData
-from cjtrade.models.product import Product
+
 from cjtrade.analytics.technical.models.market_state import OHLCVState
+from cjtrade.chart import KbarChartClient
+from cjtrade.chart import KbarChartType
+from cjtrade.chart import KbarData
 from cjtrade.core.account_client import *
+from cjtrade.models.product import Product
 from dotenv import load_dotenv
 
 

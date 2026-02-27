@@ -1,11 +1,14 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+from typing import Dict
+from typing import List
 
+from cjtrade.models.kbar import *
 from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
-from cjtrade.models.kbar import *
 
 # connect / disconnect / is_connected /
 # get_positions / get_balance / get_quotes /
@@ -74,8 +77,8 @@ class BrokerAPIBase(ABC):
     # @abstractmethod  # TODO: Un-comment this when implementation is done
     # Event:
     # - time_period (e.g. every 15 sec)
-    # - price_change (e.g. +1% change) 
-    # - fill_period (e.g. every 100 trade ticks) 
+    # - price_change (e.g. +1% change)
+    # - fill_period (e.g. every 100 trade ticks)
     # - volume_thresh (e.g. more than 100 shares traded)
     def register_price_callback():
         """

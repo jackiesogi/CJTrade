@@ -1,11 +1,13 @@
-from typing import Any, Dict, List
+from typing import Any
+from typing import Dict
+from typing import List
 
 # For supporting parameterized query
 class SqlCommand():
     def __init__(self, sql_command: str, db_connection: Database):
         self.command = sql_command
         self.db_connection = db_connection
-        self.parameters: Dict[str, Any] = {} 
+        self.parameters: Dict[str, Any] = {}
         for key in self._extract_params():
             self.parameters[key] = None
 

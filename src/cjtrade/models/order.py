@@ -1,8 +1,13 @@
-import datetime
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
+from datetime import datetime
+from datetime import timedelta
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
+from typing import Dict
+from typing import List
+
 from .product import Product
 
 # PARTIALLY ALIGNED WITH SINOPAC
@@ -64,8 +69,8 @@ class Order:
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
     # utc+8 time
-    created_at: datetime = field(default_factory=lambda: datetime.datetime.utcnow() + datetime.timedelta(hours=8))
-    # created_at: datetime = field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.utcnow() + timedelta(hours=8))
+    # created_at: datetime = field(default_factory=datetime.utcnow)
 
     broker: str = 'na'
 

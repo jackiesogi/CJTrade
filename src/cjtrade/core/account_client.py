@@ -1,15 +1,17 @@
 import uuid
-from enum import Enum
-from typing import Any, Dict, List
 from datetime import datetime
+from enum import Enum
+from typing import Any
+from typing import Dict
+from typing import List
 
 from cjtrade.brokers.base_broker_api import *
+from cjtrade.models.event import *
 from cjtrade.models.order import *
 from cjtrade.models.position import *
 from cjtrade.models.product import *
 from cjtrade.models.quote import *
 from cjtrade.models.rank_type import *
-from cjtrade.models.event import *
 
 
 class BrokerType(Enum):

@@ -1,5 +1,7 @@
 from enum import Enum
-from typing import List, Optional, Any
+from typing import Any
+from typing import List
+from typing import Optional
 
 from cjtrade.chart._chart_base import KbarChartBase
 from cjtrade.chart._plotly import PlotlyKbarChart

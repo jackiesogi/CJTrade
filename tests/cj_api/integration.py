@@ -5,8 +5,8 @@ Tests complete workflows combining multiple operations:
 - Mixed operation sequences
 - End-to-end flows
 """
-
 from cjtrade.models.order import OrderStatus
+
 from tests.cj_api.base import BaseBrokerTest
 from tests.utils.test_formatter import get_log_buffer
 

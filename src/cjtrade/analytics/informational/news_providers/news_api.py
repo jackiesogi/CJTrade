@@ -1,8 +1,12 @@
-from typing import List
-from ._base import NewsInterface, News
 import asyncio
+from datetime import datetime
+from datetime import timedelta
+from typing import List
+
 from newsapi import NewsApiClient
-from datetime import datetime, timedelta
+
+from ._base import News
+from ._base import NewsInterface
 
 class NewsAPIProvider(NewsInterface):
     def __init__(self, **config):

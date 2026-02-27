@@ -5,9 +5,9 @@ Test flow: login() -> get_positions() -> logout()
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
 
 from cjtrade.core.account_client import *
+from dotenv import load_dotenv
 
 
 load_dotenv()

@@ -7,8 +7,9 @@ Tests basic, expected flows:
 - Multiple orders
 - Buy and sell operations
 """
+from cjtrade.models.order import OrderAction
+from cjtrade.models.order import OrderStatus
 
-from cjtrade.models.order import OrderAction, OrderStatus
 from tests.cj_api.base import BaseBrokerTest
 from tests.utils.test_formatter import get_log_buffer
 

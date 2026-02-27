@@ -1,5 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from abc import ABC
+from abc import abstractmethod
+from typing import Any
+from typing import Dict
+from typing import List
 
 from cjtrade.db.db_base import DatabaseConnection
 
@@ -29,4 +32,3 @@ class DuckDBDatabaseConnection(DatabaseConnection):
     def commit(self) -> None:
         # DuckDB auto-commits by default; no action needed
         pass
-

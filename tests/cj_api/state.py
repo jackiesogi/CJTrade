@@ -8,7 +8,6 @@ Tests database and internal state consistency:
 - Internal state vs DB consistency
 - Balance and position tracking
 """
-
 from tests.cj_api.base import BaseBrokerTest
 from tests.utils.test_formatter import get_log_buffer
 

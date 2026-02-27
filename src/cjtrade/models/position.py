@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
+from typing import Dict
+from typing import List
 
 @dataclass
 class Position:

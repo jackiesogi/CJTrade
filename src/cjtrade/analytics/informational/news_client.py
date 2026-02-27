@@ -1,7 +1,10 @@
 import asyncio
 from enum import Enum
-from typing import Any, List
-from .news_providers._base import NewsInterface, News
+from typing import Any
+from typing import List
+
+from .news_providers._base import News
+from .news_providers._base import NewsInterface
 
 class NewsProviderType(Enum):
     STATEMENT_DOG = "statement_dog"  # 財報狗

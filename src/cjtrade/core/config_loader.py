@@ -1,6 +1,9 @@
-from pathlib import Path
-from typing import Iterable, List, Union
 import glob
+from pathlib import Path
+from typing import Iterable
+from typing import List
+from typing import Union
+
 from dotenv import load_dotenv
 
 # TODO: Implement a hierarchical configuration structure

@@ -3,9 +3,8 @@
 ncal.py - Cross-platform calendar display utility
 Mimics the behavior of Unix ncal command with horizontal layout
 """
-
-import sys
 import calendar
+import sys
 from datetime import datetime
 from typing import Optional
 

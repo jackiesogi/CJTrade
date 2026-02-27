@@ -3,7 +3,11 @@ Data parsing utilities for TWSE API responses
 """
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
 
 logger = logging.getLogger(__name__)

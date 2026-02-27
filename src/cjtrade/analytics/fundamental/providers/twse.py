@@ -7,12 +7,19 @@ financial ratios, EPS data, balance sheets, and announcements.
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
 import aiohttp
 
-from ..models.company_info import CompanyBasicInfo
-from ..models.financial_data import EPSInfo, FinancialRatios, BalanceSheetInfo, IncomeStatementInfo
 from ..models.announcement import Announcement
+from ..models.company_info import CompanyBasicInfo
+from ..models.financial_data import BalanceSheetInfo
+from ..models.financial_data import EPSInfo
+from ..models.financial_data import FinancialRatios
+from ..models.financial_data import IncomeStatementInfo
 
 
 logger = logging.getLogger(__name__)

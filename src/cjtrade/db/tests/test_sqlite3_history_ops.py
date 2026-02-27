@@ -1,10 +1,14 @@
-from dataclasses import dataclass
 import json
-from cjtrade.models.order import *
-from cjtrade.db.sqlite import *
+from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+
 from cjtrade.db.db_api import *
-from cjtrade.db.tests.utils import _clean_up_test_db, db_shell, TEST_DB_PATH
-from typing import Any, Dict
+from cjtrade.db.sqlite import *
+from cjtrade.db.tests.utils import _clean_up_test_db
+from cjtrade.db.tests.utils import db_shell
+from cjtrade.db.tests.utils import TEST_DB_PATH
+from cjtrade.models.order import *
 
 # This is a dummy class for testing purposes,
 # DO NOT mess with actual HistoryEntry class in production code.

@@ -1,4 +1,7 @@
 # TODO: Avoid SQL injection
+from datetime import datetime
+from datetime import timedelta
+
 from cjtrade.db.db_base import *
 from cjtrade.models.order import *
 
@@ -160,7 +163,7 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
     if conn is None:
         return
 
-    curr_ts: datetime = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    curr_ts: datetime = datetime.utcnow() + timedelta(hours=8)
     try:
         sqlcmd = \
         f"""
