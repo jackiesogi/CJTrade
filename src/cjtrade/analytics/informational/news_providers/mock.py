@@ -81,4 +81,4 @@ class MockNewsProvider(NewsInterface):
 
 
     def get_provider_name(self) -> str:
-        return "MockNewsProvider"
+        return "mock"

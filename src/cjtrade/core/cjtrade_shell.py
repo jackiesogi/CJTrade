@@ -371,11 +371,13 @@ class SearchOnlineNewsCommand(CommandBase):
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["query"]
 
-    def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        news_client = NewsClient(provider_type=NewsProviderType.CNYES)
-        # news_client = NewsClient(provider_type=NewsProviderType.MOCK)
-        # news_client = NewsClient(provider_type=NewsProviderType.NEWS_API,
-        #                          api_key=os.getenv("NEWSAPI_API_KEY", ""))
+    def execute(self, client: AccountClient, *args, **config) -> None:
+        selection = config.get('news_source', 'cnyes').lower()
+
+        # TODO: parse all valid env var into config table
+        # rather than user code need to find env var by their own.
+        news_client = NewsClient(provider_type=selection, api_key=os.getenv("NEWSAPI_API_KEY", ""))
+
         print(f"source: {news_client.get_provider_name()}")
         if len(args) == 0:
             query = ""
@@ -557,7 +559,7 @@ class InfoCommand(CommandBase):
             ).decode().strip()
             print(f"Interactive shell version: {commit}")
         print(f"Connected broker: {client.get_broker_name()}")
-        print(f"News source: {NewsProviderType.CNYES.value}")
+        print(f"News source: {os.getenv('NEWS_SOURCE', 'cnyes')}")
 
 
 class ClearCommand(CommandBase):
@@ -578,6 +580,32 @@ class ClearCommand(CommandBase):
         # In non-interactive mode (testing), just acknowledge the command
         if interactive_mode:
             os.system('cls' if os.name == 'nt' else 'clear')
+
+
+class SystemCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "system"
+        self.variadic = True  # Accept variable number of symbols
+        self.optional_args = ["cmd"]
+        self.description = "Execute OS command"
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        if len(args) == 0:
+            import platform
+            print("OS:", platform.system())
+            print("OS version:", platform.version())
+            print("Release:", platform.release())
+            print("Machine:", platform.machine())
+            print("Processor:", platform.processor())
+            print("Architecture:", platform.architecture())
+            print("Full platform:", platform.platform())
+        else:
+            import subprocess
+            # Join args into a single command string to support shell builtins (export, source, etc.)
+            cmd_str = ' '.join(args)
+            ret = subprocess.run(cmd_str, shell=True)
+            print(ret.returncode)
 
 
 class ExitCommand(CommandBase):
@@ -692,6 +720,7 @@ def register_commands():
         KbarAggregationCommand(),
         CancelAllCommand(),
         ClearCommand(),
+        SystemCommand(),
         InfoCommand(),
         ExitCommand(),
     ]
@@ -706,7 +735,7 @@ def set_exit_flag(client: AccountClient):
 
 
 # ========== Command Processing ==========
-def process_command(cmd_line: str, client: AccountClient):
+def process_command(cmd_line: str, client: AccountClient, **config: Any):
     """Parse and execute command with arguments"""
     cmd_line = cmd_line.strip()
 
@@ -731,7 +760,7 @@ def process_command(cmd_line: str, client: AccountClient):
 
     # Execute command
     try:
-        cmd.execute(client, *args)
+        cmd.execute(client, *args, **config)
         return True
     except ValueError as e:
         print(f"Invalid argument: {e}")
@@ -762,16 +791,19 @@ def init_readline():
     readline.set_history_length(MAX_HISTORY_SIZE)
     readline.parse_and_bind("tab: complete")
 
-def interactive_shell(client: AccountClient):
+def interactive_shell(client: AccountClient, config: dict = None):
     global exit_flag
     exit_flag = False
+
+    if config is None:
+        config = {}
 
     # Register all commands
     register_commands()
 
     # sleep 1 second
     sleep(1)
-    process_command("clear", client)
+    process_command("clear", client, **config)
     init_readline()
     print("\033[93m--------------------------------------------------------------------------\033[0m")
     print("\033[93mCJTrade Interactive Shell. Type 'help' for commands... (b^-^)b\033[0m")
@@ -785,7 +817,7 @@ def interactive_shell(client: AccountClient):
                 continue
 
             readline.add_history(cmd)
-            process_command(cmd, client)
+            process_command(cmd, client, **config)
 
         except (EOFError, KeyboardInterrupt):
             break
@@ -813,6 +845,7 @@ def main():
         'simulation': True if os.environ.get("SIMULATION") == "y" else False,
 
         'username': os.environ.get('USERNAME', 'user000'),
+        'news_source': os.environ.get('NEWS_SOURCE', 'cnyes'),
         # 'mirror_db_path': './data/mock_user000.db',
     }
 
@@ -859,13 +892,13 @@ def main():
 
             cmd_line = f"{command} {' '.join(args)}".strip()
             print(f"Executing: {cmd_line}")
-            success = process_command(cmd_line, client)
+            success = process_command(cmd_line, client, config=config)
             if not success:
                 exit_code = 1
         else:
             # Regular interactive mode
             interactive_mode = True
-            interactive_shell(client)
+            interactive_shell(client, config=config)
 
     except Exception as e:
         print(f"Fatal error: {e}")

@@ -30,8 +30,30 @@ class CnyesNewsSpider():
         if r.status_code != requests.codes.ok:
             print('請求失敗', r.status_code)
             return None
-        newslist_info = r.json()['items']
-        return newslist_info
+        # Return the full response with items in 'data' key for consistency
+        try:
+            data = r.json()
+            # API structure: {'items': {'data': [...]}} or potentially {'data': [...]}
+            if isinstance(data, dict):
+                # Primary: try items.data (pagination object)
+                items = data.get('items', {})
+                if isinstance(items, dict):
+                    items = items.get('data', [])
+                elif not isinstance(items, list):
+                    # Fallback: try direct 'data' key
+                    items = data.get('data', [])
+
+                # Final check: ensure items is a list
+                if not isinstance(items, list):
+                    items = []
+            elif isinstance(data, list):
+                items = data
+            else:
+                items = []
+            return {'data': items}
+        except Exception as e:
+            print(f'Failed to parse CNYES response: {e}')
+            return None
 
     async def get_newslist_info_async(self, page=1, limit=30):
         """
@@ -51,7 +73,24 @@ class CnyesNewsSpider():
                 async with session.get(f"https://api.cnyes.com/media/api/v1/newslist/category/headline?page={page}&limit={limit}", headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data['items']
+                        # API structure: {'items': {'data': [...]}} or potentially {'data': [...]}
+                        if isinstance(data, dict):
+                            # Primary: try items.data (pagination object)
+                            items = data.get('items', {})
+                            if isinstance(items, dict):
+                                items = items.get('data', [])
+                            elif not isinstance(items, list):
+                                # Fallback: try direct 'data' key
+                                items = data.get('data', [])
+
+                            # Final check: ensure items is a list
+                            if not isinstance(items, list):
+                                items = []
+                        elif isinstance(data, list):
+                            items = data
+                        else:
+                            items = []
+                        return {'data': items}
                     else:
                         print('請求失敗', response.status)
                         return None
@@ -85,15 +124,34 @@ class CnyesProvider(NewsInterface):
 
     def _convert_to_news_list(self, newslist_info, n: int = 10) -> List[News]:
         """Convert CNYES API response to News objects"""
-        if not newslist_info or 'data' not in newslist_info:
+        if not newslist_info:
+            return []
+
+        # Handle both dict format and direct list format
+        if isinstance(newslist_info, dict):
+            data = newslist_info.get('data', [])
+        elif isinstance(newslist_info, list):
+            data = newslist_info
+        else:
+            return []
+
+        # Ensure data is a list
+        if not isinstance(data, list):
             return []
 
         news_list = []
-        for item in newslist_info['data'][:n]:
+        # Safely iterate with limit
+        for item in data[:n]:
+            if not isinstance(item, dict):
+                continue
+
             title = item.get('title', 'No Title')
             # Use summary as content, fallback to cleaned HTML content
-            content = item.get('summary', '') or self._clean_html_content(item.get('content', ''))[:500]
-            news_list.append(News(title=title, content=content))
+            summary = item.get('summary', '')
+            content = summary or self._clean_html_content(item.get('content', ''))[:500]
+
+            if title and content:  # Only add if both title and content exist
+                news_list.append(News(title=title, content=content))
 
         return news_list
 
@@ -126,19 +184,32 @@ class CnyesProvider(NewsInterface):
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         try:
             newslist_info = self.spider.get_newslist_info(page=1, limit=50)
-            if not newslist_info or 'data' not in newslist_info:
+            if not newslist_info or not isinstance(newslist_info, dict) or 'data' not in newslist_info:
                 return []
 
             filtered_news = []
             for item in newslist_info['data']:
+                if not isinstance(item, dict):
+                    continue
+
                 title = item.get('title', '')
                 summary = item.get('summary', '')
                 keywords = item.get('keyword', [])
-                keyword_str = ' '.join(keywords) if isinstance(keywords, list) else str(keywords)
 
-                if (keyword.lower() in title.lower() or
-                    keyword.lower() in summary.lower() or
-                    keyword.lower() in keyword_str.lower()):
+                # Safely convert keywords to string
+                if isinstance(keywords, list):
+                    keyword_str = ' '.join(str(k) for k in keywords)
+                else:
+                    keyword_str = str(keywords) if keywords else ''
+
+                # Safely convert to lowercase for comparison
+                title_lower = str(title).lower() if title else ''
+                summary_lower = str(summary).lower() if summary else ''
+                keyword_str_lower = keyword_str.lower() if keyword_str else ''
+
+                if (keyword.lower() in title_lower or
+                    keyword.lower() in summary_lower or
+                    keyword.lower() in keyword_str_lower):
 
                     content = summary or self._clean_html_content(item.get('content', ''))[:500]
                     filtered_news.append(News(title=title, content=content))

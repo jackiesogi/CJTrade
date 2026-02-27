@@ -15,7 +15,10 @@ class NewsProviderType(Enum):
 class NewsClient:
     """An unified API to interact with different news providers."""
 
+    # TODO: provider_type should be union of str or Enum
     def __init__(self, provider_type: NewsProviderType, **config):
+        if isinstance(provider_type, str):
+            provider_type = NewsProviderType(provider_type)
         self.provider_type = provider_type
         self.provider = self._create_provider(provider_type, **config)
 

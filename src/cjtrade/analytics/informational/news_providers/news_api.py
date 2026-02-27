@@ -75,4 +75,4 @@ class NewsAPIProvider(NewsInterface):
 
 
     def get_provider_name(self) -> str:
-        return "NewsAPI"
+        return "news_api"
