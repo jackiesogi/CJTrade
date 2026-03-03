@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 from datetime import timedelta
 from enum import Enum
+from time import sleep
 from typing import Dict
 from typing import List
 
@@ -82,7 +83,25 @@ class MockBrokerBackend:
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
             self.market = MockBackend_MockMarket(real_account=self.real_account)
-            self.market.set_historical_time(datetime.now(), days_back=random.randint(1, 20))
+
+            # Find until that date is available for fetching data
+            max_attempts = 30
+            attempt = 0
+            days_back = random.randint(1, 20)
+            dt = datetime.now() - timedelta(days=days_back)
+
+            while not self.market.fetching_available(dt) and attempt < max_attempts:
+                sleep(0.5)  # Avoid spamming requests too quickly
+                attempt += 1
+                days_back = random.randint(1, 20)
+                dt = datetime.now() - timedelta(days=days_back)
+                # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
+
+            if attempt >= max_attempts:
+                print("Not able to fetch historical data within `max_attempts`(=30). Please try again")
+                exit(-1)
+
+            self.market.set_historical_time(datetime.now(), days_back=days_back)
             self.market.set_playback_speed(playback_speed)
         else:
             # Future: self.market = MockBackend_SyntheticMarket()

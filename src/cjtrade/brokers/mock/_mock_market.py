@@ -59,6 +59,18 @@ class MockBackend_MockMarket:
 
         self.playback_speed = speed
 
+    def fetching_available(self, date: datetime) -> bool:
+        data = yf.download(
+            "2330.TW",
+            start=date.strftime("%Y-%m-%d"),
+            end=(date + timedelta(days=1)).strftime("%Y-%m-%d"),
+            interval="1m",
+            auto_adjust=True,
+            progress=False
+        )
+        return True if not data.empty else False
+
+
     def set_historical_time(self, real_init_time: datetime, days_back: int = 10):
         # yfinance api only keeps minute data within the last 30 days
         self.real_init_time = real_init_time
