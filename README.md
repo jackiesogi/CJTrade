@@ -94,6 +94,7 @@ If you want to test it out, please follow the installation guide in the previous
 ```sh
 # Note that choosing `sinopac` as broker will place real order when strategy condition is met,
 # unless you expliclitly export an environment variable `export SIMULATION=y` before running this.
+export WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
 uv run system --broker=mock  # or realistic / sinopac
 ```
 
@@ -109,9 +110,6 @@ uv run test --broker=sinopac --group=all
 # Add --delay=n to wait n sec after each test case done to avoid running out of API quota
 ./tests/test_broker_api_stability.py --broker=mock --delay=8
 ```
-
-## Run
-
 
 ## For clear, maintainable branch design
 - `master`: Master branch.
