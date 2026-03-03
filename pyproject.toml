@@ -32,6 +32,7 @@ dependencies = [
 cjtrade = "cjtrade:cli"
 main = "cjtrade:cli"
 test = "cjtrade.test_runner:main"
+system = "cjtrade.core.cjtrade_system:main_system"
 
 
 [build-system]
