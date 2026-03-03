@@ -512,9 +512,28 @@ class CalendarCommand(CommandBase):
         import sys
 
         if len(args) == 1:
-            # Direct call with date argument
-            subprocess.run([sys.executable, str(self.ncal_script), '--sunday', args[0]], shell=False)
-            return
+            arg = args[0]
+
+            # Check if it's a time adjustment command (+N or -N)
+            if arg.startswith(('+', '-')):
+                if client.get_broker_name() != "mock":
+                    print("Error: Time adjustment only available in mock environment")
+                    return
+
+                try:
+                    hours = float(arg)
+                    client.broker_api.api.market.adjust_time(hours)
+                    # Show updated time
+                    ts = client.broker_api.get_system_time()
+                    print(f"New mock time: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
+                    return
+                except ValueError:
+                    print(f"Error: Unable to parse time adjustment '{arg}'")
+                    return
+            else:
+                # Direct call with date argument
+                subprocess.run([sys.executable, str(self.ncal_script), '--sunday', arg], shell=False)
+                return
 
         # Get timestamp from broker or system
         if client.get_broker_name() == "mock":
@@ -857,12 +876,18 @@ def main():
 
 
     if args.broker == 'sinopac':
+        config["state_file"] = f"./sinopac_{config['username']}.json"
+        config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
         config["speed"] = 120.0  # 120x speed for mock broker
+        config["state_file"] = f"./mock_{config['username']}.json"
+        config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
         client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
         config["speed"] = 60.0  # 60x speed for mock broker
+        config["state_file"] = f"./realistic_{config['username']}.json"
+        config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:

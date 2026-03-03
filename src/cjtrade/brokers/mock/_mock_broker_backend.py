@@ -95,7 +95,7 @@ class MockBrokerBackend:
         try:
             self._connected = True
 
-            if self.real_account:
+            if self.real_account and not os.path.exists(self.account_state_default_file):
                 self._sync_with_real_account()
             else:
                 self._sync_with_mock_account_file()
@@ -543,7 +543,8 @@ class MockBrokerBackend:
                 odr.opt_field = odr.opt_field if hasattr(odr, 'opt_field') else {}
                 odr.opt_field['last_check_for_fill'] = cmp_time_range_end
 
-            if price_filled:
+            # if price_filled is positive integer, it indicates the minute offset at which the order was filled
+            if price_filled and price_filled > 0:
                 # Move order to filled list
                 try:
                     self.account_state.orders_filled.append(odr)
@@ -551,7 +552,10 @@ class MockBrokerBackend:
                     if odr in self.account_state.orders_committed:
                         self.account_state.orders_committed.remove(odr)
                     self.account_state.all_order_status[odr.id] = OrderStatus.FILLED
-                    print(f"Order {odr.id} filled (target {target_price})")
+
+                    # Convert minute offset to actual datetime
+                    fill_time = self.market.start_date + timedelta(minutes=price_filled)
+                    print(f"Order {odr.id} filled (target {target_price}) at {fill_time.strftime('%Y-%m-%d %H:%M:%S')}")
                     qty_signed = odr.quantity if odr.action == OrderAction.BUY else -odr.quantity
 
                     # Update Balance (Account for cash flow)
@@ -576,7 +580,11 @@ class MockBrokerBackend:
                     print(f"Error moving order {odr.id} to filled: {e}")
 
     def _reconstruct_positions_from_history(self):
-        """Reconstruct the aggregated positions list from fill_history."""
+        """Reconstruct the aggregated positions list from fill_history.
+
+        Uses weighted average cost for buys only. Sells reduce quantity
+        but do not affect the average cost of remaining shares.
+        """
         if not self.account_state.fill_history:
             self.account_state.positions = []
             return
@@ -589,19 +597,29 @@ class MockBrokerBackend:
         new_positions = []
         for sym, fills in sym_fills.items():
             net_qty = 0
-            total_net_cost = 0.0
+            total_buy_cost = 0.0
+            total_buy_qty = 0
 
+            # Process fills in chronological order
             for f in fills:
                 q = f['quantity']
                 p = f['price']
-                net_qty += q
-                total_net_cost += (q * p)
+
+                if q > 0:  # Buy
+                    total_buy_cost += (q * p)
+                    total_buy_qty += q
+                    net_qty += q
+                else:  # Sell (q is negative)
+                    net_qty += q  # Reduce quantity
 
             if net_qty == 0:
                 continue
 
-            # Calculate breakeven cost
-            avg_cost = total_net_cost / net_qty
+            # Average cost is based only on buy transactions
+            if total_buy_qty > 0:
+                avg_cost = total_buy_cost / total_buy_qty
+            else:
+                avg_cost = 0.0
 
             new_positions.append(Position(
                 symbol=sym,
@@ -614,7 +632,7 @@ class MockBrokerBackend:
 
         self.account_state.positions = new_positions
 
-    def _check_price_in_time_range(self, symbol: str, start_time: datetime, end_time: datetime, price_condition) -> bool:
+    def _check_price_in_time_range(self, symbol: str, start_time: datetime, end_time: datetime, price_condition) -> int:
         # Assume data has been preloaded
         try:
             # Ensure symbol data exists
@@ -664,12 +682,12 @@ class MockBrokerBackend:
                             continue
 
                 if price_condition(close_price):
-                    return True
+                    return minute  # Return the minute offset at which the condition was met
 
-            return False
+            return -1
         except Exception as e:
             print(f"_check_price_in_time_range error: {e}")
-            return False
+            return -1
 
     def _trigger_order_matching(self):
         """
