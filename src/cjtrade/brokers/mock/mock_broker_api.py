@@ -167,6 +167,9 @@ class MockBrokerAPI(BrokerAPIBase):
     def list_orders(self) -> List[Trade]:
         return self.api.list_trades()
 
+    def is_market_open(self) -> bool:
+        return self.api.market.is_market_open()
+
     def get_broker_name(self) -> str:
         return "mock"
 

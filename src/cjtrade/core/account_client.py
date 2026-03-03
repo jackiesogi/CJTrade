@@ -123,6 +123,9 @@ class AccountClient:
     def list_orders(self) -> List[Dict[str, Any]]:
         return self.broker_api.list_orders()
 
+    def is_market_open(self) -> bool:
+        return self.broker_api.is_market_open()
+
     def get_broker_name(self) -> str:
         return self.broker_api.get_broker_name()
 
