@@ -75,25 +75,30 @@ class MockBackend_AccountState:
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend:
     def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
-        self.real_account = real_account
         self.price_mode = price_mode
         self.account_state = MockBackend_AccountState()
         self.account_state_default_file = state_file
 
+        self.real_account = real_account
+        if self.real_account and not self.real_account.is_connected():
+            # MockMarket will need to fetch data, so we do an early connection
+            self.real_account.connect()
+
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
+            # MockBackend_MockMarket will decide whether to fetch data from real account or yfinance based on `real_account`
             self.market = MockBackend_MockMarket(real_account=self.real_account)
 
             # Find until that date is available for fetching data
             max_attempts = 30
             attempt = 0
-            days_back = random.randint(1, 20)
+            days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
             dt = datetime.now() - timedelta(days=days_back)
 
             while not self.market.fetching_available(dt) and attempt < max_attempts:
                 sleep(0.5)  # Avoid spamming requests too quickly
                 attempt += 1
-                days_back = random.randint(1, 20)
+                days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
                 dt = datetime.now() - timedelta(days=days_back)
                 # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
 
@@ -268,11 +273,14 @@ class MockBrokerBackend:
             if self.real_account and not self.real_account.is_connected():
                 self.real_account.connect()
 
-            # This will fetch from `real_account` or `yfinance`
-            self.market.create_historical_market(symbol)
+            # preload 60 day if real_account is provided (realistic mode)
+            day_preload = 60 if self.real_account else 5
 
-            if self.real_account:
-                self.real_account.disconnect()
+            # This will fetch from `real_account` or `yfinance`
+            self.market.create_historical_market(symbol, day_preload)
+
+            # if self.real_account:
+            #     self.real_account.disconnect()  # <--- TODO: Evaluate if we should disconnect here
 
         time = self.market.get_market_time()
         real_current_time = time['real_current_time']
@@ -768,7 +776,8 @@ class MockBrokerBackend:
             return
 
         try:
-            if self.real_account.connect():
+            if not self.real_account.is_connected():
+                self.real_account.connect()
                 print(f"Syncing with real account (price_mode={self.price_mode.value})...")
 
                 # Get balance from real account
@@ -785,9 +794,12 @@ class MockBrokerBackend:
 
                 # Preload historical data for all symbols
                 print(f"Loading historical data for {len(real_positions)} symbols...")
+
+                # preload 60 day if real_account is provided (realistic mode)
+                day_preload = 60 if self.real_account else 5
                 for pos in real_positions:
                     if pos.symbol not in self.market.historical_data:
-                        self.market.create_historical_market(pos.symbol)
+                        self.market.create_historical_market(pos.symbol, day_preload)
 
                     """ Record as initial fill history
                     We currently assume the position state as a single fill.
@@ -811,8 +823,8 @@ class MockBrokerBackend:
                     })
 
                 # Sync aggregated view
-                self._reconstruct_positions_from_history()
-                self.real_account.disconnect()
+                # self._reconstruct_positions_from_history()
+                # self.real_account.disconnect()  # <---- TODO: Evaluate if we should disconnect
 
                 # Update prices using simulation data
                 self._update_position_prices()

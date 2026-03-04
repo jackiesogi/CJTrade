@@ -60,6 +60,10 @@ class MockBackend_MockMarket:
         self.playback_speed = speed
 
     def fetching_available(self, date: datetime) -> bool:
+        # Currently a workaround
+        if self.real_account and self.real_account.is_connected():
+            return True
+
         data = yf.download(
             "2330.TW",
             start=date.strftime("%Y-%m-%d"),
@@ -179,7 +183,7 @@ class MockBackend_MockMarket:
 
         return market_open <= current_time <= market_close
 
-    def create_historical_market(self, symbol: str):
+    def create_historical_market(self, symbol: str, days_preload: int = 5):
         """Load historical market data for a symbol.
 
         Data source priority:
@@ -193,7 +197,7 @@ class MockBackend_MockMarket:
         if symbol in self.historical_data:
             return
 
-        NUM_DAYS_PRELOAD = 5
+        NUM_DAYS_PRELOAD = days_preload
         end_date = self.start_date + timedelta(days=NUM_DAYS_PRELOAD)
 
         # Load historical data from real account for better data quality
