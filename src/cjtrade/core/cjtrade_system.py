@@ -30,7 +30,7 @@ log = logging.getLogger("cjtrade.system")
 PRICE_MONITOR_INTERVAL = 120  # seconds
 ANALYSIS_INTERVAL = 240       # seconds
 RISK_MAX_POSITION_PCT = 0.05  # 5% of total equity per trade
-LLM_REPORT_INTERVAL = 90000    # seconds
+LLM_REPORT_INTERVAL = 900000    # seconds
 DISPLAY_TIME_INTERVAL = 60    # seconds
 CHECK_FILL_INTERVAL = 120     # seconds
 WINDOW_SIZE = 100              # Number of price points for Bollinger Bands calculation
@@ -42,6 +42,7 @@ BB_MIN_WIDTH_PCT = 0.01     # Minimum Bollinger Bands width (0.5%) to consider v
 
 
 # ==================== Mock Bollinger Bands ====================
+# TODO: Construct a specific datatype for bollinger band result
 def calculate_bollinger_bands_mock(symbol: str, prices: List[float]) -> Dict:
     if not prices or len(prices) == 0:
         return None
@@ -226,101 +227,140 @@ class TradingSystem:
         return False
 
     def print_backtest_summary(self):
-        """Print final P&L summary after backtest"""
+        """Print comprehensive backtest summary with clear accounting breakdown"""
+
+        # ========== 1. Get Final State ==========
         final_balance = self.client.get_balance()
         final_positions = self.client.get_positions()
         final_equity = self.get_total_equity()
 
-        total_equity_change = final_equity - self.initial_equity
-        total_equity_change_pct = (total_equity_change / self.initial_equity * 100) if self.initial_equity > 0 else 0
-        balance_change = final_balance - self.initial_balance
+        # ========== 2. Calculate Position Values ==========
+        initial_position_value = self.initial_equity - self.initial_balance
 
-        # Calculate realized P&L from closed positions
+        final_initial_position_value = 0.0  # Market value of initial positions
+        final_strategy_position_value = 0.0  # Market value of strategy positions
+
+        for p in final_positions:
+            position_value = p.quantity * p.current_price
+            if p.symbol in self.initial_position_symbols:
+                final_initial_position_value += position_value
+            else:
+                final_strategy_position_value += position_value
+
+        # ========== 3. Calculate Strategy Cash Flow ==========
+        # Cash spent on buys (negative) and received from sells (positive)
+        strategy_cash_flow = 0.0
+        for trade in self.trade_log:
+            if trade['action'] == 'BUY':
+                strategy_cash_flow -= trade['price'] * trade['quantity']
+            elif trade['action'] == 'SELL':
+                strategy_cash_flow += trade['price'] * trade['quantity']
+
+        # ========== 4. Calculate Realized P&L (FIFO) ==========
         realized_pnl = 0.0
-        buy_prices = {}  # Track buy prices from strategy trades
+        buy_queue = {}  # {symbol: [(price, qty), ...]}
 
-        # Initialize with initial positions as if they were "bought" at their avg_cost
+        # Pre-fill with initial positions at their avg_cost
         for p in self.initial_positions:
-            buy_prices[p.symbol] = [(p.avg_cost, p.quantity)]
+            buy_queue[p.symbol] = [(p.avg_cost, p.quantity)]
 
         for trade in self.trade_log:
             symbol = trade['symbol']
             if trade['action'] == 'BUY':
-                if symbol not in buy_prices:
-                    buy_prices[symbol] = []
-                buy_prices[symbol].append((trade['price'], trade['quantity']))
-            elif trade['action'] == 'SELL':
-                if symbol not in buy_prices:
-                    continue
+                if symbol not in buy_queue:
+                    buy_queue[symbol] = []
+                buy_queue[symbol].append((trade['price'], trade['quantity']))
 
+            elif trade['action'] == 'SELL':
+                if symbol not in buy_queue:
+                    continue
                 sell_price = trade['price']
                 sell_qty = trade['quantity']
 
-                # Calculate realized P&L using FIFO
                 remaining_qty = sell_qty
-                while remaining_qty > 0 and buy_prices[symbol]:
-                    buy_price, buy_qty = buy_prices[symbol][0]
+                while remaining_qty > 0 and buy_queue[symbol]:
+                    buy_price, buy_qty = buy_queue[symbol][0]
                     qty_to_close = min(remaining_qty, buy_qty)
                     realized_pnl += (sell_price - buy_price) * qty_to_close
 
                     if qty_to_close >= buy_qty:
-                        buy_prices[symbol].pop(0)
+                        buy_queue[symbol].pop(0)
                     else:
-                        buy_prices[symbol][0] = (buy_price, buy_qty - qty_to_close)
-
+                        buy_queue[symbol][0] = (buy_price, buy_qty - qty_to_close)
                     remaining_qty -= qty_to_close
 
-        # Calculate unrealized P&L
-        unrealized_strategy_pnl = 0.0
+        # ========== 5. Calculate Unrealized P&L ==========
         unrealized_initial_pnl = 0.0
+        unrealized_strategy_pnl = 0.0
 
         for p in final_positions:
-            if p.symbol not in self.initial_position_symbols:
-                unrealized_strategy_pnl += p.unrealized_pnl
-            else:
+            if p.symbol in self.initial_position_symbols:
                 unrealized_initial_pnl += p.unrealized_pnl
+            else:
+                unrealized_strategy_pnl += p.unrealized_pnl
 
-        # Separate realized P&L into strategy vs initial positions
-        # All realized is now in realized_pnl, but we need to know which part came from initial positions
-        # For simplicity, we'll show total realized P&L
-        total_unrealized = unrealized_strategy_pnl + unrealized_initial_pnl
+        # ========== 6. Calculate Total Changes ==========
+        balance_change = final_balance - self.initial_balance
+        equity_change = final_equity - self.initial_equity
+        equity_change_pct = (equity_change / self.initial_equity * 100) if self.initial_equity > 0 else 0
 
+        # ========== 7. Print Report ==========
         print("\n" + "="*80)
-        print("🎯 BACKTEST SUMMARY")
+        print("📊 BACKTEST SUMMARY")
         print("="*80)
-        print(f"Duration: {BACKTEST_DURATION_DAYS} days")
-        print(f"\nInitial State:")
-        print(f"  Balance:   {self.initial_balance:>12,.2f}")
-        print(f"  Equity:    {self.initial_equity:>12,.2f}")
-        print(f"  Positions: {len(self.initial_positions)}")
-        print(f"\nFinal State:")
-        print(f"  Balance:   {final_balance:>12,.2f}")
-        print(f"  Equity:    {final_equity:>12,.2f}")
-        print(f"  Positions: {len(final_positions)}")
-        print(f"\nPerformance:")
-        print(f"  Total P&L:         {total_equity_change:>12,.2f} ({total_equity_change_pct:>+6.2f}%)")
-        print(f"  ├─ Realized P&L:   {realized_pnl:>12,.2f}")
-        print(f"  └─ Unrealized P&L: {total_unrealized:>12,.2f}")
-        print(f"     ├─ Strategy:    {unrealized_strategy_pnl:>12,.2f}")
-        print(f"     └─ Initial:     {unrealized_initial_pnl:>12,.2f}")
-        print(f"\nCash Flow:")
-        print(f"  Balance Change:    {balance_change:>12,.2f}")
-        print(f"\nTrade History ({len(self.trade_log)} trades):")
+        print(f"Duration: {BACKTEST_DURATION_DAYS} trading days")
+
+        # --- SECTION 1: Account Overview ---
+        print(f"\n【Account Overview】")
+        print(f"                    Beginning              Ending              Change")
+        print(f"  Cash Balance    {self.initial_balance:>12,.2f}  {final_balance:>12,.2f}  {balance_change:>12,.2f}")
+        print(f"  Stock Value     {initial_position_value:>12,.2f}  {final_initial_position_value + final_strategy_position_value:>12,.2f}  {(final_initial_position_value + final_strategy_position_value - initial_position_value):>12,.2f}")
+        print(f"  Total Equity    {self.initial_equity:>12,.2f}  {final_equity:>12,.2f}  {equity_change:>12,.2f} ({equity_change_pct:>+6.2f}%)")
+
+        # --- SECTION 2: Cash Flow Analysis ---
+        print(f"\n【Cash Flow Analysis】")
+        print(f"  Strategy Buy Expenditure:     {-min(strategy_cash_flow, 0):>12,.2f}")
+        print(f"  Strategy Sell Income:         {max(strategy_cash_flow, 0):>12,.2f}")
+        print(f"  Strategy Net Cash Flow:       {strategy_cash_flow:>12,.2f}")
+        print(f"  Cash Balance Change:          {balance_change:>12,.2f}")
+
+        # --- SECTION 3: P&L Breakdown ---
+        print(f"\n【P&L Breakdown】")
+        print(f"  Total P&L:              {equity_change:>12,.2f} ({equity_change_pct:>+6.2f}%)")
+        print(f"  ├─ Realized:        {realized_pnl:>12,.2f}")
+        print(f"  └─ Unrealized:      {unrealized_initial_pnl + unrealized_strategy_pnl:>12,.2f}")
+        print(f"     ├─ Initial Positions:            {unrealized_initial_pnl:>12,.2f}")
+        print(f"     └─ Strategy Positions:            {unrealized_strategy_pnl:>12,.2f}")
+
+        # --- SECTION 4: Position Summary ---
+        print(f"\n【Position Summary】")
+        initial_symbols = [p.symbol for p in self.initial_positions]
+        final_symbols = [p.symbol for p in final_positions]
+        strategy_symbols = [s for s in final_symbols if s not in self.initial_position_symbols]
+
+        print(f"  Initial Positions: {len(self.initial_positions)} ({', '.join(initial_symbols) if initial_symbols else 'None'})")
+        print(f"  Final Positions: {len(final_positions)} ({', '.join(final_symbols) if final_symbols else 'None'})")
+        if strategy_symbols:
+            print(f"  Strategy Additions: {len(strategy_symbols)} ({', '.join(strategy_symbols)})")
+
+        # --- SECTION 5: Trade History ---
+        print(f"\n【Trade History】({len(self.trade_log)} trades)")
         if self.trade_log:
             for i, trade in enumerate(self.trade_log, 1):
-                action_symbol = "🟢" if trade['action'] == 'BUY' else "🔴"
-                timestamp = trade['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
-                print(f"  {i}. [{timestamp}] {action_symbol} {trade['action']} {trade['quantity']} shares of {trade['symbol']} at {trade['price']:.2f} ({trade['reason']})")
+                action_icon = "🟢" if trade['action'] == 'BUY' else "🔴"
+                ts = trade['timestamp'].strftime('%m-%d %H:%M')
+                print(f"  {i:2d}. [{ts}] {action_icon} {trade['action']:4s} {trade['quantity']:>4d} shares {trade['symbol']:6s} @ ${trade['price']:>7.2f}")
         else:
-            print("  No trades executed during backtest")
+            print("  No trades executed.")
 
-        if total_equity_change > 0:
-            print(f"\n✅ 總權益增加 {total_equity_change:,.2f} ({total_equity_change_pct:+.2f}%)")
-        elif total_equity_change < 0:
-            print(f"\n❌ 總權益減少 {abs(total_equity_change):,.2f} ({total_equity_change_pct:.2f}%)")
+        # --- SECTION 6: Final Verdict ---
+        print(f"\n" + "="*80)
+        if equity_change > 0:
+            print(f"✅ Strategy Performance: Profit {equity_change:,.2f} ({equity_change_pct:+.2f}%)")
+        elif equity_change < 0:
+            print(f"❌ Strategy Performance: Loss {abs(equity_change):,.2f} ({equity_change_pct:.2f}%)")
         else:
-            print(f"\n⚪ 策略無損益（未執行交易或損益持平）")
-
+            print(f"⚪ Strategy Performance: Break-even")
         print("="*80 + "\n")
 
     async def monitor_prices(self):
@@ -502,6 +542,9 @@ class TradingSystem:
                 response = self.llm_client.generate_response(prompt)
 
                 log.info(f"\n{'='*60}\n🤖 LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
+                # also print to file for record
+                with open("llm_report.txt", "a") as f:
+                    f.write(f"\n{'='*60}\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
 
             except Exception as e:
                 log.error(f"LLM report error: {e}")
