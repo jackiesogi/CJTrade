@@ -27,16 +27,18 @@ logging.basicConfig(
 )
 log = logging.getLogger("cjtrade.system")
 
-PRICE_MONITOR_INTERVAL = 2   # seconds
-ANALYSIS_INTERVAL = 30       # seconds
-LLM_REPORT_INTERVAL = 100    # seconds
-RISK_MAX_POSITION_PCT = 0.05 # 5% of total equity per trade
-WINDOW_SIZE = 10             # Number of price points for Bollinger Bands calculation
+PRICE_MONITOR_INTERVAL = 120  # seconds
+ANALYSIS_INTERVAL = 240       # seconds
+RISK_MAX_POSITION_PCT = 0.05  # 5% of total equity per trade
+LLM_REPORT_INTERVAL = 90000    # seconds
+DISPLAY_TIME_INTERVAL = 60    # seconds
+CHECK_FILL_INTERVAL = 120     # seconds
+WINDOW_SIZE = 100              # Number of price points for Bollinger Bands calculation
 
 SHUTDOWN = False
 BACKTEST_MODE = True         # Start in backtest mode
-BACKTEST_DURATION_DAYS = 3
-BB_MIN_WIDTH_PCT = 0.005     # Minimum Bollinger Bands width (0.5%) to consider valid signals
+BACKTEST_DURATION_DAYS = 60
+BB_MIN_WIDTH_PCT = 0.01     # Minimum Bollinger Bands width (0.5%) to consider valid signals
 
 
 # ==================== Mock Bollinger Bands ====================
@@ -113,6 +115,12 @@ class TradingSystem:
         self.strategy_cash_flow = 0.0
         self.signal_queue: Queue = Queue()
 
+        # Get playback speed from mock broker backend (for time-scaled delays)
+        self.playback_speed = 1.0
+        if hasattr(self.client.broker_api, 'api') and hasattr(self.client.broker_api.api, 'market'):
+            self.playback_speed = self.client.broker_api.api.market.playback_speed
+            log.info(f"⚡ Playback speed: {self.playback_speed}x")
+
         self.initial_balance = self.client.get_balance()
         self.initial_positions = self.client.get_positions()
         self.initial_equity = self.get_total_equity()
@@ -131,6 +139,10 @@ class TradingSystem:
                 log.warning(f"Failed to initialize LLM client: {e}")
         else:
             log.warning("GEMINI_API_KEY not found, LLM reports disabled")
+
+    def mock_env_sleep(self, seconds: float) -> float:
+        """Return sleep time scaled by playback speed"""
+        return seconds / self.playback_speed
 
     def get_watch_symbols(self) -> List[str]:
         """Get list of symbols to monitor from current positions"""
@@ -317,15 +329,30 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 is_market_open = self.client.broker_api.api.market.is_market_open()
-                if not is_market_open:
+
+                # Auto-skip to next trading day at 2PM (only in backtest mode)
+                if not is_market_open and self.backtest_mode:
+                    current_time = self.client.broker_api.get_system_time()
+
+                    # Check if it's 2PM (14:00)
+                    market = self.client.broker_api.api.market
+                    # log.info("⏭️  2PM reached, skipping to next trading day (9AM)...")
+
+                    # calculate diff to next day 9AM
+                    diff = ((current_time + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0) - current_time).total_seconds()
+                    diff = diff / 3600
+                    print(f"current time {current_time}")
+                    market.adjust_time(diff)  # Jump 19 hours: 14:00 + 19 = 09:00 next day
+                    print(f"current time {current_time}")
+
                     log.debug("⏸️  Market closed, skipping price monitoring")
-                    await asyncio.sleep(PRICE_MONITOR_INTERVAL)
+                    await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
                     continue
 
                 symbols = self.get_watch_symbols()
 
                 if not symbols:
-                    await asyncio.sleep(PRICE_MONITOR_INTERVAL)
+                    await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
                     continue
 
                 for symbol in symbols:
@@ -351,7 +378,7 @@ class TradingSystem:
             except Exception as e:
                 log.error(f"Price monitoring error: {e}")
 
-            await asyncio.sleep(PRICE_MONITOR_INTERVAL)
+            await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
 
     async def analyze_signals(self):
         log.info("Signal analysis started")
@@ -392,7 +419,7 @@ class TradingSystem:
             except Exception as e:
                 log.error(f"Analysis error: {e}")
 
-            await asyncio.sleep(ANALYSIS_INTERVAL)
+            await asyncio.sleep(self.mock_env_sleep(ANALYSIS_INTERVAL))
 
     def format_trading_context(self) -> str:
         """Format recent trading activity and market state for LLM analysis"""
@@ -454,7 +481,7 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 if not self.llm_client:
-                    await asyncio.sleep(LLM_REPORT_INTERVAL)
+                    await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
                     continue
 
                 context = self.format_trading_context()
@@ -479,7 +506,7 @@ class TradingSystem:
             except Exception as e:
                 log.error(f"LLM report error: {e}")
 
-            await asyncio.sleep(LLM_REPORT_INTERVAL)
+            await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
 
     async def execute_orders(self):
         global SHUTDOWN
@@ -494,6 +521,7 @@ class TradingSystem:
                     break
 
                 # Wait for signal events from the queue
+                # Note: timeout should NOT be scaled - it's real-world I/O operation
                 try:
                     signal_event = await asyncio.wait_for(self.signal_queue.get(), timeout=5.0)
                 except asyncio.TimeoutError:
@@ -612,7 +640,7 @@ class TradingSystem:
             print(f"Current Time: \033[93m{time_str}\033[0m")
             print(f"{'='*60}\n")
 
-            await asyncio.sleep(30)
+            await asyncio.sleep(self.mock_env_sleep(DISPLAY_TIME_INTERVAL))
 
     async def trigger_order_matching(self):
         if not (hasattr(self.client.broker_api, 'api') and
@@ -629,7 +657,7 @@ class TradingSystem:
             except Exception as e:
                 log.error(f"Order matching error: {e}")
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(self.mock_env_sleep(CHECK_FILL_INTERVAL))
 
 
 # ==================== Main Entry Point ====================
@@ -655,16 +683,18 @@ async def async_main():
         'ca_passwd': os.environ.get("CA_PASSWORD", ""),
         'simulation': True,
         'username': os.environ.get('USERNAME', 'user000'),
-        'speed': 60.0,
+        # 'speed': 60.0,
     }
 
     broker_type = os.environ.get('BROKER_TYPE', 'mock').lower()
 
     if broker_type == 'mock':
+        config["speed"] = 120.0
         config["state_file"] = f"./mock_{config['username']}.json"
         config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
         client = AccountClient(BrokerType.MOCK, **config)
     elif broker_type == 'realistic':
+        config["speed"] = 6000.0
         config["state_file"] = f"./realistic_{config['username']}.json"
         config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
         real = AccountClient(BrokerType.SINOPAC, **config)
@@ -717,7 +747,7 @@ async def async_main():
 
     try:
         while not SHUTDOWN:
-            await asyncio.sleep(1)
+            await asyncio.sleep(system.mock_env_sleep(1))
     except KeyboardInterrupt:
         log.info("Keyboard interrupt received")
 
