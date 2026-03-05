@@ -429,6 +429,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
             return []
 
 
+    def is_market_open(self) -> bool:
+        # Check within 9AM - 13:30PM on weekdays (Mon-Fri)
+        now = datetime.now()
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            return False
+        market_open_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        market_close_time = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        return market_open_time <= now <= market_close_time
+
+
     def get_broker_name(self) -> str:
         return "sinopac"
 

@@ -29,6 +29,7 @@ class MockBrokerAPI(BrokerAPIBase):
 
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
         self.mock_playback_speed = config.get('speed', 1.0)
+        # Note that state_file is used to persist the mock broker's account state (positions, orders, etc.) across sessions.
         self.state_file = config.get('state_file', "mock_account_state.json")
         self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file)
         self._connected = False
@@ -166,6 +167,9 @@ class MockBrokerAPI(BrokerAPIBase):
     def list_orders(self) -> List[Trade]:
         return self.api.list_trades()
 
+    def is_market_open(self) -> bool:
+        return self.api.market.is_market_open()
+
     def get_broker_name(self) -> str:
         return "mock"
 
@@ -190,7 +194,7 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         tmp = self.place_order(order)
-        if tmp.status != OrderStatus.COMMITTED_WAIT_MARKET_OPEN:
+        if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()
@@ -213,7 +217,7 @@ class MockBrokerAPI(BrokerAPIBase):
         )
 
         tmp = self.place_order(order)
-        if tmp.status != OrderStatus.COMMITTED_WAIT_MARKET_OPEN:
+        if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
             return self.commit_order()

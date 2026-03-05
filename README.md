@@ -24,8 +24,11 @@ If it is a modification to existing logic, please mark todo directly in that fil
 - For unified `AccountClient` class requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
 Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
 
-## Run
-Please install `uv` on your os first.
+## Run CJTrade Interactive Shell
+The CJTrade interactive shell (`cjtrade_shell`), is built mainly for users to explore CJTrade API functionalities.
+As for automatic smart trading system, refer to `cjtrade_system` on the next section ("Run CJTrade System").
+
+To run interactive shell, please install `uv` on your os first.
 [https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```sh
@@ -80,6 +83,21 @@ uv run cjtrade --broker=sinopac
 bash tests/test_cjtrade_shell_all_cmds.sh
 ```
 
+## Run CJTrade System
+CJTrade System is an automatic smart trading system, it continuously monitor your positions and stock price in real time,
+uses Bollinger Bands (布林通道) strategy to automatically place order for you.
+
+:warning: This feature is in the PoC stage and under active development. Expect rapid changes and potential instability.
+
+If you want to test it out, please follow the installation guide in the previous section, and run:
+
+```sh
+# Note that choosing `sinopac` as broker will place real order when strategy condition is met,
+# unless you expliclitly export an environment variable `export SIMULATION=y` before running this.
+export WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
+uv run system --broker=mock  # or realistic / sinopac
+```
+
 ## Test
 1. Run basic tests: all command in cjtrade shell
 ```sh
@@ -92,7 +110,6 @@ uv run test --broker=sinopac --group=all
 # Add --delay=n to wait n sec after each test case done to avoid running out of API quota
 ./tests/test_broker_api_stability.py --broker=mock --delay=8
 ```
-
 
 ## For clear, maintainable branch design
 - `master`: Master branch.

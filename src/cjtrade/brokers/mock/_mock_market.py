@@ -29,6 +29,7 @@ class MockBackend_MockMarket:
         self.mock_init_time = 0       # mock_init_time + time_offset = mock_current_time
         self.start_date = 0
         self.real_account = real_account if real_account else None
+        self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
 
     def set_playback_speed(self, speed: float):
         """
@@ -58,6 +59,22 @@ class MockBackend_MockMarket:
 
         self.playback_speed = speed
 
+    def fetching_available(self, date: datetime) -> bool:
+        # Currently a workaround
+        if self.real_account and self.real_account.is_connected():
+            return True
+
+        data = yf.download(
+            "2330.TW",
+            start=date.strftime("%Y-%m-%d"),
+            end=(date + timedelta(days=1)).strftime("%Y-%m-%d"),
+            interval="1m",
+            auto_adjust=True,
+            progress=False
+        )
+        return True if not data.empty else False
+
+
     def set_historical_time(self, real_init_time: datetime, days_back: int = 10):
         # yfinance api only keeps minute data within the last 30 days
         self.real_init_time = real_init_time
@@ -72,17 +89,28 @@ class MockBackend_MockMarket:
             self.start_date = real_current_time - timedelta(days=days_back)
             self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
 
+    def adjust_time(self, hours: float):
+        """Manually adjust mock time by specified hours.
+
+        Args:
+            hours: Number of hours to shift (can be negative)
+        """
+        self.manual_time_offset += timedelta(hours=hours)
+        print(f"Mock time adjusted by {hours:+.1f} hours")
+        print(f"Total manual offset: {self.manual_time_offset.total_seconds() / 3600:+.1f} hours")
+
     def get_market_time(self):
         real_current_time = datetime.now()
         time_offset = real_current_time - self.real_init_time
-        mock_current_time = self.start_date + time_offset * self.playback_speed
+        mock_current_time = self.start_date + time_offset * self.playback_speed + self.manual_time_offset
         return {
             'real_current_time': real_current_time,
             'real_init_time': self.real_init_time,
             'mock_init_time': self.start_date,
             'mock_current_time': mock_current_time,
             'time_offset': time_offset,
-            'playback_speed': self.playback_speed
+            'playback_speed': self.playback_speed,
+            'manual_time_offset': self.manual_time_offset
         }
 
     def adjust_to_market_hours(self, mock_current_time: datetime) -> datetime:
@@ -155,7 +183,7 @@ class MockBackend_MockMarket:
 
         return market_open <= current_time <= market_close
 
-    def create_historical_market(self, symbol: str):
+    def create_historical_market(self, symbol: str, days_preload: int = 5):
         """Load historical market data for a symbol.
 
         Data source priority:
@@ -169,7 +197,7 @@ class MockBackend_MockMarket:
         if symbol in self.historical_data:
             return
 
-        NUM_DAYS_PRELOAD = 5
+        NUM_DAYS_PRELOAD = days_preload
         end_date = self.start_date + timedelta(days=NUM_DAYS_PRELOAD)
 
         # Load historical data from real account for better data quality

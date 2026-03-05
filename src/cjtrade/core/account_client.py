@@ -60,14 +60,16 @@ class AccountClient:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 
     def _sync_all(self) -> bool:
+        if not self.broker_api.is_connected():
+            print("Broker API not connected")
+            return False
         self.account_state.balance = self.broker_api.get_balance()
         self.account_state.positions = self.broker_api.get_positions()
         self.account_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # self.account_state.pending_orders = self.broker_api.list_orders()
         # self.account_state.order_history = []
 
-
-    # Do manually connect if you don't want a lazy connection -> connect when first API call
+    # User need to call `connect()` before calling any other method
     def connect(self) -> bool:
         return self.broker_api.connect()
 
@@ -78,14 +80,10 @@ class AccountClient:
         return self.broker_api.is_connected()
 
     def get_positions(self) -> List[Position]:
-        if not self.broker_api.is_connected():
-            self.broker_api.connect()
         self._sync_all()  # will sync `account_state`
         return self.account_state.positions
 
     def get_balance(self) -> float:
-        if not self.broker_api.is_connected():
-            self.broker_api.connect()
         self._sync_all()  # will sync `account_state`
         return self.account_state.balance
 
@@ -122,6 +120,9 @@ class AccountClient:
 
     def list_orders(self) -> List[Dict[str, Any]]:
         return self.broker_api.list_orders()
+
+    def is_market_open(self) -> bool:
+        return self.broker_api.is_market_open()
 
     def get_broker_name(self) -> str:
         return self.broker_api.get_broker_name()

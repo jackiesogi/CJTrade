@@ -124,6 +124,10 @@ class BrokerAPIBase(ABC):
         pass
 
     @abstractmethod
+    def is_market_open(self) -> bool:
+        pass
+
+    @abstractmethod
     def get_broker_name(self) -> str:
         pass
 

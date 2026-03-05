@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 from datetime import timedelta
 from enum import Enum
+from time import sleep
 from typing import Dict
 from typing import List
 
@@ -74,15 +75,38 @@ class MockBackend_AccountState:
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend:
     def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
-        self.real_account = real_account
         self.price_mode = price_mode
         self.account_state = MockBackend_AccountState()
         self.account_state_default_file = state_file
 
+        self.real_account = real_account
+        if self.real_account and not self.real_account.is_connected():
+            # MockMarket will need to fetch data, so we do an early connection
+            self.real_account.connect()
+
         # Initialize price engine based on mode
         if price_mode == PriceMode.HISTORICAL:
+            # MockBackend_MockMarket will decide whether to fetch data from real account or yfinance based on `real_account`
             self.market = MockBackend_MockMarket(real_account=self.real_account)
-            self.market.set_historical_time(datetime.now(), days_back=random.randint(1, 20))
+
+            # Find until that date is available for fetching data
+            max_attempts = 30
+            attempt = 0
+            days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
+            dt = datetime.now() - timedelta(days=days_back)
+
+            while not self.market.fetching_available(dt) and attempt < max_attempts:
+                sleep(0.5)  # Avoid spamming requests too quickly
+                attempt += 1
+                days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
+                dt = datetime.now() - timedelta(days=days_back)
+                # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
+
+            if attempt >= max_attempts:
+                print("Not able to fetch historical data within `max_attempts`(=30). Please try again")
+                exit(-1)
+
+            self.market.set_historical_time(datetime.now(), days_back=days_back)
             self.market.set_playback_speed(playback_speed)
         else:
             # Future: self.market = MockBackend_SyntheticMarket()
@@ -95,7 +119,7 @@ class MockBrokerBackend:
         try:
             self._connected = True
 
-            if self.real_account:
+            if self.real_account and not os.path.exists(self.account_state_default_file):
                 self._sync_with_real_account()
             else:
                 self._sync_with_mock_account_file()
@@ -249,11 +273,14 @@ class MockBrokerBackend:
             if self.real_account and not self.real_account.is_connected():
                 self.real_account.connect()
 
-            # This will fetch from `real_account` or `yfinance`
-            self.market.create_historical_market(symbol)
+            # preload 60 day if real_account is provided (realistic mode)
+            day_preload = 60 if self.real_account else 5
 
-            if self.real_account:
-                self.real_account.disconnect()
+            # This will fetch from `real_account` or `yfinance`
+            self.market.create_historical_market(symbol, day_preload)
+
+            # if self.real_account:
+            #     self.real_account.disconnect()  # <--- TODO: Evaluate if we should disconnect here
 
         time = self.market.get_market_time()
         real_current_time = time['real_current_time']
@@ -543,7 +570,8 @@ class MockBrokerBackend:
                 odr.opt_field = odr.opt_field if hasattr(odr, 'opt_field') else {}
                 odr.opt_field['last_check_for_fill'] = cmp_time_range_end
 
-            if price_filled:
+            # if price_filled is positive integer, it indicates the minute offset at which the order was filled
+            if price_filled and price_filled > 0:
                 # Move order to filled list
                 try:
                     self.account_state.orders_filled.append(odr)
@@ -551,7 +579,10 @@ class MockBrokerBackend:
                     if odr in self.account_state.orders_committed:
                         self.account_state.orders_committed.remove(odr)
                     self.account_state.all_order_status[odr.id] = OrderStatus.FILLED
-                    print(f"Order {odr.id} filled (target {target_price})")
+
+                    # Convert minute offset to actual datetime
+                    fill_time = self.market.start_date + timedelta(minutes=price_filled)
+                    print(f"Order {odr.id} filled (target {target_price}) at {fill_time.strftime('%Y-%m-%d %H:%M:%S')}")
                     qty_signed = odr.quantity if odr.action == OrderAction.BUY else -odr.quantity
 
                     # Update Balance (Account for cash flow)
@@ -576,7 +607,11 @@ class MockBrokerBackend:
                     print(f"Error moving order {odr.id} to filled: {e}")
 
     def _reconstruct_positions_from_history(self):
-        """Reconstruct the aggregated positions list from fill_history."""
+        """Reconstruct the aggregated positions list from fill_history.
+
+        Uses weighted average cost for buys only. Sells reduce quantity
+        but do not affect the average cost of remaining shares.
+        """
         if not self.account_state.fill_history:
             self.account_state.positions = []
             return
@@ -589,19 +624,29 @@ class MockBrokerBackend:
         new_positions = []
         for sym, fills in sym_fills.items():
             net_qty = 0
-            total_net_cost = 0.0
+            total_buy_cost = 0.0
+            total_buy_qty = 0
 
+            # Process fills in chronological order
             for f in fills:
                 q = f['quantity']
                 p = f['price']
-                net_qty += q
-                total_net_cost += (q * p)
+
+                if q > 0:  # Buy
+                    total_buy_cost += (q * p)
+                    total_buy_qty += q
+                    net_qty += q
+                else:  # Sell (q is negative)
+                    net_qty += q  # Reduce quantity
 
             if net_qty == 0:
                 continue
 
-            # Calculate breakeven cost
-            avg_cost = total_net_cost / net_qty
+            # Average cost is based only on buy transactions
+            if total_buy_qty > 0:
+                avg_cost = total_buy_cost / total_buy_qty
+            else:
+                avg_cost = 0.0
 
             new_positions.append(Position(
                 symbol=sym,
@@ -614,7 +659,7 @@ class MockBrokerBackend:
 
         self.account_state.positions = new_positions
 
-    def _check_price_in_time_range(self, symbol: str, start_time: datetime, end_time: datetime, price_condition) -> bool:
+    def _check_price_in_time_range(self, symbol: str, start_time: datetime, end_time: datetime, price_condition) -> int:
         # Assume data has been preloaded
         try:
             # Ensure symbol data exists
@@ -664,12 +709,12 @@ class MockBrokerBackend:
                             continue
 
                 if price_condition(close_price):
-                    return True
+                    return minute  # Return the minute offset at which the condition was met
 
-            return False
+            return -1
         except Exception as e:
             print(f"_check_price_in_time_range error: {e}")
-            return False
+            return -1
 
     def _trigger_order_matching(self):
         """
@@ -731,7 +776,8 @@ class MockBrokerBackend:
             return
 
         try:
-            if self.real_account.connect():
+            if not self.real_account.is_connected():
+                self.real_account.connect()
                 print(f"Syncing with real account (price_mode={self.price_mode.value})...")
 
                 # Get balance from real account
@@ -748,9 +794,12 @@ class MockBrokerBackend:
 
                 # Preload historical data for all symbols
                 print(f"Loading historical data for {len(real_positions)} symbols...")
+
+                # preload 60 day if real_account is provided (realistic mode)
+                day_preload = 60 if self.real_account else 5
                 for pos in real_positions:
                     if pos.symbol not in self.market.historical_data:
-                        self.market.create_historical_market(pos.symbol)
+                        self.market.create_historical_market(pos.symbol, day_preload)
 
                     """ Record as initial fill history
                     We currently assume the position state as a single fill.
@@ -774,8 +823,8 @@ class MockBrokerBackend:
                     })
 
                 # Sync aggregated view
-                self._reconstruct_positions_from_history()
-                self.real_account.disconnect()
+                # self._reconstruct_positions_from_history()
+                # self.real_account.disconnect()  # <---- TODO: Evaluate if we should disconnect
 
                 # Update prices using simulation data
                 self._update_position_prices()
