@@ -1,9 +1,9 @@
 import os
 
 import shioaji as sj
-from dotenv import load_dotenv
+from cjtrade.core.config_loader import load_supported_config_files
 
-load_dotenv()
+load_supported_config_files()
 
 api = sj.Shioaji(simulation=False)
 api.login(

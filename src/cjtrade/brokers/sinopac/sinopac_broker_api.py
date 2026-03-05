@@ -638,10 +638,10 @@ if __name__ == "__main__":
     from cjtrade.core.account_client import AccountClient, BrokerType
     from cjtrade.models.order import Order, OrderAction, PriceType, OrderType
     from cjtrade.models.product import Product, Exchange
-    from dotenv import load_dotenv
+    from cjtrade.core.config_loader import load_supported_config_files
     import time
 
-    load_dotenv()
+    load_supported_config_files()
 
     client = AccountClient(
         BrokerType.SINOPAC,
