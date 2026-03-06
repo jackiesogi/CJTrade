@@ -93,10 +93,20 @@ class AccountClient:
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         return self.broker_api.get_snapshots(products)
 
-    def register_fill_callback(self, callback: FillCallback) -> None:
-        return self.broker_api.register_fill_callback(callback)
-
     def register_order_callback(self, callback: OrderCallback) -> None:
+        """
+        Register callback for order status changes (including fills).
+
+        Args:
+            callback: Function(OrderEvent) -> None
+
+        Example:
+            def on_order_change(event: OrderEvent):
+                print(f"{event.old_status} → {event.new_status}")
+                if event.is_filled():
+                    # Handle fill
+                    update_position(event.symbol, event.filled_quantity)
+        """
         return self.broker_api.register_order_callback(callback)
 
     def get_kbars(self, product: Product, start: str, end: str, interval: str):

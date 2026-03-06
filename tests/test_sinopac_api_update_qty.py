@@ -25,6 +25,13 @@ def get_unfilled_trades(api):
 # print(len(trades))
 
 trade = get_unfilled_trades(api)
+
+#####
+# print(trade)
+# api.logout()
+# exit(0)
+#####
+
 assert trade is not None, "No unfilled trades found"
 initial_qty = trade.order.quantity
 initial_cancel_qty = trade.status.cancel_quantity

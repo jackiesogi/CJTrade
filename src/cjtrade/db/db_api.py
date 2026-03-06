@@ -1,4 +1,5 @@
 # TODO: Avoid SQL injection
+# TODO: Add `Lock()`
 from datetime import datetime
 from datetime import timedelta
 
@@ -11,7 +12,9 @@ def connect_sqlite(database: str = ":memory:"):
     from cjtrade.db.sqlite import SqliteDatabaseConnection
 
     try:
-        conn = sqlite3.connect(database)
+        # Allow cross-thread access for Shioaji callbacks
+        # SQLite is still thread-safe as long as we don't have concurrent writes
+        conn = sqlite3.connect(database, check_same_thread=False)
         return SqliteDatabaseConnection(conn)
     except ConnectionError as e:
         print(f"Failed to connect to SQLite database: {e}")

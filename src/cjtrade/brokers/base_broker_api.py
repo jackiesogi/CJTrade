@@ -86,10 +86,20 @@ class BrokerAPIBase(ABC):
         """
         pass
 
-    # @abstractmethod  # TODO: Un-comment this when implementation is done
-    def register_fill_callback():
+    @abstractmethod
+    def register_order_callback(self, callback) -> None:
         """
-        Define what things to do when a certain order fill event happens.
+        Register callback for order status changes (including fills).
+        Callback receives OrderEvent with unified CJ abstraction layer format.
+
+        Args:
+            callback: Function that takes OrderEvent as parameter
+
+        Example:
+            def on_order_change(event: OrderEvent):
+                print(f"{event.old_status} → {event.new_status}")
+                if event.is_filled():
+                    print(f"Filled: {event.filled_quantity} @ {event.filled_price}")
         """
         pass
 

@@ -56,9 +56,6 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         # Callbacks
         self._shioaji_callback_registered = False
-        self._fill_callbacks = []
-        self._fill_callbacks = []
-        # Not sure if we will use them:
         self._order_callbacks = []
         self._order_status_cache = {}  # {order_id: OrderStatus}
 
@@ -239,21 +236,20 @@ class SinopacBrokerAPI(BrokerAPIBase):
         #     raise ValueError(f"Unsupported PriceCallbackType: {cb_type}")
 
 
-    def register_fill_callback(self, callback: FillCallback) -> None:
-        self._fill_callbacks.append(callback)
-
-        # Register Shioaji callback for the first time
-        if not self._shioaji_callback_registered:
-            self._setup_shioaji_order_callback()
-            self._shioaji_callback_registered = True
-
-
     def register_order_callback(self, callback: OrderCallback) -> None:
+        """
+        Register callback for order status changes (including fills).
+        Callback receives unified OrderEvent from CJ abstraction layer.
+        """
         self._order_callbacks.append(callback)
+        print(f"[DEBUG] Order callback registered. Total callbacks: {len(self._order_callbacks)}")
 
         if not self._shioaji_callback_registered:
+            print("[DEBUG] Setting up Shioaji order callback (first time)...")
             self._setup_shioaji_order_callback()
             self._shioaji_callback_registered = True
+        else:
+            print("[DEBUG] Shioaji callback already registered, skipping setup")
 
 
     # Sinopac-specific method
@@ -333,8 +329,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             from ._internal_func import STATUS_MAP
 
             for c, s in cj_sj_order_map.items():
-                if s.status.status not in [sj.constant.Status.Submitted,
-                                           sj.constant.Status.Cancelled,
+                if s.status.status not in [sj.constant.Status.Cancelled,
                                            sj.constant.Status.Failed,
                                            sj.constant.Status.Filled]:
                     # Map actual Shioaji status to CJ status
@@ -488,12 +483,13 @@ class SinopacBrokerAPI(BrokerAPIBase):
     ##### SIMPLE HIGH-LEVEL METHODS (END) #####
 
     ##### INTERNAL METHODS (START) #####
+    # TODO: Review callback registration logic
     def _setup_shioaji_order_callback(self):
 
         def shioaji_order_status_callback(stat, msg):
             """Shioaji native callback
             Args:
-                stat: shioaji.order.OrderState 对象
+                stat: shioaji.order.OrderState
                     - status: Status enum (PendingSubmit, Submitted, Filled, etc.)
                     - id
                     - order_datetime
@@ -502,52 +498,90 @@ class SinopacBrokerAPI(BrokerAPIBase):
                     - deal_quantity
                 msg: message string
             """
+            print(f"\n[DEBUG] 🔔 Shioaji callback triggered!")
+            print(f"[DEBUG] stat: {stat}, msg keys: {msg.keys() if msg else None}")
+
             try:
-                # 1. Convert exchange operation type to CJ status
-                # Note: stat.operation.op_type is from exchange (different from stat.status)
-                from ._internal_func import OPERATION_TYPE_MAP
+                from ._internal_func import OPERATION_TYPE_MAP, STATUS_MAP
 
-                # OrderState can be accessed as dict or object, handle both
-                if isinstance(stat, dict):
-                    op_type = stat.get('operation', {}).get('op_type', '')
-                    sj_order_id = stat.get('order', {}).get('id', '')
-                    stat_status = stat.get('status', None)
+                # 1. Check callback type: OrderState vs Deal
+                if stat.name == 'StockDeal':
+                    # Deal callback: different structure
+                    # Use seqno to look up the order (ordno might not match DB)
+                    print(f"[DEBUG] This is a Deal callback")
+                    op_type = 'Deal'
+                    sj_seqno = msg['seqno']
+                    cj_status = STATUS_MAP.get(stat, OrderStatus.FILLED)
+                    print(f"[DEBUG] Deal seqno: {sj_seqno}, cj_status: {cj_status}")
+
+                    # Find order_id from seqno by checking the in-memory map first
+                    matching_trade = None
+                    sj_order_id = None
+
+                    # Check in-memory map first (fastest)
+                    for cj_id, trade in cj_sj_order_map.items():
+                        if hasattr(trade, 'order') and hasattr(trade.order, 'seqno'):
+                            if trade.order.seqno == sj_seqno:
+                                matching_trade = trade
+                                sj_order_id = trade.order.id
+                                break
+
+                    # Fallback: query API (slower)
+                    if not matching_trade:
+                        trades = self.api.list_trades()
+                        # list_trades() returns a list, not dict
+                        for trade in trades:
+                            if hasattr(trade, 'order') and hasattr(trade.order, 'seqno'):
+                                if trade.order.seqno == sj_seqno:
+                                    matching_trade = trade
+                                    sj_order_id = trade.order.id
+                                    break
+
+                    if not matching_trade:
+                        print(f"[DEBUG] ⚠️ Cannot find order with seqno={sj_seqno}, ignoring")
+                        return
+
+                    print(f"[DEBUG] Found matching order: {sj_order_id}")
                 else:
-                    op_type = getattr(getattr(stat, 'operation', None), 'op_type', '')
-                    sj_order_id = getattr(getattr(stat, 'order', None), 'id', '')
-                    stat_status = getattr(stat, 'status', None)
-
-                cj_status = OPERATION_TYPE_MAP.get(op_type, OrderStatus.UNKNOWN)
-
-                # For deal events, check if it's partial or full fill
-                if op_type == 'Deal' and stat_status:
-                    # Use stat.status to distinguish PARTIAL vs FILLED
-                    from ._internal_func import STATUS_MAP
-                    detailed_status = STATUS_MAP.get(stat_status, OrderStatus.FILLED)
-                    if detailed_status in [OrderStatus.PARTIAL, OrderStatus.FILLED]:
-                        cj_status = detailed_status
+                    # Order status callback: has 'operation' field
+                    print(f"[DEBUG] This is an Order Status callback")
+                    op_type = msg['operation']['op_type']
+                    sj_order_id = msg['order']['id']
+                    cj_status = OPERATION_TYPE_MAP.get(op_type, OrderStatus.UNKNOWN)
+                    print(f"[DEBUG] sj_order_id: {sj_order_id}, op_type: {op_type}, cj_status: {cj_status}")
 
                 # 2. Get CJ order_id from DB
                 cj_order_id = get_cj_order_id_from_db(conn=self.db, bkr_order_id=sj_order_id)
+                print(f"[DEBUG] Looking up cj_order_id for sj_order_id={sj_order_id} -> {cj_order_id}")
                 if not cj_order_id:
+                    print(f"[DEBUG] ⚠️ CJ order_id not found in DB, ignoring callback")
                     return  # Ignore if not found
 
                 # 3. Get the complete trade object (including contract information)
                 trade_obj = _retrieve_sinopac_trade_by_cj_order_id(api=self.api, db_conn=self.db, cj_order_id=cj_order_id)
                 if not trade_obj:
+                    print(f"[DEBUG] ⚠️ Trade object not found for cj_order_id={cj_order_id}")
                     return  # Ignore if not found
 
-                # 4. Extract order information
-                symbol = getattr(trade_obj.contract, 'code', 'N/A') if hasattr(trade_obj, 'contract') else 'N/A'
-                action = getattr(trade_obj.order, 'action', None)
-                quantity = getattr(trade_obj.order, 'quantity', 0)
-                price = getattr(trade_obj.order, 'price', 0.0)
+                # 4. Extract order information from msg dict
+                if stat.name == 'StockDeal':
+                    # Deal structure
+                    symbol = msg['code']
+                    action_str = msg['action']
+                    quantity = msg['quantity']
+                    price = msg['price']
+                else:
+                    # Order status structure
+                    symbol = msg['contract']['code']
+                    action_str = msg['order']['action']
+                    quantity = msg['order']['quantity']
+                    price = msg['order']['price']
 
-                # Convert action
+                # Convert action string to CJ OrderAction
                 from cjtrade.models.order import OrderAction
-                if action == sj.constant.Action.Buy:
+                if action_str == 'Buy':
                     cj_action = OrderAction.BUY
-                elif action == sj.constant.Action.Sell:
+                elif action_str == 'Sell':
                     cj_action = OrderAction.SELL
                 else:
                     cj_action = None
@@ -555,13 +589,20 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 # 5. Get old status (for detecting changes)
                 old_status = self._order_status_cache.get(cj_order_id, OrderStatus.PLACED)
 
-                # 6. 创建 OrderEvent
-                # Helper to safely get stat values (stat can be dict or object)
-                def get_stat_value(key, default=None):
-                    if isinstance(stat, dict):
-                        return stat.get(key, default)
-                    return getattr(stat, key, default)
+                # 6. Extract filled quantity and price
+                if stat.name == 'StockDeal':
+                    # Deal: quantity and price are the filled amounts
+                    filled_qty = quantity
+                    filled_price = price
+                else:
+                    # Order status: look in status field
+                    filled_qty = msg.get('status', {}).get('deal_quantity', 0)
+                    filled_price = msg.get('status', {}).get('deal_price', None)
 
+                # Calculate filled_value
+                filled_value = filled_qty * filled_price if filled_price else None
+
+                # 7. Create OrderEvent (unified CJ abstraction layer format)
                 order_event = OrderEvent(
                     event_type=EventType.ORDER_STATUS_CHANGE,
                     timestamp=datetime.now(),
@@ -572,21 +613,24 @@ class SinopacBrokerAPI(BrokerAPIBase):
                     price=price,
                     old_status=old_status,
                     new_status=cj_status,
-                    filled_quantity=get_stat_value('deal_quantity', 0),
-                    filled_price=get_stat_value('deal_price', None),
-                    message=msg,
+                    filled_quantity=filled_qty,
+                    filled_price=filled_price,
+                    filled_value=filled_value,
+                    message=str(msg),
                     broker_raw_data={
                         'sj_order_id': sj_order_id,
-                        'sj_status': str(stat_status) if stat_status else 'UNKNOWN',
+                        'sj_status': str(stat),
                         'sj_msg': msg,
-                        'op_type': op_type
+                        'op_type': op_type,
+                        'deal_id': msg.get('trade_id', sj_order_id) if stat.name == 'StockDeal' else sj_order_id
                     }
                 )
 
-                # 7. Update status cache
+                # 8. Update status cache
                 self._order_status_cache[cj_order_id] = cj_status
 
-                # 8. Trigger order callbacks
+                # 9. Trigger order callbacks
+                print(f"[DEBUG] Triggering {len(self._order_callbacks)} order callbacks...")
                 for callback in self._order_callbacks:
                     try:
                         callback(order_event)
@@ -595,35 +639,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
                         import traceback
                         traceback.print_exc()
 
-                # 9. If it's a fill event, trigger fill callbacks
-                if cj_status in [OrderStatus.FILLED, OrderStatus.PARTIAL]:
-                    deal_quantity = get_stat_value('deal_quantity', 0)
-                    deal_price = get_stat_value('deal_price', 0.0)
-
-                    fill_event = FillEvent(
-                        timestamp=datetime.now(),
-                        order_id=cj_order_id,
-                        symbol=symbol,
-                        action=cj_action,
-                        filled_quantity=deal_quantity,
-                        filled_price=deal_price,
-                        filled_value=deal_quantity * deal_price,
-                        total_filled_quantity=deal_quantity,  # TODO: Accumulated quantity
-                        remaining_quantity=quantity - deal_quantity,
-                        order_status=cj_status,
-                        deal_id=sj_order_id,
-                        broker_raw_data={'deals': get_stat_value('deals', [])}
-                    )
-
-                    for callback in self._fill_callbacks:
-                        try:
-                            callback(fill_event)
-                        except Exception as e:
-                            print(f"Error in fill callback: {e}")
-                            import traceback
-                            traceback.print_exc()
-
-                # 10. Update database status
+                # 9. Update database status
                 update_order_status_to_db(conn=self.db, oid=cj_order_id, status=cj_status.value)
 
             except Exception as e:
@@ -632,18 +648,20 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 traceback.print_exc()
 
         # Callback function registration
-        self.api.set_order_callback(shioaji_order_status_callback)
-        print("✅ Shioaji order callback registered")
+        result = self.api.set_order_callback(shioaji_order_status_callback)
+        print(f"✅ Shioaji order callback registered (return value: {result})")
 
     ##### INTERNAL METHODS (END) #####
 
 
-def order_cb(stat, msg):
-    print('Below is my order callback !!!!!')
-    print(stat, msg)
 
 # Test cb registration by CJTrade API
 ## TODO: When market open, test the same scenarios as the test plan for Sinopac native API
+##   - [ ] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
+##   - [ ] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
+##   - [ ] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
+##   - [ ] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
+##   - [ ] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
 if __name__ == "__main__":
     from cjtrade.core.account_client import AccountClient, BrokerType
     from cjtrade.models.order import Order, OrderAction, PriceType, OrderType
@@ -663,45 +681,48 @@ if __name__ == "__main__":
     )
     client.connect()
 
-    # 2. Define callbacks
-    def on_fill(event: FillEvent):
-        print(f"\n🎉 Order Filled!")
-        print(f"  Order ID: {event.order_id}")
-        print(f"  Symbol: {event.symbol}")
-        print(f"  Action: {event.action.value}")
-        print(f"  Filled Quantity: {event.filled_quantity}")
-        print(f"  Filled Price: {event.filled_price}")
-        print(f"  Filled Value: {event.filled_value}")
-        print(f"  Order Status: {event.order_status.value}")
-
-        if event.is_complete_fill():
-            print(f"  ✅ Order Completely Filled")
-        else:
-            print(f"  ⏳ Partial Fill, Remaining {event.remaining_quantity}")
-
+    # 2. Define callback for order status changes (including fills)
     def on_order_change(event: OrderEvent):
         print(f"\n📝 Order Status Change")
         print(f"  Order ID: {event.order_id}")
+        print(f"  Symbol: {event.symbol}")
         print(f"  {event.old_status.value} → {event.new_status.value}")
 
+        # Check if order is filled
+        if event.is_filled():
+            print(f"\n🎉 Order Filled!")
+            print(f"  Action: {event.action.value}")
+            print(f"  Filled Quantity: {event.filled_quantity}")
+            print(f"  Filled Price: {event.filled_price}")
+            print(f"  Filled Value: {event.filled_quantity * event.filled_price if event.filled_price else 0}")
+
+            if event.is_completely_filled():
+                print(f"  ✅ Order Completely Filled")
+            else:
+                print(f"  ⏳ Partial Fill")
+
+        # Check other status
         if event.is_rejected():
             print(f"  ❌ Rejection Reason: {event.message}")
         elif event.is_cancelled():
             print(f"  ⚠️ Order Cancelled")
 
-    # 3. Register callbacks
-    client.register_fill_callback(on_fill)
+    # 3. Register callback
     client.register_order_callback(on_order_change)
 
     # 4. Place order test
     order = Order(
         product=Product(
             symbol="2890",
+            # symbol="0050",
             exchange=Exchange.TSE
         ),
         action=OrderAction.BUY,
-        price=31.0,  # close price on 2026-02-26
-        quantity=5,
+        # price=28.5,  # close price on 2026-02-26
+        price=31.65,  # close price on 2026-02-26
+        # price=77.15,  # close price on 2026-02-26
+        # quantity=10,
+        quantity=2,
         order_lot=OrderLot.IntraDayOdd,
         price_type=PriceType.LMT,
         order_type=OrderType.ROD
@@ -729,41 +750,49 @@ if __name__ == "__main__":
 
 ## Test cb registration by sinopac native API
 ## TODO: When market open, test these: (required 3 order creations, one will be filled, will cost around 31 * 3 = 93 TWD)
-##   - [ ] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
-##   - [ ] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
-##   - [ ] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
-##   - [ ] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
+##   - [x] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
+##   - [x] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
+##   - [x] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
+##   - [x] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
 ##   - [ ] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
 # if __name__ == "__main__":
-    # api = sj.Shioaji(simulation=False)
-    # api.login(
-    #     api_key=os.environ.get("API_KEY", ""),
-    #     secret_key=os.environ.get("SECRET_KEY", ""),
-    # )
-    # api.activate_ca(
-    #     ca_path=os.environ.get("CA_CERT_PATH", ""),
-    #     ca_passwd=os.environ.get("CA_PASSWORD", ""),
-    # )
+#     import time
+#     from cjtrade.core.config_loader import load_supported_config_files
+#     load_supported_config_files()
 
-    # api.set_order_callback(order_cb)
+#     def order_cb(stat, msg):
+#         print('Below is my order callback !!!!!')
+#         print(stat, msg)
 
-    # contract = api.Contracts.Stocks.TSE.TSE2890
-    # order = api.Order(
-    #     price=31,    # close price of 2026-02-26
-    #     quantity=3,  # available to apply multiple order changes
-    #     action=sj.constant.Action.Buy,
-    #     price_type=sj.constant.StockPriceType.LMT,
-    #     order_type=sj.constant.OrderType.ROD,
-    #     order_lot=sj.constant.StockOrderLot.IntradayOdd,
-    #     custom_field="test",
-    #     account=api.stock_account
-    # )
-    # trade = api.place_order(contract, order)
+#     api = sj.Shioaji(simulation=False)
+#     api.login(
+#         api_key=os.environ.get("API_KEY", ""),
+#         secret_key=os.environ.get("SECRET_KEY", ""),
+#     )
+#     api.activate_ca(
+#         ca_path=os.environ.get("CA_CERT_PATH", ""),
+#         ca_passwd=os.environ.get("CA_PASSWORD", ""),
+#     )
 
-    # print(f"\n⏳ Waiting for order status changes (Ctrl+C to exit)...")
-    # try:
-    #     while True:
-    #         time.sleep(1)
-    # except KeyboardInterrupt:
-    #     print(f"\n👋 Connection closed")
-    #     api.logout()
+#     api.set_order_callback(order_cb)
+
+#     contract = api.Contracts.Stocks.TSE.TSE2890
+#     order = api.Order(
+#         price=28.5,    # close price of 2026-02-26
+#         quantity=3,  # available to apply multiple order changes
+#         action=sj.constant.Action.Buy,
+#         price_type=sj.constant.StockPriceType.LMT,
+#         order_type=sj.constant.OrderType.ROD,
+#         order_lot=sj.constant.StockOrderLot.IntradayOdd,
+#         custom_field="test",
+#         account=api.stock_account
+#     )
+#     trade = api.place_order(contract, order)
+
+#     print(f"\n⏳ Waiting for order status changes (Ctrl+C to exit)...")
+#     try:
+#         while True:
+#             time.sleep(1)
+#     except KeyboardInterrupt:
+#         print(f"\n👋 Connection closed")
+#         api.logout()
