@@ -4,25 +4,17 @@
 
 ## Introduction
 
-CJ Trade is a trading system for `TWSE`. It comes with multiple great, out-of-the-box features, including:
-- AI-driven dicision
-- Robust technical analysis
-- Feedback-driven, dynamic strategy.
+CJ Trade is a trading system development framework for `TWSE`, you can write your trading strategy using CJTrade API and deploy to any supported securities brokers!!!
 
-## Project TODO
-Note that the todos listed here is for those brand new feature, those still don't have a specific file to put into, or those not sure where to put.
-If it is a modification to existing logic, please mark todo directly in that file, and it will be easier to trace using todo tree extension.
+It also comes with multiple great, out-of-the-box features, including:
+- AI-in-the-loop strategy.
+- Robust technical analysis tools.
+- News source integration.
+- CJTrade Interactive Shell for users to do manually trading / monitoring.
 
-- [ ] Add `get_latest_kbar() -> Kbar` or related feature that can fetch exact one kbar.
-- [x] Add abstraction to database interaction and think about what and how to record. (sqlite3 first)
-- [ ] Add candidate manager related feature.
-- [ ] Add `Dash` package and work with stateful UI (not only kbar chart but also some buttons and fields).
+## Start develop your trading strategy using CJTrade API
 
-### Kbar aggregation interval consistency
-- For mock securities, YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
-- For sinopac securities, Sinopac supports: N/A (Only 1m kbar)
-- For unified `AccountClient` class requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
-Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
+See [API refernce](https://github.com/jackiesogi/CJTrade/tree/master/doc)
 
 ## Run CJTrade Interactive Shell
 The CJTrade interactive shell (`cjtrade_shell`), is built mainly for users to explore CJTrade API functionalities.
@@ -110,6 +102,26 @@ uv run test --broker=sinopac --group=all
 # Add --delay=n to wait n sec after each test case done to avoid running out of API quota
 ./tests/test_broker_api_stability.py --broker=mock --delay=8
 ```
+
+---
+
+:warning: Below is for development
+
+## Project TODO
+Note that the todos listed here is for those brand new feature, those still don't have a specific file to put into, or those not sure where to put.
+If it is a modification to existing logic, please mark todo directly in that file, and it will be easier to trace using todo tree extension.
+
+- [ ] Add `get_latest_kbar() -> Kbar` or related feature that can fetch exact one kbar.
+- [x] Add abstraction to database interaction and think about what and how to record. (sqlite3 first)
+- [ ] Add candidate manager related feature.
+- [ ] Add `Dash` package and work with stateful UI (not only kbar chart but also some buttons and fields).
+
+### Kbar aggregation interval consistency
+- For mock securities, YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+- For sinopac securities, Sinopac supports: N/A (Only 1m kbar)
+- For unified `AccountClient` class requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
+Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
+
 
 ## For clear, maintainable branch design
 - `master`: Master branch.
