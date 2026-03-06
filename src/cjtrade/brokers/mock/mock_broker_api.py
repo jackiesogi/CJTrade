@@ -9,6 +9,7 @@ from cjtrade.brokers.base_broker_api import BrokerAPIBase
 from cjtrade.core.account_client import AccountClient
 from cjtrade.db.db_api import *
 from cjtrade.db.sqlite import *
+from cjtrade.models.event import *
 from cjtrade.models.kbar import *
 from cjtrade.models.order import *
 from cjtrade.models.position import *
@@ -124,6 +125,13 @@ class MockBrokerAPI(BrokerAPIBase):
                 return self.api._aggregate_kbars_internal(kbars_1m, interval)
             except ValueError as e:
                 raise ValueError(f"Mock broker interval '{interval}' not supported: {e}") from e
+
+    def register_order_callback(self, callback: OrderCallback) -> None:
+        """
+        Placeholder for order callback registration.
+        But mock broker is not suitable for using callback mechanism.
+        """
+        pass
 
     def get_market_movers(self, top_n: int = 10,
                           by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,

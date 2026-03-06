@@ -657,11 +657,11 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 # Test cb registration by CJTrade API
 ## TODO: When market open, test the same scenarios as the test plan for Sinopac native API
-##   - [ ] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
-##   - [ ] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
-##   - [ ] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
-##   - [ ] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
-##   - [ ] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
+##   - [x] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
+##   - [x] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
+##   - [x] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
+##   - [x] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
+##   - [x] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
 if __name__ == "__main__":
     from cjtrade.core.account_client import AccountClient, BrokerType
     from cjtrade.models.order import Order, OrderAction, PriceType, OrderType
