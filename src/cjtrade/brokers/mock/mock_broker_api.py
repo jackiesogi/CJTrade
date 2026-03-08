@@ -148,19 +148,24 @@ class MockBrokerAPI(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
+        # Overwrite created_at
+        order.created_at = self.api.market.get_market_time()["mock_current_time"]
+
         res = self.api.place_order(order)
 
         insert_new_order_to_db(conn=self.db, username=self.username, order=order)
         if res.status == OrderStatus.REJECTED:
-            update_order_status_to_db(conn=self.db, oid=order.id, status="REJECTED")
+            update_order_status_to_db(conn=self.db, oid=order.id, status="REJECTED", updated_at=order.created_at)
         return res
 
 
     def cancel_order(self, order_id: str) -> OrderResult:
         res = self.api.cancel_order(order_id=order_id)
 
+        update_at = self.api.market.get_market_time()["mock_current_time"]
+
         if res.status == OrderStatus.CANCELLED:
-            update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED")
+            update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED", updated_at=update_at)
 
         return res
 
@@ -168,7 +173,8 @@ class MockBrokerAPI(BrokerAPIBase):
         res = []
         # Use list() to avoid mutation during iteration
         for otw_odr in list(self.api.account_state.orders_placed):
-            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED_WAIT_MATCHING")
+            update_at = self.api.market.get_market_time()["mock_current_time"]
+            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
             res.append(self.api.commit_order(otw_odr.id))
         return res
 

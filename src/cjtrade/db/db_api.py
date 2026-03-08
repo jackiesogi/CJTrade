@@ -162,16 +162,17 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
     except Exception as e:
         print(f"Failed to insert order {order.id} in local DB: {e}")
 
-def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str):
+def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str, updated_at: datetime = datetime.utcnow() + timedelta(hours=8)):
     if conn is None:
         return
 
-    curr_ts: datetime = datetime.utcnow() + timedelta(hours=8)
+    updated_at_str = updated_at.strftime("%Y-%m-%d %H:%M:%S")
+
     try:
         sqlcmd = \
         f"""
             UPDATE orders
-            SET status = '{status}', updated_at = '{curr_ts.strftime("%Y-%m-%d %H:%M:%S")}'
+            SET status = '{status}', updated_at = '{updated_at_str}'
             WHERE order_id = '{oid}'
         """
         print(sqlcmd)

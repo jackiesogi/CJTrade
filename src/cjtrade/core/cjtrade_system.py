@@ -30,14 +30,14 @@ log = logging.getLogger("cjtrade.system")
 PRICE_MONITOR_INTERVAL = 120  # seconds
 ANALYSIS_INTERVAL = 240       # seconds
 RISK_MAX_POSITION_PCT = 0.05  # 5% of total equity per trade
-LLM_REPORT_INTERVAL = 900000    # seconds
+LLM_REPORT_INTERVAL = 400000    # seconds
 DISPLAY_TIME_INTERVAL = 60    # seconds
 CHECK_FILL_INTERVAL = 120     # seconds
 WINDOW_SIZE = 100              # Number of price points for Bollinger Bands calculation
 
 SHUTDOWN = False
 BACKTEST_MODE = True         # Start in backtest mode
-BACKTEST_DURATION_DAYS = 60
+BACKTEST_DURATION_DAYS = 365
 BB_MIN_WIDTH_PCT = 0.01     # Minimum Bollinger Bands width (0.5%) to consider valid signals
 
 
@@ -726,6 +726,7 @@ async def async_main():
         'ca_passwd': os.environ.get("CA_PASSWORD", ""),
         'simulation': True,
         'username': os.environ.get('USERNAME', 'user000'),
+        # 'gemini_api_key': os.environ.get("GEMINI_API_KEY", ""),
         # 'speed': 60.0,
     }
 

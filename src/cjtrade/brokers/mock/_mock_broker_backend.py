@@ -92,13 +92,13 @@ class MockBrokerBackend:
             # Find until that date is available for fetching data
             max_attempts = 30
             attempt = 0
-            days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
+            days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
             dt = datetime.now() - timedelta(days=days_back)
 
             while not self.market.fetching_available(dt) and attempt < max_attempts:
                 sleep(0.5)  # Avoid spamming requests too quickly
                 attempt += 1
-                days_back = random.randint(1, 20) if not real_account else random.randint(20, 365)
+                days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
                 dt = datetime.now() - timedelta(days=days_back)
                 # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
 
@@ -274,7 +274,7 @@ class MockBrokerBackend:
                 self.real_account.connect()
 
             # preload 60 day if real_account is provided (realistic mode)
-            day_preload = 60 if self.real_account else 5
+            day_preload = 365 if self.real_account else 5
 
             # This will fetch from `real_account` or `yfinance`
             self.market.create_historical_market(symbol, day_preload)
@@ -796,7 +796,7 @@ class MockBrokerBackend:
                 print(f"Loading historical data for {len(real_positions)} symbols...")
 
                 # preload 60 day if real_account is provided (realistic mode)
-                day_preload = 60 if self.real_account else 5
+                day_preload = 365 if self.real_account else 5
                 for pos in real_positions:
                     if pos.symbol not in self.market.historical_data:
                         self.market.create_historical_market(pos.symbol, day_preload)
