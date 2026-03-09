@@ -43,6 +43,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
         self.simulation = config.get('simulation', True)
         self._connected = False
 
+        self._cached_closed_prices = None
+
         # db connection
         self.username = config.get('username', 'user999')
         self.db_path = config.get('mirror_db_path', f'./data/sinopac.db')
@@ -215,13 +217,23 @@ class SinopacBrokerAPI(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        sinopac_products = [_to_sinopac_product(self.api, p) for p in products]
-        sinopac_snapshots = self.api.snapshots(sinopac_products)
-        cj_snapshots = []
-        for snapshot in sinopac_snapshots:
-            cj_snapshot = _from_sinopac_snapshot(snapshot)
-            cj_snapshots.append(cj_snapshot)
-        return cj_snapshots
+        def fetch():
+            sinopac_products = [_to_sinopac_product(self.api, p) for p in products]
+            sinopac_snapshots = self.api.snapshots(sinopac_products)
+            cj_snapshots = []
+            for snapshot in sinopac_snapshots:
+                cj_snapshot = _from_sinopac_snapshot(snapshot)
+                cj_snapshots.append(cj_snapshot)
+            return cj_snapshots
+
+        # Market open → always fetch
+        if self.is_market_open():
+            return fetch()
+
+        # Market closed
+        if self._cached_closed_prices is None:
+            self._cached_closed_prices = fetch()
+        return self._cached_closed_prices
 
 
     # TODO: Finish this
