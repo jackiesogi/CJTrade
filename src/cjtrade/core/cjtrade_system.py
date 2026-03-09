@@ -4,8 +4,10 @@ Minimal Viable Trading System PoC
 import asyncio
 import logging
 import os
+import random
 import signal
 from asyncio import Queue
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from typing import Dict
@@ -27,19 +29,84 @@ logging.basicConfig(
 )
 log = logging.getLogger("cjtrade.system")
 
-PRICE_MONITOR_INTERVAL = 120  # seconds
-ANALYSIS_INTERVAL = 240       # seconds
-RISK_MAX_POSITION_PCT = 0.05  # 5% of total equity per trade
-LLM_REPORT_INTERVAL = 400000    # seconds
-DISPLAY_TIME_INTERVAL = 60    # seconds
-CHECK_FILL_INTERVAL = 120     # seconds
-WINDOW_SIZE = 100              # Number of price points for Bollinger Bands calculation
+# ==================== System Config ====================
+@dataclass
+class SystemConfig:
+    backtest_mode: bool
+    price_monitor_interval: float
+    analysis_interval: float
+    llm_report_interval: float
+    display_time_interval: float
+    check_fill_interval: float
+    window_size: int
+    bb_min_width_pct: float
+    risk_max_position_pct: float
+    backtest_duration_days: float = 0.0
+
+
+# Live / paper-trade settings
+LIVE_CONFIG = SystemConfig(
+    backtest_mode=False,
+    price_monitor_interval=15,
+    analysis_interval=30,
+    llm_report_interval=300,
+    display_time_interval=40,
+    check_fill_interval=60,
+    window_size=10,
+    bb_min_width_pct=0.01,
+    risk_max_position_pct=0.05,
+)
+
+# Pool of backtest configs — one is randomly selected when backtest_mode=True
+BACKTEST_CONFIGS = [
+    SystemConfig(
+        backtest_mode=True,
+        price_monitor_interval=120,
+        analysis_interval=240,
+        llm_report_interval=500_000,
+        display_time_interval=60,
+        check_fill_interval=120,
+        window_size=100,
+        bb_min_width_pct=0.01,
+        risk_max_position_pct=0.05,
+        backtest_duration_days=365,
+    ),
+    SystemConfig(
+        backtest_mode=True,
+        price_monitor_interval=60,
+        analysis_interval=120,
+        llm_report_interval=500_000,
+        display_time_interval=30,
+        check_fill_interval=60,
+        window_size=50,
+        bb_min_width_pct=0.01,
+        risk_max_position_pct=0.05,
+        backtest_duration_days=180,
+    ),
+]
+
+
+def _apply_config(cfg: SystemConfig) -> None:
+    """Write a SystemConfig into module-level globals used by all coroutines."""
+    global BACKTEST_MODE, PRICE_MONITOR_INTERVAL, ANALYSIS_INTERVAL
+    global LLM_REPORT_INTERVAL, DISPLAY_TIME_INTERVAL, CHECK_FILL_INTERVAL
+    global WINDOW_SIZE, BB_MIN_WIDTH_PCT, RISK_MAX_POSITION_PCT, BACKTEST_DURATION_DAYS
+    BACKTEST_MODE              = cfg.backtest_mode
+    PRICE_MONITOR_INTERVAL     = cfg.price_monitor_interval
+    ANALYSIS_INTERVAL          = cfg.analysis_interval
+    LLM_REPORT_INTERVAL        = cfg.llm_report_interval
+    DISPLAY_TIME_INTERVAL      = cfg.display_time_interval
+    CHECK_FILL_INTERVAL        = cfg.check_fill_interval
+    WINDOW_SIZE                = cfg.window_size
+    BB_MIN_WIDTH_PCT           = cfg.bb_min_width_pct
+    RISK_MAX_POSITION_PCT      = cfg.risk_max_position_pct
+    BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
+
+
+# Apply live config as module-level defaults (overridden in async_main)
+_apply_config(LIVE_CONFIG)
 
 SHUTDOWN = False
-BACKTEST_MODE = True         # Start in backtest mode
-BACKTEST_DURATION_DAYS = 365
-BB_MIN_WIDTH_PCT = 0.01     # Minimum Bollinger Bands width (0.5%) to consider valid signals
-
 
 # ==================== Mock Bollinger Bands ====================
 # TODO: Construct a specific datatype for bollinger band result
@@ -719,6 +786,8 @@ async def async_main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # Need to read from env variables
+    # Here are the settings that exposed to users/operators
     config = {
         'api_key': os.environ.get("API_KEY", ""),
         'secret_key': os.environ.get("SECRET_KEY", ""),
@@ -726,6 +795,7 @@ async def async_main():
         'ca_passwd': os.environ.get("CA_PASSWORD", ""),
         'simulation': True,
         'username': os.environ.get('USERNAME', 'user000'),
+        'backtest_mode': os.environ.get('BACKTEST_MODE', 'y').lower() == 'y',
         # 'gemini_api_key': os.environ.get("GEMINI_API_KEY", ""),
         # 'speed': 60.0,
     }
@@ -746,6 +816,20 @@ async def async_main():
     else:
         log.error(f"Unsupported broker type: {broker_type}")
         return
+
+    # Select and apply system config based on backtest_mode
+    if config.get("backtest_mode"):
+        cfg = random.choice(BACKTEST_CONFIGS)
+        log.info(
+            f"Randomly selected backtest config: "
+            f"window_size={cfg.window_size}, "
+            f"price_monitor_interval={cfg.price_monitor_interval}s, "
+            f"analysis_interval={cfg.analysis_interval}s, "
+            f"duration={cfg.backtest_duration_days}d"
+        )
+    else:
+        cfg = LIVE_CONFIG
+    _apply_config(cfg)
 
     client.connect()
     log.info(f"Connected to {broker_type} broker")

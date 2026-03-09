@@ -293,3 +293,28 @@ class MockBackend_MockMarket:
             'data': pd.DataFrame(),
             'timestamps': None
         }
+
+
+# Basically this class is just for compatibility
+# to provide `is_market_open()` and `get_market_time()`
+class MockBackend_RealMarket:
+    def __init__(self, real_account: AccountClient):
+        self.real_account = real_account
+        self.playback_speed = 1.0  # Real market doesn't use playback speed, but we keep the attribute for interface consistency
+        self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
+        self.mock_init_time = datetime.now()  # For real market, mock_init_time is just the time when we start the simulation
+        self.real_init_time = datetime.now()  # Real market time baseline
+
+    def is_market_open(self) -> bool:
+        return self.real_account.is_market_open()
+
+    def get_market_time(self):
+        return {
+            "real_current_time": datetime.now(),
+            "real_init_time": self.real_init_time,
+            "mock_init_time": self.mock_init_time,
+            "mock_current_time": datetime.now(),  # In real market, mock_current_time is
+            "time_offset": datetime.now() - self.real_init_time,
+            "playback_speed": self.playback_speed,
+            "manual_time_offset": self.manual_time_offset
+        }

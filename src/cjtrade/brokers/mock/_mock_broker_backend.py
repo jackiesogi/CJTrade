@@ -30,12 +30,10 @@ class PriceMode(str, Enum):
                 Pros: Real market behavior, good for backtesting
                 Cons: Limited to past 30 days of minute data
 
-    SYNTHETIC: Generate random prices (future implementation).
-               Pros: Can run indefinitely, customizable volatility
-               Cons: Not realistic, can't verify strategy effectiveness
+    PAPER_TRADE: Use real-time market data from connected real account if available
     """
     HISTORICAL = "historical"
-    SYNTHETIC = "synthetic"  # TODO: Implement in future
+    PAPER_TRADE = "paper_trade"  # TODO: Implement in future
 
 # This is used to simulate a securities account
 # It is for testing purposes, allowing users to test their trading strategies
@@ -73,8 +71,8 @@ class MockBackend_AccountState:
 # Note that the backend API scheme originates from Shioaji's design.
 # TODO: Define data source spec to extract price input layer,
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
-class MockBrokerBackend:
-    def __init__(self, real_account: AccountClient = None, price_mode: PriceMode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
+class MockBrokerBackend_Historical:
+    def __init__(self, real_account: AccountClient = None, price_mode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
         self.price_mode = price_mode
         self.account_state = MockBackend_AccountState()
         self.account_state_default_file = state_file
@@ -85,33 +83,28 @@ class MockBrokerBackend:
             self.real_account.connect()
 
         # Initialize price engine based on mode
-        if price_mode == PriceMode.HISTORICAL:
-            # MockBackend_MockMarket will decide whether to fetch data from real account or yfinance based on `real_account`
-            self.market = MockBackend_MockMarket(real_account=self.real_account)
+        # MockBackend_MockMarket will decide whether to fetch data from real account or yfinance based on `real_account`
+        self.market = MockBackend_MockMarket(real_account=self.real_account)
 
-            # Find until that date is available for fetching data
-            max_attempts = 30
-            attempt = 0
+        # Find until that date is available for fetching data
+        max_attempts = 30
+        attempt = 0
+        days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
+        dt = datetime.now() - timedelta(days=days_back)
+
+        while not self.market.fetching_available(dt) and attempt < max_attempts:
+            sleep(0.5)  # Avoid spamming requests too quickly
+            attempt += 1
             days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
             dt = datetime.now() - timedelta(days=days_back)
+            # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
 
-            while not self.market.fetching_available(dt) and attempt < max_attempts:
-                sleep(0.5)  # Avoid spamming requests too quickly
-                attempt += 1
-                days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
-                dt = datetime.now() - timedelta(days=days_back)
-                # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
+        if attempt >= max_attempts:
+            print("Not able to fetch historical data within `max_attempts`(=30). Please try again")
+            exit(-1)
 
-            if attempt >= max_attempts:
-                print("Not able to fetch historical data within `max_attempts`(=30). Please try again")
-                exit(-1)
-
-            self.market.set_historical_time(datetime.now(), days_back=days_back)
-            self.market.set_playback_speed(playback_speed)
-        else:
-            # Future: self.market = MockBackend_SyntheticMarket()
-            raise NotImplementedError(f"Price mode {price_mode} not yet implemented")
-
+        self.market.set_historical_time(datetime.now(), days_back=days_back)
+        self.market.set_playback_speed(playback_speed)
         self._connected = False
 
     ########################   Functions for mock_broker_api to call (start)   ########################
@@ -778,70 +771,68 @@ class MockBrokerBackend:
         try:
             if not self.real_account.is_connected():
                 self.real_account.connect()
-                print(f"Syncing with real account (price_mode={self.price_mode.value})...")
+            print(f"Syncing with real account (price_mode={self.price_mode.value})...")
 
-                # Get balance from real account
-                self.account_state.balance = self.real_account.get_balance()
+            # Get balance from real account
+            self.account_state.balance = self.real_account.get_balance()
 
-                # Get position structure from real account
-                real_positions = self.real_account.get_positions()
+            # Get position structure from real account
+            real_positions = self.real_account.get_positions()
 
-                if not real_positions:
-                    print("No positions in real account")
-                    self.account_state.positions = []
-                    self.real_account.disconnect()
-                    return
+            if not real_positions:
+                print("No positions in real account")
+                self.account_state.positions = []
+                self.real_account.disconnect()
+                return
 
-                # Preload historical data for all symbols
-                print(f"Loading historical data for {len(real_positions)} symbols...")
+            # Preload historical data for all symbols
+            print(f"Loading historical data for {len(real_positions)} symbols...")
 
-                # preload 60 day if real_account is provided (realistic mode)
-                day_preload = 365 if self.real_account else 5
-                for pos in real_positions:
-                    if pos.symbol not in self.market.historical_data:
-                        self.market.create_historical_market(pos.symbol, day_preload)
+            # preload 60 day if real_account is provided (realistic mode)
+            day_preload = 365 if self.real_account else 5
+            for pos in real_positions:
+                if pos.symbol not in self.market.historical_data:
+                    self.market.create_historical_market(pos.symbol, day_preload)
 
-                    """ Record as initial fill history
-                    We currently assume the position state as a single fill.
-                    """
-                    # TODO: sinopac does NOT provide fill history API!
-                    # while at the same time, in the CJTrade API, we insert a fill history
-                    # to local mirror db when an order is filled. So, it will be quite
-                    # challenging to deal with the data dependency issue if we need to
-                    # import the fill history to `MockBackend`, either (1) it reads from local
-                    # mirror db (which is BAD and not make sense because why would a broker
-                    # backend need the transaction data from an user?), or (2) we just do a
-                    # dependency injection to ONLY pass the history from `MockBrokerAPI` to here.
-                    self.account_state.fill_history.append({
-                        "id": f"init_{pos.symbol}_{int(datetime.now().timestamp())}",
-                        "order_id": "manual_sync",
-                        "symbol": pos.symbol,
-                        "action": "BUY", # Assume buy for initial positions
-                        "quantity": pos.quantity,
-                        "price": pos.avg_cost,
-                        "time": "initial_sync"
-                    })
+                """ Record as initial fill history
+                We currently assume the position state as a single fill.
+                """
+                # TODO: sinopac does NOT provide fill history API!
+                # while at the same time, in the CJTrade API, we insert a fill history
+                # to local mirror db when an order is filled. So, it will be quite
+                # challenging to deal with the data dependency issue if we need to
+                # import the fill history to `MockBackend`, either (1) it reads from local
+                # mirror db (which is BAD and not make sense because why would a broker
+                # backend need the transaction data from an user?), or (2) we just do a
+                # dependency injection to ONLY pass the history from `MockBrokerAPI` to here.
+                self.account_state.fill_history.append({
+                    "id": f"init_{pos.symbol}_{int(datetime.now().timestamp())}",
+                    "order_id": "manual_sync",
+                    "symbol": pos.symbol,
+                    "action": "BUY", # Assume buy for initial positions
+                    "quantity": pos.quantity,
+                    "price": pos.avg_cost,
+                    "time": "initial_sync"
+                })
 
-                # Sync aggregated view
-                # self._reconstruct_positions_from_history()
-                # self.real_account.disconnect()  # <---- TODO: Evaluate if we should disconnect
+            # Sync aggregated view
+            # self._reconstruct_positions_from_history()
+            # self.real_account.disconnect()  # <---- TODO: Evaluate if we should disconnect
 
-                # Update prices using simulation data
-                self._update_position_prices()
+            # Update prices using simulation data
+            self._update_position_prices()
 
-                # Print summary
-                total_value = sum(p.market_value for p in self.account_state.positions)
-                total_pnl = sum(p.unrealized_pnl for p in self.account_state.positions)
-                # print(f"✓ Synced: Balance=${self.account_state.balance:,.0f}, "
-                #       f"Positions={len(self.account_state.positions)}")
-                # for pos in self.account_state.positions:
-                #     print(f"  {pos.symbol}: qty={pos.quantity}, "
-                #           f"cost={pos.avg_cost:.2f}, "
-                #           f"price={pos.current_price:.2f}, "
-                #           f"pnl={pos.unrealized_pnl:+.2f}")
-                # print(f"  Total: Value=${total_value:,.0f}, PnL=${total_pnl:+,.0f}")
-            else:
-                print("Failed to connect to real account for sync")
+            # Print summary
+            total_value = sum(p.market_value for p in self.account_state.positions)
+            total_pnl = sum(p.unrealized_pnl for p in self.account_state.positions)
+            # print(f"✓ Synced: Balance=${self.account_state.balance:,.0f}, "
+            #       f"Positions={len(self.account_state.positions)}")
+            # for pos in self.account_state.positions:
+            #     print(f"  {pos.symbol}: qty={pos.quantity}, "
+            #           f"cost={pos.avg_cost:.2f}, "
+            #           f"price={pos.current_price:.2f}, "
+            #           f"pnl={pos.unrealized_pnl:+.2f}")
+            # print(f"  Total: Value=${total_value:,.0f}, PnL=${total_pnl:+,.0f}")
         except Exception as e:
             print(f"Error syncing with real account: {e}")
 
@@ -886,6 +877,843 @@ class MockBrokerBackend:
                 for pos in self.account_state.positions:
                     if pos.symbol not in self.market.historical_data:
                         self.market.create_historical_market(pos.symbol)
+
+            self.account_state.orders_placed = []
+            for order_data in data.get('orders_placed', []):
+                # Handle order_lot - could be boolean or string
+                order_lot_value = order_data['order_lot']
+                if isinstance(order_lot_value, bool):
+                    order_lot = OrderLot.IntraDayOdd if order_lot_value else OrderLot.Common
+                else:
+                    order_lot = OrderLot(order_lot_value)
+
+                order = Order(
+                    id=order_data['id'],
+                    product=Product(symbol=order_data['symbol']),
+                    action=OrderAction(order_data['action']),
+                    price=order_data['price'],
+                    quantity=order_data['quantity'],
+                    price_type=PriceType(order_data['price_type']),
+                    order_type=OrderType(order_data['order_type']),
+                    order_lot=order_lot,
+                    created_at=datetime.fromisoformat(order_data['created_at'])
+                )
+                self.account_state.orders_placed.append(order)
+
+            self.account_state.orders_committed = []
+            for order_data in data.get('orders_committed', []):
+                # Handle order_lot - could be boolean or string
+                order_lot_value = order_data['order_lot']
+                if isinstance(order_lot_value, bool):
+                    order_lot = OrderLot.IntraDayOdd if order_lot_value else OrderLot.Common
+                else:
+                    order_lot = OrderLot(order_lot_value)
+
+                order = Order(
+                    id=order_data['id'],
+                    product=Product(symbol=order_data['symbol']),
+                    action=OrderAction(order_data['action']),
+                    price=order_data['price'],
+                    quantity=order_data['quantity'],
+                    price_type=PriceType(order_data['price_type']),
+                    order_type=OrderType(order_data['order_type']),
+                    order_lot=order_lot,
+                    created_at=datetime.fromisoformat(order_data['created_at'])
+                )
+                self.account_state.orders_committed.append(order)
+
+            self.account_state.orders_filled = []
+            for order_data in data.get('orders_filled', []):
+                # Handle order_lot - could be boolean or string
+                order_lot_value = order_data['order_lot']
+                if isinstance(order_lot_value, bool):
+                    order_lot = OrderLot.IntraDayOdd if order_lot_value else OrderLot.Common
+                else:
+                    order_lot = OrderLot(order_lot_value)
+
+                order = Order(
+                    id=order_data['id'],
+                    product=Product(symbol=order_data['symbol']),
+                    action=OrderAction(order_data['action']),
+                    price=order_data['price'],
+                    quantity=order_data['quantity'],
+                    price_type=PriceType(order_data['price_type']),
+                    order_type=OrderType(order_data['order_type']),
+                    order_lot=order_lot,
+                    created_at=datetime.fromisoformat(order_data['created_at'])
+                )
+                self.account_state.orders_filled.append(order)
+
+            self.account_state.orders_cancelled = []
+            for order_data in data.get('orders_cancelled', []):
+                # Handle order_lot - could be boolean or string
+                order_lot_value = order_data['order_lot']
+                if isinstance(order_lot_value, bool):
+                    order_lot = OrderLot.IntraDayOdd if order_lot_value else OrderLot.Common
+                else:
+                    order_lot = OrderLot(order_lot_value)
+
+                order = Order(
+                    id=order_data['id'],
+                    product=Product(symbol=order_data['symbol']),
+                    action=OrderAction(order_data['action']),
+                    price=order_data['price'],
+                    quantity=order_data['quantity'],
+                    price_type=PriceType(order_data['price_type']),
+                    order_type=OrderType(order_data['order_type']),
+                    order_lot=order_lot,
+                    created_at=datetime.fromisoformat(order_data['created_at'])
+                )
+                self.account_state.orders_cancelled.append(order)
+
+            self.account_state.all_order_status = {
+                order_id: OrderStatus(status)
+                for order_id, status in data.get('all_order_status', {}).items()
+            }
+
+            # Clean up cancelled orders older than 30 minutes
+            now = datetime.now()
+            self.account_state.orders_cancelled = [
+                order for order in self.account_state.orders_cancelled
+                if (now - order.created_at).total_seconds() < 1800  # 30 minutes = 1800 seconds
+            ]
+            # Remove from all_order_status as well
+            cancelled_order_ids = [order.id for order in self.account_state.orders_cancelled]
+            self.account_state.all_order_status = {
+                order_id: status
+                for order_id, status in self.account_state.all_order_status.items()
+                if order_id in cancelled_order_ids or status != OrderStatus.CANCELLED
+            }
+
+        # Update position prices from simulation (consistent with _sync_with_real_account)
+        if self.account_state.positions:
+            self._update_position_prices()
+
+    def _create_fallback_snapshot(self, symbol: str, timestamp: datetime) -> Snapshot:
+        import random
+        base_price = 100.0 + random.uniform(-10, 10)
+        price_change = random.uniform(-2, 2)
+
+        return Snapshot(
+            symbol=symbol,
+            exchange="TSE",
+            timestamp=timestamp,
+            open=base_price,
+            close=base_price + price_change,
+            high=base_price + abs(price_change) + random.uniform(0, 1),
+            low=base_price - abs(price_change) - random.uniform(0, 1),
+            volume=random.randint(1000, 100000),
+            average_price=base_price + price_change / 2,
+            action=OrderAction.BUY if price_change >= 0 else OrderAction.SELL,
+            buy_price=base_price + price_change,
+            buy_volume=random.randint(500, 50000),
+            sell_price=base_price + price_change + 0.5,
+            sell_volume=random.randint(500, 50000),
+        )
+
+    ### TODO: Use these function for interval that yfinance doesn't support
+    ### YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+    ### Sinopac supports: N/A (Only 1m kbar)
+    ### Broker interface requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
+    def _aggregate_kbars_internal(self, kbars: List[Kbar], target_interval: str) -> List[Kbar]:
+        if not kbars:
+            return []
+
+        # Simple aggregation for common intervals
+        interval_minutes = {
+            "3m": 3, "6m": 6, "12m": 12, "20m": 20, "45m": 45
+        }
+
+        if target_interval not in interval_minutes:
+            raise ValueError(f"Mock broker: Unsupported interval for aggregation: {target_interval}")
+
+        target_mins = interval_minutes[target_interval]
+
+        # Group kbars by time windows and aggregate
+        import pandas as pd
+
+        data = {
+            'timestamp': [k.timestamp for k in kbars],
+            'open': [k.open for k in kbars],
+            'high': [k.high for k in kbars],
+            'low': [k.low for k in kbars],
+            'close': [k.close for k in kbars],
+            'volume': [k.volume for k in kbars],
+        }
+        df = pd.DataFrame(data)
+        df.set_index('timestamp', inplace=True)
+
+        # Aggregate with pandas resample
+        freq = f"{target_mins}min"  # Use 'min' instead of deprecated 'T'
+        aggregated = df.resample(freq).agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+
+        # Convert back to Kbar objects
+        result = []
+        for timestamp, row in aggregated.iterrows():
+            kbar = Kbar(
+                timestamp=timestamp.to_pydatetime(),
+                open=round(row['open'], 2),
+                high=round(row['high'], 2),
+                low=round(row['low'], 2),
+                close=round(row['close'], 2),
+                volume=int(row['volume'])
+            )
+            result.append(kbar)
+
+        return result
+    ########################   Internal functions (end)   ##########################
+
+
+class MockBrokerBackend_PaperTrade:
+    def __init__(self, real_account: AccountClient = None, price_mode = PriceMode.PAPER_TRADE, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
+        self.price_mode = price_mode
+        self.account_state = MockBackend_AccountState()
+        self.account_state_default_file = state_file
+
+        self.real_account = real_account
+        if self.real_account and not self.real_account.is_connected():
+            # MockMarket will need to fetch data, so we do an early connection
+            self.real_account.connect()
+
+        # Initialize price engine based on mode
+        self.market = MockBackend_RealMarket(real_account=self.real_account)
+
+        # Local kbar buffer for fill detection: {symbol: [Kbar, ...]}
+        # Refreshed each time _check_if_any_order_filled() is called.
+        self._kbar_buffer: Dict[str, List[Kbar]] = {}
+
+        self._connected = False
+
+    ########################   Functions for mock_broker_api to call (start)   ########################
+    def login(self) -> bool:
+        try:
+            self._connected = True
+
+            if self.real_account and not os.path.exists(self.account_state_default_file):
+                self._sync_with_real_account()
+            else:
+                self._sync_with_mock_account_file()
+
+            print("Simulation environment started")
+            return True
+        except Exception as e:
+            print(f"Failed to start simulation environment: {e}")
+            self._connected = False
+            return False
+
+    def logout(self):
+        if self.real_account:
+            self.real_account.disconnect()
+        with open(self.account_state_default_file, 'w') as f:
+            import json
+            data = {
+                "balance": self.account_state.balance,
+                "positions": [
+                    {
+                        "symbol": pos.symbol,
+                        "quantity": pos.quantity,
+                        "avg_cost": pos.avg_cost,
+                        "current_price": pos.current_price,
+                        "market_value": pos.market_value,
+                        "unrealized_pnl": pos.unrealized_pnl
+                    } for pos in self.account_state.positions
+                ],
+                "orders_placed": [
+                    {
+                        "id": order.id,
+                        "symbol": order.product.symbol,
+                        "action": order.action.value,
+                        "price": order.price,
+                        "quantity": order.quantity,
+                        "price_type": order.price_type.value,
+                        "order_type": order.order_type.value,
+                        "order_lot": order.order_lot,
+                        "created_at": order.created_at.isoformat()
+                    } for order in self.account_state.orders_placed
+                ],
+                "orders_committed": [
+                    {
+                        "id": order.id,
+                        "symbol": order.product.symbol,
+                        "action": order.action.value,
+                        "price": order.price,
+                        "quantity": order.quantity,
+                        "price_type": order.price_type.value,
+                        "order_type": order.order_type.value,
+                        "order_lot": order.order_lot,
+                        "created_at": order.created_at.isoformat()
+                    } for order in self.account_state.orders_committed
+                ],
+                "orders_filled": [
+                    {
+                        "id": order.id,
+                        "symbol": order.product.symbol,
+                        "action": order.action.value,
+                        "price": order.price,
+                        "quantity": order.quantity,
+                        "price_type": order.price_type.value,
+                        "order_type": order.order_type.value,
+                        "order_lot": order.order_lot,
+                        "created_at": order.created_at.isoformat()
+                    } for order in self.account_state.orders_filled
+                ],
+                "orders_cancelled": [
+                    {
+                        "id": order.id,
+                        "symbol": order.product.symbol,
+                        "action": order.action.value,
+                        "price": order.price,
+                        "quantity": order.quantity,
+                        "price_type": order.price_type.value,
+                        "order_type": order.order_type.value,
+                        "order_lot": order.order_lot,
+                        "created_at": order.created_at.isoformat()
+                    } for order in self.account_state.orders_cancelled
+                ],
+                "all_order_status": {
+                    order_id: status.value
+                    for order_id, status in self.account_state.all_order_status.items()
+                },
+                "fill_history": self.account_state.fill_history
+            }
+            json.dump(data, f, indent=4)
+        self._connected = False
+        print("Simulation environment stopped")
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def account_balance(self) -> float:
+        return self.account_state.balance
+
+    # TODO: Use same data from the MockBackend_MockMarket
+    # TODO: Enable kbar aggregation for real account data source like what .snapshot() does
+    # TODO: Move the market data generation logic to MockBackend_MockMarket
+    # since kbars() right now are separate from the data used in snapshot()
+    # it does not have time progression simulation
+    def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
+        yf_symbol = f"{symbol}.TW"
+
+        try:
+            # Download data from yfinance for the specified range
+            data = yf.download(yf_symbol, start=start, end=end, interval=interval, auto_adjust=True, progress=False)
+
+            if data.empty:
+                print(f"No data available for {symbol} in range {start} to {end}")
+                return []
+
+            if not isinstance(data.index, pd.DatetimeIndex):
+                data.index = pd.to_datetime(data.index)
+            if data.index.tz is not None:
+                # If yfinance data is UTC, need to convert to Taiwan time
+                if str(data.index.tz) in ['UTC', 'UTC+00:00']:
+                    import pytz
+                    taiwan_tz = pytz.timezone('Asia/Taipei')
+                    data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
+                else:
+                    data.index = data.index.tz_localize(None)
+
+            kbars = []
+
+            for timestamp, row in data.iterrows():
+                kbar = Kbar(
+                    timestamp=timestamp.to_pydatetime(),
+                    open=round(row['Open'].item(), 2),
+                    high=round(row['High'].item(), 2),
+                    low=round(row['Low'].item(), 2),
+                    close=round(row['Close'].item(), 2),
+                    volume=int(row['Volume'].item())
+                )
+                kbars.append(kbar)
+
+            # print(f"Loaded {len(kbars)} kbars for {symbol}")
+            return kbars
+
+        except Exception as e:
+            print(f"Error loading kbars for {symbol}: {e}")
+            return []
+
+
+    # Note: snapshot() needs to simulate time progression
+    # TODO: Move the market data generation logic to MockBackend_MockMarket
+    def snapshot(self, symbol: str) -> Snapshot:
+        self._check_if_any_order_filled()
+        return self.real_account.get_snapshots([Product(symbol=symbol)])[0]
+
+
+    def list_positions(self) -> List[Position]:
+        """Get current positions by aggregating fill_history and updating prices."""
+        # 1. Reconstruct positions from fill history
+        self._reconstruct_positions_from_history()
+
+        # 2. Update prices for the newly aggregated positions
+        self._update_position_prices()
+
+        return self.account_state.positions
+
+
+    # Just to clarify, `list_trades()` is for lsodr (list order).
+    # since last time I think this might be a duplicate of `list_positions()`
+    # which is totally wrong :)
+    def list_trades(self) -> List[Trade]:
+        self._check_if_any_order_filled()
+
+        # return all orders (placed / committed / filled / cancelled)
+        trades = []
+        all_orders = (self.account_state.orders_placed +
+                     self.account_state.orders_committed +
+                     self.account_state.orders_filled +
+                     self.account_state.orders_cancelled)
+        for order in all_orders:
+            order_info = Trade(
+                id=order.id,
+                symbol=order.product.symbol,
+                action=order.action.value,
+                quantity=order.quantity,
+                price=order.price,
+                status=self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
+                order_type=order.order_type.value,
+                price_type=order.price_type.value,
+                order_lot=order.order_lot,
+                order_datetime=order.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                deals=0, # TODO: Not sure what this field means in SJ
+                ordno=order.id
+            )
+            trades.append(order_info)
+        return trades
+
+    # TODO: Check with account balance or trading limit before placing order
+    def place_order(self, order: Order) -> OrderResult:
+        if not self._is_valid_price(order):
+            return REJECTED_ORDER_NEGATIVE_PRICE(order)
+        if not self._is_valid_quantity(order):
+            return REJECTED_ORDER_NEGATIVE_QUANTITY(order)
+
+        # Check account balance / inventory stock / trading limit per day
+        if not self._is_within_trading_limit(order):
+            return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
+
+        if order.action == OrderAction.BUY:
+            if not self._is_sufficient_account_balance(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_BALANCE(order)
+        elif order.action == OrderAction.SELL:
+            if not self._is_sufficient_account_inventory(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order)
+
+        # This is for checking order fill status later
+        order.opt_field['last_check_for_fill'] = self.market.get_market_time()['mock_current_time']
+
+        self.account_state.orders_placed.append(order)
+        self.account_state.all_order_status[order.id] = OrderStatus.PLACED
+        return PLACED_ORDER_STANDARD(order)
+
+    # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
+    def commit_order(self, order_id: str) -> OrderResult:
+        order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
+        if not order:
+            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
+
+        self.account_state.orders_committed.append(order)
+        self.account_state.orders_placed.remove(order)
+
+        # Status depends on market hours (mimics Sinopac behavior)
+        if self.market.is_market_open():
+            # Market open: order immediately committed to exchange
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MATCHING
+            status = OrderStatus.COMMITTED_WAIT_MATCHING
+        else:
+            # Market closed: order pending, will be sent when market opens
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+            status = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+
+        res = OrderResult(
+            status=status,
+            message="Order committed successfully." if status == OrderStatus.COMMITTED_WAIT_MATCHING else "Order pending market open.",
+            metadata={"market_open": self.market.is_market_open()},
+            linked_order=order.id
+        )
+        # print(res)
+        return res
+
+    def cancel_order(self, order_id: str) -> OrderResult:
+        """Cancel an order that is not yet filled.
+
+        Args:
+            order_id: ID of the order to cancel
+
+        Returns:
+            OrderResult with success status
+        """
+        # Check if order exists and is not filled
+        order_to_cancel = None
+        source_list = None
+
+        # Search in orders_placed
+        for order in self.account_state.orders_placed:
+            if order.id == order_id:
+                order_to_cancel = order
+                source_list = self.account_state.orders_placed
+                break
+
+        # Search in orders_committed if not found
+        if not order_to_cancel:
+            for order in self.account_state.orders_committed:
+                if order.id == order_id:
+                    order_to_cancel = order
+                    source_list = self.account_state.orders_committed
+                    break
+
+        # Check if order is already filled
+        if not order_to_cancel:
+            for order in self.account_state.orders_filled:
+                if order.id == order_id:
+                    return REJECTED_ORDER_HAS_BEEN_FILLED(order)
+
+        # Order not found at all
+        if not order_to_cancel:
+            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order_id)
+
+        # Remove from source list and add to cancelled
+        source_list.remove(order_to_cancel)
+        self.account_state.orders_cancelled.append(order_to_cancel)
+
+        # Update order status
+        self.account_state.all_order_status[order_id] = OrderStatus.CANCELLED
+
+        print(f"Order {order_id} cancelled successfully")
+        return CANCELLED_ORDER_STANDARD(order_to_cancel)
+
+    ########################   Functions for mock_broker_api to call (end)   #########################
+
+
+
+    ########################   Internal functions (start)   ########################
+    def _is_sufficient_account_balance(self, order: Order) -> bool:
+        # Check if the account has enough balance to place the order
+        required_amount = order.price * order.quantity
+        if self.account_state.balance >= required_amount:
+            return True
+        else:
+            # print(f"Insufficient balance to place BUY order {order.id}: requires {required_amount}, available {self.account_state.balance}")
+            return False
+
+    def _is_sufficient_account_inventory(self, order: Order) -> bool:
+        # Check if the account has enough inventory to place the SELL order
+        position = next((pos for pos in self.account_state.positions if pos.symbol == order.product.symbol), None)
+        if position and position.quantity >= order.quantity:
+            return True
+        else:
+            available_qty = position.quantity if position else 0
+            # print(f"Insufficient inventory to place SELL order {order.id}: requires {order.quantity}, available {available_qty}")
+            return False
+
+    # Currently we only check if the price is positive
+    def _is_valid_price(self, order: Order) -> bool:
+        return order.price > 0
+
+    def _is_valid_quantity(self, order: Order) -> bool:
+        return order.quantity > 0
+
+    def _is_within_trading_limit(self, order: Order) -> bool:
+        # Default trading limit per day
+        TRADE_LIMIT = 1_000_000.0  # 1 million
+        # Accumulate today's traded cost for all orders
+        odrs = self.list_trades()
+        today_str = self.market.get_market_time()['mock_current_time'].strftime('%Y-%m-%d')
+        sum = 0.0
+        for odr in odrs:
+            # Consider committed + filled + this order
+            if odr.status in [OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.FILLED] and odr.order_datetime.startswith(today_str):
+                sum += odr.price * odr.quantity
+        return sum + (order.price * order.quantity) <= TRADE_LIMIT
+
+    def _refresh_kbar_buffer(self, symbol: str):
+        """Fetch today's 1-min kbars from real broker and update the local buffer.
+
+        Sinopac's minimum kbar granularity is 1 day (daily), but get_kbars() with
+        interval='1m' returns intraday minute kbars for today if called with today's date.
+        We always fetch start=today so the buffer covers the full trading session so far.
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        try:
+            kbars = self.real_account.get_kbars(
+                Product(symbol=symbol),
+                start=today,
+                end=tomorrow,
+                interval="1m"
+            )
+            self._kbar_buffer[symbol] = kbars if kbars else []
+        except Exception as e:
+            print(f"[PaperTrade] Failed to refresh kbar buffer for {symbol}: {e}")
+            self._kbar_buffer.setdefault(symbol, [])
+
+    def _reconstruct_positions_from_history(self):
+        """Reconstruct the aggregated positions list from fill_history.
+
+        Uses weighted average cost for buys only. Sells reduce quantity
+        but do not affect the average cost of remaining shares.
+        """
+        if not self.account_state.fill_history:
+            self.account_state.positions = []
+            return
+
+        from collections import defaultdict
+        sym_fills = defaultdict(list)
+        for fill in self.account_state.fill_history:
+            sym_fills[fill['symbol']].append(fill)
+
+        new_positions = []
+        for sym, fills in sym_fills.items():
+            net_qty = 0
+            total_buy_cost = 0.0
+            total_buy_qty = 0
+
+            # Process fills in chronological order
+            for f in fills:
+                q = f['quantity']
+                p = f['price']
+
+                if q > 0:  # Buy
+                    total_buy_cost += (q * p)
+                    total_buy_qty += q
+                    net_qty += q
+                else:  # Sell (q is negative)
+                    net_qty += q  # Reduce quantity
+
+            if net_qty == 0:
+                continue
+
+            # Average cost is based only on buy transactions
+            if total_buy_qty > 0:
+                avg_cost = total_buy_cost / total_buy_qty
+            else:
+                avg_cost = 0.0
+
+            new_positions.append(Position(
+                symbol=sym,
+                quantity=net_qty,
+                avg_cost=round(avg_cost, 2),
+                current_price=round(avg_cost, 2), # Placeholder until price update
+                market_value=round(net_qty * avg_cost, 1),
+                unrealized_pnl=0.0
+            ))
+
+        self.account_state.positions = new_positions
+
+    def _check_if_any_order_filled(self) -> bool:
+        """Check committed orders against today's real-market kbars.
+
+        Strategy (mirrors Historical backend but uses real broker kbars as buffer):
+        - For each committed order, fetch today's 1-min kbars via real_account.
+        - Only compare kbars whose timestamp > order.opt_field['last_check_for_fill'].
+        - BUY: filled if any kbar.close <= target_price
+        - SELL: filled if any kbar.close >= target_price
+        - After checking, update 'last_check_for_fill' to the latest kbar timestamp.
+        """
+        if not self.account_state.orders_committed:
+            return False
+
+        # Refresh kbar buffer for every symbol that has a committed order
+        symbols = set(odr.product.symbol for odr in self.account_state.orders_committed)
+        for symbol in symbols:
+            self._refresh_kbar_buffer(symbol)
+
+        committed_copy = list(self.account_state.orders_committed)
+        any_filled = False
+
+        for odr in committed_copy:
+            target_price = odr.price
+            last_check_time: datetime = odr.opt_field.get('last_check_for_fill', odr.created_at)
+
+            kbars: List[Kbar] = self._kbar_buffer.get(odr.product.symbol, [])
+
+            # Only look at kbars newer than the last check
+            new_kbars = [k for k in kbars if k.timestamp > last_check_time]
+
+            if not new_kbars:
+                continue
+
+            # Advance last_check_for_fill to the end of inspected window regardless of fill
+            odr.opt_field['last_check_for_fill'] = new_kbars[-1].timestamp
+
+            fill_kbar: Kbar | None = None
+            for kbar in new_kbars:
+                if odr.action == OrderAction.BUY and kbar.close <= target_price:
+                    fill_kbar = kbar
+                    break
+                elif odr.action == OrderAction.SELL and kbar.close >= target_price:
+                    fill_kbar = kbar
+                    break
+
+            if fill_kbar is None:
+                continue
+
+            # ---- Order is filled ----
+            try:
+                self.account_state.orders_filled.append(odr)
+                if odr in self.account_state.orders_committed:
+                    self.account_state.orders_committed.remove(odr)
+                self.account_state.all_order_status[odr.id] = OrderStatus.FILLED
+
+                print(f"[PaperTrade] Order {odr.id} filled (target={target_price}) "
+                      f"at kbar {fill_kbar.timestamp.strftime('%Y-%m-%d %H:%M')} "
+                      f"close={fill_kbar.close}")
+
+                qty_signed = odr.quantity if odr.action == OrderAction.BUY else -odr.quantity
+                self.account_state.balance -= (qty_signed * odr.price)
+
+                self.account_state.fill_history.append({
+                    "id": f"fill_{odr.id}_{int(datetime.now().timestamp())}",
+                    "order_id": odr.id,
+                    "symbol": odr.product.symbol,
+                    "action": odr.action.value,
+                    "quantity": qty_signed,
+                    "price": odr.price,
+                    "time": fill_kbar.timestamp.isoformat()
+                })
+
+                self._reconstruct_positions_from_history()
+                any_filled = True
+            except Exception as e:
+                print(f"[PaperTrade] Error filling order {odr.id}: {e}")
+
+        return any_filled
+
+    def _trigger_order_matching(self):
+        """
+        Manaully trigger order matching process.
+
+        Because we do not have an event-driven exchange simulation,
+        this function should be called periodically to check for order fills.
+        otherwise it will only be checked when `snapshot()` is called. (_check_if_any_order_filled)
+        """
+        self._check_if_any_order_filled()
+
+    def _update_position_prices(self):
+        """Update current_price, market_value, and unrealized_pnl for all positions.
+
+        This method should be called whenever you need fresh prices from the simulation.
+        It doesn't modify the position structure (symbol, quantity, avg_cost),
+        only updates the price-related fields.
+        """
+        if not self.account_state.positions:
+            return
+
+        updated_positions = []
+        for pos in self.account_state.positions:
+            try:
+                # Get current price from simulation environment
+                snapshot = self.snapshot(pos.symbol)
+                simulated_price = round(snapshot.close, 2)  # Round to 2 decimal places
+
+                # Create updated position with new price
+                updated_pos = Position(
+                    symbol=pos.symbol,
+                    quantity=pos.quantity,
+                    avg_cost=round(pos.avg_cost, 2),  # Keep original cost basis, rounded
+                    current_price=simulated_price,  # Update with simulated price
+                    market_value=round(pos.quantity * simulated_price, 1),
+                    unrealized_pnl=round((simulated_price - pos.avg_cost) * pos.quantity, 1)
+                )
+                updated_positions.append(updated_pos)
+
+            except Exception as e:
+                # If price update fails, keep original position
+                print(f"Warning: Failed to update price for {pos.symbol}: {e}")
+                updated_positions.append(pos)
+
+        self.account_state.positions = updated_positions
+
+    def _sync_with_real_account(self):
+        """Sync position structure from real account (paper-trade mode).
+
+        Connects if needed, fetches real balance and positions, seeds fill_history,
+        then reconstructs positions and updates prices via live kbar buffer.
+        No historical data preload.
+        """
+        if not self.real_account:
+            return
+
+        try:
+            if not self.real_account.is_connected():
+                self.real_account.connect()
+
+            print("[PaperTrade] Syncing with real account...")
+
+            # Get balance from real account
+            self.account_state.balance = self.real_account.get_balance()
+
+            # Get position structure from real account
+            real_positions = self.real_account.get_positions()
+
+            if not real_positions:
+                print("[PaperTrade] No positions in real account")
+                self.account_state.positions = []
+                return
+
+            for pos in real_positions:
+                """ Record as initial fill history
+                We currently assume the position state as a single fill.
+                """
+                # TODO: sinopac does NOT provide fill history API.
+                # Dependency-inject fill history from MockBrokerAPI if needed.
+                self.account_state.fill_history.append({
+                    "id": f"init_{pos.symbol}_{int(datetime.now().timestamp())}",
+                    "order_id": "manual_sync",
+                    "symbol": pos.symbol,
+                    "action": "BUY",  # Assume buy for initial positions
+                    "quantity": pos.quantity,
+                    "price": pos.avg_cost,
+                    "time": "initial_sync"
+                })
+
+            self._reconstruct_positions_from_history()
+            self._update_position_prices()
+
+        except ConnectionError:
+            print("[PaperTrade] Failed to connect to real account for sync")
+        except Exception as e:
+            print(f"[PaperTrade] Error syncing with real account: {e}")
+
+    def _sync_with_mock_account_file(self):
+        """Load account state from JSON file and update prices via live kbars.
+
+        Strategy:
+        1. Load balance and fill_history from file
+        2. Reconstruct positions from fill history
+        3. Call _update_position_prices() to refresh prices (no historical preload)
+        """
+        import json
+        from cjtrade.models.product import Product, ProductType, Exchange
+        from cjtrade.models.order import OrderAction, PriceType, OrderType, OrderLot
+
+        if not os.path.exists(self.account_state_default_file):
+            default_data = {
+                "balance": 100_000.0,
+                "positions": [],
+                "orders_placed": [],
+                "orders_committed": [],
+                "orders_filled": [],
+                "orders_cancelled": [],
+                "all_order_status": {}
+            }
+            with open(self.account_state_default_file, 'w') as f:
+                json.dump(default_data, f, indent=4)
+
+        with open(self.account_state_default_file, 'r') as f:
+            data = json.load(f)
+            self.account_state.balance = data.get('balance', 100_000.0)
+            self.account_state.fill_history = data.get('fill_history', [])
+
+            # Compute positions from fill history
+            self._reconstruct_positions_from_history()
 
             self.account_state.orders_placed = []
             for order_data in data.get('orders_placed', []):

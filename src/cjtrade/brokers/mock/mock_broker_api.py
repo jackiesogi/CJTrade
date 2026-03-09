@@ -18,7 +18,8 @@ from cjtrade.models.quote import *
 from cjtrade.models.rank_type import RankType
 from cjtrade.models.trade import *
 
-from ._mock_broker_backend import MockBrokerBackend
+from ._mock_broker_backend import MockBrokerBackend_Historical
+from ._mock_broker_backend import MockBrokerBackend_PaperTrade
 # from ._simulation_env import SimulationEnvironment
 
 # MockBrokerAPI will not forward `place_order()` call to the real broker,
@@ -30,9 +31,13 @@ class MockBrokerAPI(BrokerAPIBase):
 
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
         self.mock_playback_speed = config.get('speed', 1.0)
+        self.backtest_mode = config.get('backtest_mode', True)
         # Note that state_file is used to persist the mock broker's account state (positions, orders, etc.) across sessions.
         self.state_file = config.get('state_file', "mock_account_state.json")
-        self.api = MockBrokerBackend(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file)
+        if self.backtest_mode:
+            self.api = MockBrokerBackend_Historical(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file)
+        else:
+            self.api = MockBrokerBackend_PaperTrade(real_account=self.real_account, playback_speed=1.0, state_file=self.state_file)
         self._connected = False
 
         # db connection
