@@ -32,10 +32,11 @@ class MockBrokerAPI(BrokerAPIBase):
         self.real_account = config.get('real_account', None)  # AccountClient instance or None
         self.mock_playback_speed = config.get('speed', 1.0)
         self.backtest_mode = config.get('backtest_mode', True)
+        self.backtest_duration = config.get('backtest_duration', 3)
         # Note that state_file is used to persist the mock broker's account state (positions, orders, etc.) across sessions.
         self.state_file = config.get('state_file', "mock_account_state.json")
         if self.backtest_mode:
-            self.api = MockBrokerBackend_Historical(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file)
+            self.api = MockBrokerBackend_Historical(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file, num_days_preload=self.backtest_duration)
         else:
             self.api = MockBrokerBackend_PaperTrade(real_account=self.real_account, playback_speed=1.0, state_file=self.state_file)
         self._connected = False

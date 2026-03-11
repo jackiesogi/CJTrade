@@ -61,51 +61,49 @@ class MockBackend_AccountState:
         self.all_order_status: Dict[str, OrderStatus] = {}
         self.fill_history: List[Dict] = []         # Every transaction: {symbol, quantity, price, time}
 
-# TODO: Consider to add exchange simulation when all time progression features are ready
-# class MockBackend_StockExchange:
-#     def __init__(self):
-#         self.orders_filled: List[Order] = []        # Orders already filled
-
-
 # Backend = Maintain Account State + Provide Market Data
 # Note that the backend API scheme originates from Shioaji's design.
 # TODO: Define data source spec to extract price input layer,
 # to make it available for any kind of data (not only just calling `_create_historical_market`)
 class MockBrokerBackend_Historical:
-    def __init__(self, real_account: AccountClient = None, price_mode = PriceMode.HISTORICAL, playback_speed: float = 1.0, state_file: str = "mock_account_state.json"):
-        self.price_mode = price_mode
-        self.account_state = MockBackend_AccountState()
-        self.account_state_default_file = state_file
-
+    def __init__(self, real_account: AccountClient = None,
+                 price_mode = PriceMode.HISTORICAL,
+                 playback_speed: float = 1.0,
+                 state_file: str = "mock_account_state.json",
+                 num_days_preload: int = 3,                    # In backtest mode, nums_day_preload = backtest_duration
+                 skip_data_preload: bool = False):             # True: Lazy load; False: Preload
         self.real_account = real_account
         if self.real_account and not self.real_account.is_connected():
-            # MockMarket will need to fetch data, so we do an early connection
-            self.real_account.connect()
-
+            self.real_account.connect()  # Early connection for fetching data
         # Initialize price engine based on mode
         # MockBackend_MockMarket will decide whether to fetch data from real account or yfinance based on `real_account`
         self.market = MockBackend_MockMarket(real_account=self.real_account)
+        self.market.set_playback_speed(playback_speed)
+        self.price_mode = price_mode
+        self.account_state = MockBackend_AccountState()
+        self.account_state_default_file = state_file
+        self.skip_data_preload = skip_data_preload
+        self.num_days_preload = num_days_preload
+        self._connected = False
+
+        attempt, max_attempts = 0, 30
+
+        # (T - num_days_preload) ~ T, where T is the latest trading day
+        days_back = random.randint(num_days_preload, 20) if not real_account else random.randint(num_days_preload, 1300)  # Earliest: 3.5 years back
+        print(f"num_days_preload: {num_days_preload}, randomly selected days_back for historical data start: {days_back} !!!!!")
+        dt = datetime.now() - timedelta(days=days_back)
+        sleep(10)
 
         # Find until that date is available for fetching data
-        max_attempts = 30
-        attempt = 0
-        days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
-        dt = datetime.now() - timedelta(days=days_back)
-
         while not self.market.fetching_available(dt) and attempt < max_attempts:
             sleep(0.5)  # Avoid spamming requests too quickly
             attempt += 1
-            days_back = random.randint(1, 20) if not real_account else random.randint(400, 1300)
+            days_back = random.randint(num_days_preload, 20)
             dt = datetime.now() - timedelta(days=days_back)
-            # print(f"Attempt {attempt}/{max_attempts}: Trying {days_back} days back ({dt.strftime('%Y-%m-%d')})")
-
         if attempt >= max_attempts:
             print("Not able to fetch historical data within `max_attempts`(=30). Please try again")
             exit(-1)
-
         self.market.set_historical_time(datetime.now(), days_back=days_back)
-        self.market.set_playback_speed(playback_speed)
-        self._connected = False
 
     ########################   Functions for mock_broker_api to call (start)   ########################
     def login(self) -> bool:
@@ -267,7 +265,7 @@ class MockBrokerBackend_Historical:
                 self.real_account.connect()
 
             # preload 60 day if real_account is provided (realistic mode)
-            day_preload = 365 if self.real_account else 5
+            day_preload = self.num_days_preload if self.real_account else 5
 
             # This will fetch from `real_account` or `yfinance`
             self.market.create_historical_market(symbol, day_preload)
@@ -789,9 +787,9 @@ class MockBrokerBackend_Historical:
             print(f"Loading historical data for {len(real_positions)} symbols...")
 
             # preload 60 day if real_account is provided (realistic mode)
-            day_preload = 365 if self.real_account else 5
+            day_preload = self.num_days_preload if self.real_account else 5
             for pos in real_positions:
-                if pos.symbol not in self.market.historical_data:
+                if not self.skip_data_preload and pos.symbol not in self.market.historical_data:
                     self.market.create_historical_market(pos.symbol, day_preload)
 
                 """ Record as initial fill history
@@ -820,19 +818,19 @@ class MockBrokerBackend_Historical:
             # self.real_account.disconnect()  # <---- TODO: Evaluate if we should disconnect
 
             # Update prices using simulation data
-            self._update_position_prices()
-
-            # Print summary
-            total_value = sum(p.market_value for p in self.account_state.positions)
-            total_pnl = sum(p.unrealized_pnl for p in self.account_state.positions)
-            # print(f"✓ Synced: Balance=${self.account_state.balance:,.0f}, "
-            #       f"Positions={len(self.account_state.positions)}")
-            # for pos in self.account_state.positions:
-            #     print(f"  {pos.symbol}: qty={pos.quantity}, "
-            #           f"cost={pos.avg_cost:.2f}, "
-            #           f"price={pos.current_price:.2f}, "
-            #           f"pnl={pos.unrealized_pnl:+.2f}")
-            # print(f"  Total: Value=${total_value:,.0f}, PnL=${total_pnl:+,.0f}")
+            if not self.skip_data_preload:
+                self._update_position_prices()
+                # Print summary
+                # total_value = sum(p.market_value for p in self.account_state.positions)
+                # total_pnl = sum(p.unrealized_pnl for p in self.account_state.positions)
+                # print(f"✓ Synced: Balance=${self.account_state.balance:,.0f}, "
+                #       f"Positions={len(self.account_state.positions)}")
+                # for pos in self.account_state.positions:
+                #     print(f"  {pos.symbol}: qty={pos.quantity}, "
+                #           f"cost={pos.avg_cost:.2f}, "
+                #           f"price={pos.current_price:.2f}, "
+                #           f"pnl={pos.unrealized_pnl:+.2f}")
+                # print(f"  Total: Value=${total_value:,.0f}, PnL=${total_pnl:+,.0f}")
         except Exception as e:
             print(f"Error syncing with real account: {e}")
 
@@ -875,7 +873,7 @@ class MockBrokerBackend_Historical:
             # Preload historical data for all symbols
             if self.account_state.positions:
                 for pos in self.account_state.positions:
-                    if pos.symbol not in self.market.historical_data:
+                    if not self.skip_data_preload and pos.symbol not in self.market.historical_data:
                         self.market.create_historical_market(pos.symbol)
 
             self.account_state.orders_placed = []
@@ -986,7 +984,7 @@ class MockBrokerBackend_Historical:
             }
 
         # Update position prices from simulation (consistent with _sync_with_real_account)
-        if self.account_state.positions:
+        if not self.skip_data_preload and self.account_state.positions:
             self._update_position_prices()
 
     def _create_fallback_snapshot(self, symbol: str, timestamp: datetime) -> Snapshot:

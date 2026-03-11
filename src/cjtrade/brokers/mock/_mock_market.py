@@ -42,7 +42,7 @@ class MockBackend_MockMarket:
         # 1 second in real world corresponds to `speed` seconds in mock world
         supported_speeds = [0.5, 1.0, 2.0, 5.0, 10.0,
                             30.0, 60.0, 120.0, 600.0,
-                            1200.0, 3000.0, 6000.0]
+                            1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
         if speed not in supported_speeds:
             raise ValueError(f"Unsupported playback speed: {speed}. Supported speeds: {supported_speeds}")
 
