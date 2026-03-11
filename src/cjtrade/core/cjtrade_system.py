@@ -20,6 +20,8 @@ from cjtrade.core.account_client import AccountClient
 from cjtrade.core.account_client import BrokerType
 from cjtrade.core.config_loader import load_supported_config_files
 from cjtrade.llm.gemini import GeminiClient
+from cjtrade.llm.chatpdf import ChatPDFClient
+from cjtrade.llm.llm_pool import LLMPool
 from cjtrade.models import Product
 from dotenv import load_dotenv
 
@@ -76,7 +78,7 @@ def load_cjsys(broker: str, backtest_mode: bool):
         return
 
     log.info(f"Loading config file {file_to_load}")
-    load_dotenv(file_to_load, override=True)
+    load_dotenv(file_to_load, override=False)
     keys = ['BACKTEST_MODE', 'BACKTEST_DURATION', 'BACKTEST_DURATION_DAYS', 'PLAYBACK_SPEED', 'WATCH_LIST',
             'PRICE_MONITOR_INTERVAL', 'ANALYSIS_INTERVAL', 'LLM_REPORT_INTERVAL', 'DISPLAY_TIME_INTERVAL', 'CHECK_FILL_INTERVAL',
             'WINDOW_SIZE', 'BB_MIN_WIDTH_PCT',
@@ -194,7 +196,9 @@ class TradingSystem:
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, Dict] = {}
-        self.llm_client: Optional[GeminiClient] = None
+        self.llm_client_1: Optional[ChatPDFClient] = None
+        self.llm_client_2: Optional[GeminiClient] = None
+        self.llm_pool: Optional[List] = None
 
         if hasattr(self.client.broker_api, 'get_system_time'):
             self.start_time = self.client.broker_api.get_system_time()
@@ -223,10 +227,14 @@ class TradingSystem:
         log.info(f"📊 Initial State: Balance={self.initial_balance:.2f}, Equity={self.initial_equity:.2f}")
         log.info(f"💼 Existing positions: {', '.join(self.initial_position_symbols) if self.initial_position_symbols else 'None'}")
 
-        api_key = config.get('gemini_api_key', "")
-        if api_key:
+        api_key_1 = os.getenv("CHATPDF_APIKEY")
+        api_key_2 = os.getenv("GEMINI_API_KEY")
+
+        if api_key_1 or api_key_2:
             try:
-                self.llm_client = GeminiClient(api_key=api_key)
+                self.llm_client_1 = ChatPDFClient(api_key=api_key_1, pdf_src=os.environ.get('CHATPDF_BASIC_SOURCE_FILE'))
+                self.llm_client_2 = GeminiClient(api_key=api_key_2)
+                self.llm_pool = LLMPool([self.llm_client_1, self.llm_client_2])  # Create a pool
                 log.info("LLM client initialized")
             except Exception as e:
                 log.warning(f"Failed to initialize LLM client: {e}")
@@ -609,7 +617,7 @@ class TradingSystem:
 
         while not SHUTDOWN:
             try:
-                if not self.llm_client:
+                if not self.llm_pool:
                     await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
                     continue
 
@@ -628,7 +636,7 @@ class TradingSystem:
 請用150字以內提供精簡分析報告。"""
 
                 log.info("Generating LLM report...")
-                response = self.llm_client.generate_response(prompt)
+                response = self.llm_pool.generate_response(prompt)
 
                 log.info(f"\n{'='*60}\n🤖 LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
                 # also print to file for record
