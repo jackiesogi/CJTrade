@@ -19,8 +19,9 @@ from cjtrade.analytics.technical import ta
 from cjtrade.core.account_client import AccountClient
 from cjtrade.core.account_client import BrokerType
 from cjtrade.core.config_loader import load_supported_config_files
-from cjtrade.llm.gemini import GeminiClient
+from cjtrade.llm.azure_openai import AzureOpenAIClient
 from cjtrade.llm.chatpdf import ChatPDFClient
+from cjtrade.llm.gemini import GeminiClient
 from cjtrade.llm.llm_pool import LLMPool
 from cjtrade.models import Product
 from dotenv import load_dotenv
@@ -227,14 +228,18 @@ class TradingSystem:
         log.info(f"📊 Initial State: Balance={self.initial_balance:.2f}, Equity={self.initial_equity:.2f}")
         log.info(f"💼 Existing positions: {', '.join(self.initial_position_symbols) if self.initial_position_symbols else 'None'}")
 
-        api_key_1 = os.getenv("CHATPDF_APIKEY")
-        api_key_2 = os.getenv("GEMINI_API_KEY")
+        api_key_1 = os.getenv("AZURE_OPENAI_API_KEY")
+        api_key_2 = os.getenv("CHATPDF_APIKEY")
+        api_key_3 = os.getenv("GEMINI_API_KEY")
 
         if api_key_1 or api_key_2:
             try:
-                self.llm_client_1 = ChatPDFClient(api_key=api_key_1, pdf_src=os.environ.get('CHATPDF_BASIC_SOURCE_FILE'))
-                self.llm_client_2 = GeminiClient(api_key=api_key_2)
-                self.llm_pool = LLMPool([self.llm_client_1, self.llm_client_2])  # Create a pool
+                self.llm_client_1 = AzureOpenAIClient(api_key=api_key_1, deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                                                      endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+                                                      model_name=os.getenv("AZURE_OPENAI_MODEL_NAME"))
+                self.llm_client_2 = ChatPDFClient(api_key=api_key_2, pdf_src=os.environ.get('CHATPDF_BASIC_SOURCE_FILE'))
+                self.llm_client_3 = GeminiClient(api_key=api_key_3)
+                self.llm_pool = LLMPool([self.llm_client_1, self.llm_client_2, self.llm_client_3])  # Create a pool
                 log.info("LLM client initialized")
             except Exception as e:
                 log.warning(f"Failed to initialize LLM client: {e}")

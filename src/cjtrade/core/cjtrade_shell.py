@@ -401,7 +401,6 @@ class SearchOnlineNewsCommand(CommandBase):
             print(f"Error searching news: {e}")
 
 
-
 # TODO: Support start/end/interval parameters
 class KbarsCommand(CommandBase):
     def __init__(self):
@@ -415,6 +414,47 @@ class KbarsCommand(CommandBase):
         # TODO: Mock only have one kbar in List, Sinopac should have all kbars in the query range
         kbars = client.get_kbars(Product(symbol=symbol), start="2026-01-07", end="2026-01-08", interval="1m")
         print(kbars)
+
+
+class LLMCommand(CommandBase):
+    def __init__(self):
+        super().__init__()
+        from cjtrade.llm.azure_openai import AzureOpenAIClient
+        self.name = "llm"
+        self.params = ["prompt"]
+        self.description = "Generate a response using the LLM."
+        self.llm = AzureOpenAIClient(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
+            endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+            deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+        )
+
+    def format_account_state(self, client: AccountClient, search_news: bool, **config) -> str:
+        balance = client.get_balance()
+        positions = client.get_positions()
+        orders = client.list_orders()
+        # Get news
+        headelines = []
+        if search_news:
+            from cjtrade.analytics.informational.news_client import NewsClient
+            news_engine = NewsClient(provider_type="cnyes", api_key="")
+            headelines = news_engine.fetch_headline_news(n=10)
+        news = "\n".join([f"{n.title} {n.content}" for n in headelines])
+        position_summary = "\n".join([f"{p.symbol}: {p.quantity} shares at avg cost {p.avg_cost}" for p in positions])
+        return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}"
+
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        prompt = args[0]
+        # check if prompt have specific keyword
+        search_news_trigger_keywords = ["新聞", "近期", "趨勢", "分析", "看法", "觀點", "評論", "世界",
+                                        "國際", "國內", "財經", "經濟", "政治", "社會", "科技", "產業"]
+        if any(keyword in prompt for keyword in search_news_trigger_keywords):
+            search_news = True
+        else:
+            search_news = False
+        formatted_state_str = self.format_account_state(client, search_news=search_news)
+        full_prompt = f"{formatted_state_str}\n\nUser Question: {prompt}:"
+        print(self.llm.generate_response(full_prompt))
 
 
 class MoversCommand(CommandBase):
@@ -736,6 +776,7 @@ def register_commands():
         AnnouncementCommand(),
         SearchOnlineNewsCommand(),
         KbarsCommand(),
+        LLMCommand(),
         KbarAggregationCommand(),
         CancelAllCommand(),
         ClearCommand(),
