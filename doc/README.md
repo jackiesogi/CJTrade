@@ -24,7 +24,7 @@ bash scripts/gen_config.sh mock
 Create `my_strategy.py`:
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 def setup():
     set_current_symbol("2330")
@@ -142,7 +142,7 @@ See [API.md](API.md) for complete Beginner API reference.
 ### Basic Template
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 def setup():
     """Initialize once at startup"""
@@ -167,7 +167,7 @@ def on_system_end():
 ### Full Example
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 def setup():
     set_current_symbol("2330")

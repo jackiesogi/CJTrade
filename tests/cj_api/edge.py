@@ -9,8 +9,8 @@ Tests unusual inputs and boundary conditions:
 """
 import time
 
-from cjtrade.models.order import OrderAction
-from cjtrade.models.order import OrderStatus
+from cjtrade.pkgs.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderStatus
 
 from tests.cj_api.base import BaseBrokerTest
 from tests.utils.test_formatter import get_log_buffer

@@ -32,9 +32,9 @@ ts=$(date +%s)
 
 # write sys part to .cj file first
 echo "import numpy as np
-from cjtrade.analytics.technical import ta
-from cjtrade.brokers.mock.mock_broker_api import MockBrokerAPI
-from cjtrade.models.product import Product
+from cjtrade.pkgs.analytics.technical import ta
+from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
+from cjtrade.pkgs.models.product import Product
 # market.ohlcv() -> what API an user may want to use
 market = MockBrokerAPI()        # sys or adv
 market.connect()                # sys or adv" > ./data/${ts}_strategy.cj

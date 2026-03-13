@@ -3,7 +3,7 @@ Example strategy using beginner API
 
 This demonstrates how users would write strategies with the Pine Script-like API.
 """
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 # ============ Setup Phase ============
 def setup():

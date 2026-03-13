@@ -3,8 +3,8 @@ import os
 import sys
 from pathlib import Path
 
-from cjtrade.brokers.sinopac._internal_func import _from_sinopac_product
-from cjtrade.core.account_client import *
+from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_product
 from dotenv import load_dotenv
 from shioaji import Shioaji as sj
 

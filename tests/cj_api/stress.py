@@ -5,7 +5,7 @@ Tests system behavior under load:
 - Alternating buy/sell operations
 - High volume scenarios
 """
-from cjtrade.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderAction
 
 from tests.cj_api.base import BaseBrokerTest
 from tests.utils.test_formatter import get_log_buffer

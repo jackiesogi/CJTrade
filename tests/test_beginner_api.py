@@ -13,9 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from cjtrade.core.account_client import AccountClient
-from cjtrade.models import Kbar, Order, OrderType, Position, Product
-from cjtrade.api.beginner import (
+from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.models import Kbar, Order, OrderType, Position, Product
+from cjtrade.pkgs.api.beginner import (
     set_current_symbol,
     get_current_symbol,
     set_client,

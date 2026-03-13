@@ -102,7 +102,7 @@ class TestStateConsistency(BaseBrokerTest):
         result = self.client.place_order(order2)
 
         # Should work after reconnection
-        from cjtrade.models.order import OrderStatus
+        from cjtrade.pkgs.models.order import OrderStatus
         self.assertEqual(result.status, OrderStatus.PLACED)
 
         # Verify both orders in DB

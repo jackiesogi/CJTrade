@@ -83,7 +83,7 @@ __all__ = [
 ]
 ```
 
-當用戶做 `from cjtrade.api.beginner import *` 時，會取得 `__all__` 中的所有東西。
+當用戶做 `from cjtrade.pkgs.api.beginner import *` 時，會取得 `__all__` 中的所有東西。
 
 ---
 
@@ -92,7 +92,7 @@ __all__ = [
 ### 最簡潔方式
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 set_current_symbol("2330")
 
@@ -106,7 +106,7 @@ def strategy(kbar):
 ### 完整方式
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 def strategy(kbar):
     ema = ta.ema(kbar.closes, 12)
@@ -123,7 +123,7 @@ def strategy(kbar):
 ### 用短別名
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 set_current_symbol("2330")
 
@@ -144,7 +144,7 @@ def strategy(kbar):
 
 ```python
 from cjtrade.core.strategy_executor import StrategyExecutor
-from cjtrade.api.beginner import set_client
+from cjtrade.pkgs.api.beginner import set_client
 
 # 建立 client
 client = AccountClient(BrokerType.SINOPAC)
@@ -161,7 +161,7 @@ executor.run()
 
 ```python
 # ~/.cjtrade/strategies/my_strategy.cj
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 client = create_client(simulation=True)  # 建立模擬 client
 set_current_symbol("2330")
@@ -193,7 +193,7 @@ def strategy(kbar):
    - 別名提供多種風格
 
 4. **IDE 友善**
-   - `from cjtrade.api.beginner import *` 後，IDE 知道所有可用的東西
+   - `from cjtrade.pkgs.api.beginner import *` 後，IDE 知道所有可用的東西
    - `ta.` 會自動完成
    - `buy()` 會顯示參數提示
 

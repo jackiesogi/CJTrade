@@ -85,13 +85,13 @@ from cjtrade import (
 
 # ==== 層級 2：進階 API（給想自己擴展的人）====
 from cjtrade.core import AccountClient, TradingSystem
-from cjtrade.models import *
-from cjtrade.analytics.technical import ta
+from cjtrade.pkgs.models import *
+from cjtrade.pkgs.analytics.technical import ta
 
 # ==== 層級 3：完全 detail API（給系統開發者）====
-from cjtrade.brokers.sinopac import SinopacBrokerAPI
-from cjtrade.brokers.mock import MockBrokerAPI
-from cjtrade.llm.gemini import GeminiClient
+from cjtrade.pkgs.brokers.sinopac import SinopacBrokerAPI
+from cjtrade.pkgs.brokers.arenax import MockBrokerAPI
+from cjtrade.pkgs.llm.gemini import GeminiClient
 ```
 
 ---
@@ -104,8 +104,8 @@ from cjtrade.llm.gemini import GeminiClient
 """CJTrade - Trading System for Taiwan Market"""
 
 from cjtrade.core import AccountClient, BrokerType, TradingSystem
-from cjtrade.models import Product, Order, OrderType, Position, Kbar
-from cjtrade.analytics.technical import ta
+from cjtrade.pkgs.models import Product, Order, OrderType, Position, Kbar
+from cjtrade.pkgs.analytics.technical import ta
 
 __all__ = [
     # Core Trading
@@ -126,7 +126,7 @@ This module provides convenience functions for users who want Pine Script-like e
 """
 
 from cjtrade import AccountClient, BrokerType, Order, OrderType, Product, Kbar, ta
-from cjtrade.chart import KbarChartClient, KbarChartType
+from cjtrade.pkgs.chart import KbarChartClient, KbarChartType
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -193,7 +193,7 @@ __all__ = [
 ### Beginner（寫策略的非程式員）
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 def strategy(kbar):
     ema = ta.ema(kbar.closes, 12)
@@ -218,8 +218,8 @@ for snap in snapshots:
 
 ```python
 from cjtrade.core import TradingSystem, AccountClient
-from cjtrade.brokers.sinopac import SinopacBrokerAPI
-from cjtrade.models import Order, OrderType
+from cjtrade.pkgs.brokers.sinopac import SinopacBrokerAPI
+from cjtrade.pkgs.models import Order, OrderType
 
 client = AccountClient(BrokerType.SINOPAC)
 system = TradingSystem(client)

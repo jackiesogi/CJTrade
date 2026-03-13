@@ -1,0 +1,955 @@
+"""
+Minimal Viable Trading System PoC
+"""
+import asyncio
+import logging
+import os
+import random
+import signal
+from asyncio import Queue
+from dataclasses import dataclass
+from datetime import datetime
+from datetime import timedelta
+from typing import Dict
+from typing import List
+from typing import Optional
+
+import numpy as np
+from cjtrade.pkgs.analytics.technical import ta
+from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.brokers.account_client import BrokerType
+from cjtrade.pkgs.config.config_loader import load_supported_config_files
+from cjtrade.pkgs.llm.azure_openai import AzureOpenAIClient
+from cjtrade.pkgs.llm.chatpdf import ChatPDFClient
+from cjtrade.pkgs.llm.gemini import GeminiClient
+from cjtrade.pkgs.llm.llm_pool import LLMPool
+from cjtrade.pkgs.models import Product
+from dotenv import load_dotenv
+
+
+# ==================== Configuration ====================
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)-8s: %(message)s"
+)
+log = logging.getLogger("cjtrade.system")
+
+# load_supported_config_files()
+# Need to read from env variables
+# Here are the settings that exposed to users/operators
+config = {}
+
+# CJCONF is for the brokers / services configuration (e.g. API keys, certs, etc.)
+def load_cjconf():
+    load_supported_config_files()
+    keys = ['API_KEY', 'SECRET_KEY', 'CA_CERT_PATH', 'CA_PASSWORD', 'SIMULATION',
+            'USERNAME', 'LLM_API_KEY', 'LLM_MODEL', 'GEMINI_API_KEY', 'NEWSAPI_API_KEY']
+    for key in keys:
+        if os.environ.get(key):
+            config[key.lower()] = os.environ[key]
+
+    config['simulation'] = config.get('simulation', 'y').lower() == 'y'
+    config['ca_path'] = config.get('ca_cert_path', "")
+    config['ca_passwd'] = config.get('ca_password', "")
+
+
+# CJSYS is for CJTrade System itself
+def load_cjsys(broker: str, backtest_mode: bool):
+    """
+    Load CJTrade system configuration from .cjsys files
+
+    Note: mock + live mode is NOT supported
+    - mock broker uses yfinance data which has 15-minute delay
+    - live mode requires real-time data, so use 'realistic' broker instead
+    - mock broker is only suitable for backtest mode (historical data replay)
+    """
+    # Find config file relative to this module
+    import pathlib
+    config_dir = pathlib.Path(__file__).parent / "configs"
+    mode = 'backtest' if backtest_mode else 'live'
+    file_to_load = config_dir / f"{broker}_{mode}.cjsys"
+
+    if mode == 'live' and broker == 'mock':
+        log.error("Using LIVE mode for mock broker does not make sense!"
+                  " If you want to use live mode, please switch to the 'realistic'!")
+        exit(1)
+
+    if not file_to_load.exists():
+        log.warning(f"Config file {file_to_load} not found")
+        return
+
+    log.info(f"Loading config file {file_to_load}")
+    load_dotenv(file_to_load, override=False)
+    keys = ['BACKTEST_MODE', 'BACKTEST_DURATION', 'BACKTEST_DURATION_DAYS', 'PLAYBACK_SPEED', 'WATCH_LIST',
+            'PRICE_MONITOR_INTERVAL', 'ANALYSIS_INTERVAL', 'LLM_REPORT_INTERVAL', 'DISPLAY_TIME_INTERVAL', 'CHECK_FILL_INTERVAL',
+            'WINDOW_SIZE', 'BB_MIN_WIDTH_PCT',
+            'RISK_MAX_POSITION_PCT']
+    for key in keys:
+        if os.environ.get(key):
+            log.info(f"  {key}={os.environ[key]}")
+            config[key.lower()] = os.environ[key]
+
+    # Adjust the types of certain keys
+    config['backtest_mode'] = config.get('backtest_mode', 'y').lower() == 'y'
+    config['playback_speed'] = float(config.get('playback_speed', 1.0))
+    config['backtest_duration_days'] = int(config.get('backtest_duration_days', 365))
+    config['watch_list'] = config.get('watch_list', "").split(',') if config.get('watch_list') else []
+    config['price_monitor_interval'] = float(config.get('price_monitor_interval', 60))
+    config['analysis_interval'] = float(config.get('analysis_interval', 30))
+    config['llm_report_interval'] = float(config.get('llm_report_interval', 300))
+    config['display_time_interval'] = float(config.get('display_time_interval', 40))
+    config['check_fill_interval'] = float(config.get('check_fill_interval', 60))
+    config['window_size'] = int(config.get('window_size', 10))
+    config['bb_min_width_pct'] = float(config.get('bb_min_width_pct', 0.01))
+    config['risk_max_position_pct'] = float(config.get('risk_max_position_pct', 0.05))
+
+    # For backward compatibility ('speed' will be replaced by 'playback_speed')
+    config['speed'] = config['playback_speed']
+    config['backtest_duration'] = config['backtest_duration_days']
+
+
+def print_config():
+    log.info(f"System Configuration: {config}")
+
+# ==================== System Config ====================
+@dataclass
+class SystemConfig:
+    backtest_mode: bool
+    playback_speed: float
+    price_monitor_interval: float
+    analysis_interval: float
+    llm_report_interval: float
+    display_time_interval: float
+    check_fill_interval: float
+    window_size: int
+    bb_min_width_pct: float
+    risk_max_position_pct: float
+    backtest_duration_days: float = 0.0
+
+
+def _apply_config(cfg: SystemConfig) -> None:
+    """Write a SystemConfig into module-level globals used by all coroutines."""
+    global BACKTEST_MODE, PRICE_MONITOR_INTERVAL, ANALYSIS_INTERVAL
+    global LLM_REPORT_INTERVAL, DISPLAY_TIME_INTERVAL, CHECK_FILL_INTERVAL
+    global WINDOW_SIZE, BB_MIN_WIDTH_PCT, RISK_MAX_POSITION_PCT, BACKTEST_DURATION_DAYS
+    BACKTEST_MODE              = cfg.backtest_mode
+    PRICE_MONITOR_INTERVAL     = cfg.price_monitor_interval
+    ANALYSIS_INTERVAL          = cfg.analysis_interval
+    LLM_REPORT_INTERVAL        = cfg.llm_report_interval
+    DISPLAY_TIME_INTERVAL      = cfg.display_time_interval
+    CHECK_FILL_INTERVAL        = cfg.check_fill_interval
+    WINDOW_SIZE                = cfg.window_size
+    BB_MIN_WIDTH_PCT           = cfg.bb_min_width_pct
+    RISK_MAX_POSITION_PCT      = cfg.risk_max_position_pct
+    BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
+
+
+SHUTDOWN = False
+
+# ==================== Bollinger Bands (TA-Lib) ====================
+# TODO: Construct a specific datatype for bollinger band result
+def calculate_bollinger_bands_mock(symbol: str, prices: List[float]) -> Dict:
+    """Calculate Bollinger Bands using TA-Lib, maintaining same interface as mock version"""
+    if not prices or len(prices) == 0:
+        return None
+
+    # Need at least WINDOW_SIZE data points for reliable BB calculation
+    if len(prices) < WINDOW_SIZE:
+        log.debug(f"BB {symbol}: Insufficient data ({len(prices)}/{WINDOW_SIZE} prices)")
+        return None
+    current_price, prices_array = prices[-1], np.array(prices, dtype=float)
+
+    # Calculate Bollinger Bands using TA-Lib
+    upper_bands, middle_bands, lower_bands = ta.bb(prices_array, timeperiod=WINDOW_SIZE, nbdevup=2, nbdevdn=2)
+    upper, middle, lower = upper_bands[-1], middle_bands[-1], lower_bands[-1]
+    std_dev = (upper - middle) / 2  # Because upper = middle + 2*std
+    band_width = (upper - lower) / middle if middle > 0 else 0
+
+    log.info(f"BB Debug [{symbol}]: Price={current_price:.2f} | "
+             f"Upper={upper:.2f} Mid={middle:.2f} Lower={lower:.2f} | "
+             f"StdDev={std_dev:.2f} BandWidth={band_width*100:.2f}%")
+
+    if band_width < BB_MIN_WIDTH_PCT:
+        log.info(f"⚪ BB {symbol}: Band too narrow ({band_width*100:.2f}% < {BB_MIN_WIDTH_PCT*100:.2f}%), signal=HOLD")
+        signal = 'HOLD'
+    else:
+        signal = 'HOLD'
+        if current_price <= lower:
+            signal = 'BUY'
+            log.info(f"🟢 BB {symbol}: Price {current_price:.2f} <= Lower {lower:.2f} → BUY")
+        elif current_price >= upper:
+            signal = 'SELL'
+            log.info(f"🔴 BB {symbol}: Price {current_price:.2f} >= Upper {upper:.2f} → SELL")
+        else:
+            log.info(f"⚪ BB {symbol}: Price in middle band → HOLD")
+
+    return {
+        'upper': round(upper, 2), 'middle': round(middle, 2),
+        'lower': round(lower, 2), 'signal': signal,
+        'price': current_price, 'symbol': symbol,
+        'std_dev': round(std_dev, 2), 'band_width': round(band_width * 100, 2)
+    }
+
+
+# ==================== Trading System Class ====================
+class TradingSystem:
+    def __init__(self, client: AccountClient):
+        self.client = client
+        self.price_history: Dict[str, List[float]] = {}
+        self.analysis_results: Dict[str, Dict] = {}
+        self.llm_client_1: Optional[ChatPDFClient] = None
+        self.llm_client_2: Optional[GeminiClient] = None
+        self.llm_pool: Optional[List] = None
+
+        if hasattr(self.client.broker_api, 'get_system_time'):
+            self.start_time = self.client.broker_api.get_system_time()
+            log.info(f"⏰ Using mock market start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            self.start_time = datetime.now()
+            log.info(f"⏰ Using real system time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        self.backtest_mode = BACKTEST_MODE
+        self.trade_log: List[Dict] = []
+        self.strategy_cash_flow = 0.0
+        self.signal_queue: Queue = Queue()
+
+        # Get playback speed from mock broker backend (for time-scaled delays)
+        self.playback_speed = 1.0
+        if hasattr(self.client.broker_api, 'api') and hasattr(self.client.broker_api.api, 'market'):
+            self.playback_speed = self.client.broker_api.api.market.playback_speed
+            log.info(f"⚡ Playback speed: {self.playback_speed}x")
+
+        self.initial_balance = self.client.get_balance()
+        self.initial_positions = self.client.get_positions()
+        self.initial_equity = self.get_total_equity()
+
+        # Record initial positions details to exclude their market value changes
+        self.initial_position_symbols = set(p.symbol for p in self.initial_positions)
+        log.info(f"📊 Initial State: Balance={self.initial_balance:.2f}, Equity={self.initial_equity:.2f}")
+        log.info(f"💼 Existing positions: {', '.join(self.initial_position_symbols) if self.initial_position_symbols else 'None'}")
+
+        api_key_1 = os.getenv("AZURE_OPENAI_API_KEY")
+        api_key_2 = os.getenv("CHATPDF_APIKEY")
+        api_key_3 = os.getenv("GEMINI_API_KEY")
+
+        if api_key_1 or api_key_2:
+            try:
+                self.llm_client_1 = AzureOpenAIClient(api_key=api_key_1, deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+                                                      endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+                                                      model_name=os.getenv("AZURE_OPENAI_MODEL_NAME"))
+                self.llm_client_2 = ChatPDFClient(api_key=api_key_2, pdf_src=os.environ.get('CHATPDF_BASIC_SOURCE_FILE'))
+                self.llm_client_3 = GeminiClient(api_key=api_key_3)
+                self.llm_pool = LLMPool([self.llm_client_1, self.llm_client_2, self.llm_client_3])  # Create a pool
+                log.info("LLM client initialized")
+            except Exception as e:
+                log.warning(f"Failed to initialize LLM client: {e}")
+        else:
+            log.warning("GEMINI_API_KEY not found, LLM reports disabled")
+
+    def mock_env_sleep(self, seconds: float) -> float:
+        """Return sleep time scaled by playback speed"""
+        return seconds / self.playback_speed
+
+    def get_watch_symbols(self) -> List[str]:
+        """Get list of symbols to monitor from current positions"""
+        symbols = []
+        try:
+            symbols = config.get('watch_list', [])
+            positions = self.client.get_positions()
+            if positions:
+                s = [p.symbol for p in positions]
+                symbols = list(set(symbols + s))
+                log.info(f"Watching {len(symbols)} symbols from positions: {', '.join(symbols)}")
+
+            if len(symbols) == 0:
+                log.warning("No position to monitor (Try `export WATCH_LIST=2330,0050` env variable)")
+
+            return symbols
+        except Exception as e:
+            log.error(f"Failed to get positions: {e}")
+            return []
+
+    def get_total_equity(self) -> float:
+        """Calculate total equity (balance + position value)"""
+        try:
+            balance = self.client.get_balance()
+            positions = self.client.get_positions()
+
+            position_value = sum(p.market_value for p in positions) if positions else 0
+            return balance + position_value
+        except Exception as e:
+            log.error(f"Failed to get total equity: {e}")
+            return 0.0
+
+    def calculate_position_size(self, price: float) -> int:
+        """Calculate safe position size based on risk control"""
+        total_equity = self.get_total_equity()
+        max_value = total_equity * RISK_MAX_POSITION_PCT
+
+        # Calculate quantity (round down to nearest lot)
+        quantity = int(max_value / price)
+
+        if quantity < 1 and total_equity > price:
+            quantity = 1
+
+        log.info(f"Position sizing: equity={total_equity:.2f}, max_value={max_value:.2f}, quantity={quantity}")
+        return quantity
+
+    def should_exit_backtest(self) -> bool:
+        """Check if backtest period is over (based on trading days)
+
+        Trading day definition:
+        - Day 0: 09:00 start, 13:30 close = 1 completed trading day
+        - After 13:30, the day is considered complete
+        """
+        if not self.backtest_mode:
+            return False
+
+        # Use mock market time if available
+        if hasattr(self.client.broker_api, 'get_system_time'):
+            current_time = self.client.broker_api.get_system_time()
+        else:
+            current_time = datetime.now()
+
+        # Calculate completed trading days
+        start_date = self.start_time.date()
+        current_date = current_time.date()
+        calendar_days = (current_date - start_date).days
+
+        # If market has closed today (after 13:30), count today as completed
+        market_close_time = current_time.replace(hour=13, minute=30, second=0, microsecond=0)
+        if current_time >= market_close_time:
+            completed_trading_days = calendar_days + 1
+        else:
+            completed_trading_days = calendar_days
+
+        if completed_trading_days >= BACKTEST_DURATION_DAYS:
+            log.info(f"Backtest completed: {completed_trading_days} trading days completed (started {start_date}, now {current_date} {current_time.strftime('%H:%M')})")
+            return True
+        return False
+
+    def print_backtest_summary(self):
+        """Print comprehensive backtest summary with clear accounting breakdown"""
+
+        # ========== 1. Get Final State ==========
+        final_balance = self.client.get_balance()
+        final_positions = self.client.get_positions()
+        final_equity = self.get_total_equity()
+
+        # ========== 2. Calculate Position Values ==========
+        initial_position_value = self.initial_equity - self.initial_balance
+
+        final_initial_position_value = 0.0  # Market value of initial positions
+        final_strategy_position_value = 0.0  # Market value of strategy positions
+
+        for p in final_positions:
+            position_value = p.quantity * p.current_price
+            if p.symbol in self.initial_position_symbols:
+                final_initial_position_value += position_value
+            else:
+                final_strategy_position_value += position_value
+
+        # ========== 3. Calculate Strategy Cash Flow ==========
+        # Cash spent on buys (negative) and received from sells (positive)
+        strategy_cash_flow = 0.0
+        for trade in self.trade_log:
+            if trade['action'] == 'BUY':
+                strategy_cash_flow -= trade['price'] * trade['quantity']
+            elif trade['action'] == 'SELL':
+                strategy_cash_flow += trade['price'] * trade['quantity']
+
+        # ========== 4. Calculate Realized P&L (FIFO) ==========
+        realized_pnl = 0.0
+        buy_queue = {}  # {symbol: [(price, qty), ...]}
+
+        # Pre-fill with initial positions at their avg_cost
+        for p in self.initial_positions:
+            buy_queue[p.symbol] = [(p.avg_cost, p.quantity)]
+
+        for trade in self.trade_log:
+            symbol = trade['symbol']
+            if trade['action'] == 'BUY':
+                if symbol not in buy_queue:
+                    buy_queue[symbol] = []
+                buy_queue[symbol].append((trade['price'], trade['quantity']))
+
+            elif trade['action'] == 'SELL':
+                if symbol not in buy_queue:
+                    continue
+                sell_price = trade['price']
+                sell_qty = trade['quantity']
+
+                remaining_qty = sell_qty
+                while remaining_qty > 0 and buy_queue[symbol]:
+                    buy_price, buy_qty = buy_queue[symbol][0]
+                    qty_to_close = min(remaining_qty, buy_qty)
+                    realized_pnl += (sell_price - buy_price) * qty_to_close
+
+                    if qty_to_close >= buy_qty:
+                        buy_queue[symbol].pop(0)
+                    else:
+                        buy_queue[symbol][0] = (buy_price, buy_qty - qty_to_close)
+                    remaining_qty -= qty_to_close
+
+        # ========== 5. Calculate Unrealized P&L ==========
+        unrealized_initial_pnl = 0.0
+        unrealized_strategy_pnl = 0.0
+
+        for p in final_positions:
+            if p.symbol in self.initial_position_symbols:
+                unrealized_initial_pnl += p.unrealized_pnl
+            else:
+                unrealized_strategy_pnl += p.unrealized_pnl
+
+        # ========== 6. Calculate Total Changes ==========
+        balance_change = final_balance - self.initial_balance
+        equity_change = final_equity - self.initial_equity
+        equity_change_pct = (equity_change / self.initial_equity * 100) if self.initial_equity > 0 else 0
+
+        # ========== 7. Print Report ==========
+        print("\n" + "="*80)
+        print("📊 BACKTEST SUMMARY")
+        print("="*80)
+        print(f"Duration: {BACKTEST_DURATION_DAYS} trading days")
+
+        # --- SECTION 1: Account Overview ---
+        print(f"\n【Account Overview】")
+        print(f"                    Beginning              Ending              Change")
+        print(f"  Cash Balance    {self.initial_balance:>12,.2f}  {final_balance:>12,.2f}  {balance_change:>12,.2f}")
+        print(f"  Stock Value     {initial_position_value:>12,.2f}  {final_initial_position_value + final_strategy_position_value:>12,.2f}  {(final_initial_position_value + final_strategy_position_value - initial_position_value):>12,.2f}")
+        print(f"  Total Equity    {self.initial_equity:>12,.2f}  {final_equity:>12,.2f}  {equity_change:>12,.2f} ({equity_change_pct:>+6.2f}%)")
+
+        # --- SECTION 2: Cash Flow Analysis ---
+        print(f"\n【Cash Flow Analysis】")
+        print(f"  Strategy Buy Expenditure:     {-min(strategy_cash_flow, 0):>12,.2f}")
+        print(f"  Strategy Sell Income:         {max(strategy_cash_flow, 0):>12,.2f}")
+        print(f"  Strategy Net Cash Flow:       {strategy_cash_flow:>12,.2f}")
+        print(f"  Cash Balance Change:          {balance_change:>12,.2f}")
+
+        # --- SECTION 3: P&L Breakdown ---
+        print(f"\n【P&L Breakdown】")
+        print(f"  Total P&L:              {equity_change:>12,.2f} ({equity_change_pct:>+6.2f}%)")
+        print(f"  ├─ Realized:        {realized_pnl:>12,.2f}")
+        print(f"  └─ Unrealized:      {unrealized_initial_pnl + unrealized_strategy_pnl:>12,.2f}")
+        print(f"     ├─ Initial Positions:            {unrealized_initial_pnl:>12,.2f}")
+        print(f"     └─ Strategy Positions:            {unrealized_strategy_pnl:>12,.2f}")
+
+        # --- SECTION 4: Position Summary ---
+        print(f"\n【Position Summary】")
+        initial_symbols = [p.symbol for p in self.initial_positions]
+        final_symbols = [p.symbol for p in final_positions]
+        strategy_symbols = [s for s in final_symbols if s not in self.initial_position_symbols]
+
+        print(f"  Initial Positions: {len(self.initial_positions)} ({', '.join(initial_symbols) if initial_symbols else 'None'})")
+        print(f"  Final Positions: {len(final_positions)} ({', '.join(final_symbols) if final_symbols else 'None'})")
+        if strategy_symbols:
+            print(f"  Strategy Additions: {len(strategy_symbols)} ({', '.join(strategy_symbols)})")
+
+        # --- SECTION 5: Trade History ---
+        print(f"\n【Trade History】({len(self.trade_log)} trades)")
+        if self.trade_log:
+            for i, trade in enumerate(self.trade_log, 1):
+                action_icon = "🟢" if trade['action'] == 'BUY' else "🔴"
+                ts = trade['timestamp'].strftime('%m-%d %H:%M')
+                print(f"  {i:2d}. [{ts}] {action_icon} {trade['action']:4s} {trade['quantity']:>4d} shares {trade['symbol']:6s} @ ${trade['price']:>7.2f}")
+        else:
+            print("  No trades executed.")
+
+        # --- SECTION 6: Final Verdict ---
+        print(f"\n" + "="*80)
+        if equity_change > 0:
+            print(f"✅ Strategy Performance: Profit {equity_change:,.2f} ({equity_change_pct:+.2f}%)")
+        elif equity_change < 0:
+            print(f"❌ Strategy Performance: Loss {abs(equity_change):,.2f} ({equity_change_pct:.2f}%)")
+        else:
+            print(f"⚪ Strategy Performance: Break-even")
+        print("="*80 + "\n")
+
+    async def monitor_prices(self):
+        log.info("Price monitoring started")
+
+        while not SHUTDOWN:
+            try:
+                is_market_open = self.client.broker_api.api.market.is_market_open()
+
+                # Auto-skip to next trading day at 2PM (only in backtest mode)
+                if not is_market_open and self.backtest_mode:
+                    current_time = self.client.broker_api.get_system_time()
+
+                    # Check if it's 2PM (14:00)
+                    market = self.client.broker_api.api.market
+                    # log.info("⏭️  2PM reached, skipping to next trading day (9AM)...")
+
+                    # calculate diff to next day 9AM
+                    diff = ((current_time + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0) - current_time).total_seconds()
+                    diff = diff / 3600
+                    print(f"current time {current_time}")
+                    market.adjust_time(diff)  # Jump 19 hours: 14:00 + 19 = 09:00 next day
+                    print(f"current time {current_time}")
+
+                    log.debug("⏸️  Market closed, skipping price monitoring")
+                    await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
+                    continue
+
+                symbols = self.get_watch_symbols()
+
+                if not symbols:
+                    await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
+                    continue
+
+                for symbol in symbols:
+                    snapshots = self.client.get_snapshots([Product(symbol=symbol)])
+
+                    if snapshots:
+                        snapshot = snapshots[0]
+                        price = snapshot.close
+
+                        if symbol not in self.price_history:
+                            self.price_history[symbol] = []
+                            log.info(f"✨ Initialized price history for {symbol}")
+
+                        self.price_history[symbol].append(price)
+
+                        # Keep last 100 prices
+                        if len(self.price_history[symbol]) > 100:
+                            self.price_history[symbol] = self.price_history[symbol][-100:]
+
+                        history_len = len(self.price_history[symbol])
+                        log.info(f"  {symbol}: {price:.2f} (O:{snapshot.open:.2f} H:{snapshot.high:.2f} L:{snapshot.low:.2f}) | History: {history_len} prices")
+
+            except Exception as e:
+                log.error(f"Price monitoring error: {e}")
+
+            await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
+
+    async def analyze_signals(self):
+        log.info("Signal analysis started")
+
+        while not SHUTDOWN:
+            try:
+                symbols = list(self.price_history.keys())
+                log.info(f"Analyzing {len(symbols)} symbols: {symbols}")
+
+                for symbol in symbols:
+                    history_len = len(self.price_history.get(symbol, []))
+
+                    if history_len < WINDOW_SIZE:
+                        continue
+
+                    result = calculate_bollinger_bands_mock(
+                        symbol,
+                        self.price_history[symbol]
+                    )
+
+                    if result:
+                        old_signal = self.analysis_results.get(symbol, {}).get('signal', None)
+                        new_signal = result['signal']
+
+                        if new_signal != 'HOLD' and new_signal != old_signal:
+                            log.info(f"📢 Signal changed: {symbol} {old_signal} → {new_signal} @ {result['price']:.2f}")
+                            await self.signal_queue.put({
+                                'symbol': symbol,
+                                'signal': new_signal,
+                                'result': result,
+                                'timestamp': datetime.now()
+                            })
+
+                        self.analysis_results[symbol] = result
+                    else:
+                        log.warning(f"{symbol}: BB calculation returned None")
+
+            except Exception as e:
+                log.error(f"Analysis error: {e}")
+
+            await asyncio.sleep(self.mock_env_sleep(ANALYSIS_INTERVAL))
+
+    def format_trading_context(self) -> str:
+        """Format recent trading activity and market state for LLM analysis"""
+        positions = self.client.get_positions()
+        balance = self.client.get_balance()
+        equity = self.get_total_equity()
+
+        # Get recent trades (last 10)
+        recent_trades = self.trade_log[-10:] if len(self.trade_log) > 10 else self.trade_log
+
+        context = "=== TRADING SYSTEM CONTEXT ===\n\n"
+        context += f"📊 ACCOUNT STATUS\n"
+        context += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        context += f"Balance:   ${balance:>12,.2f}\n"
+        context += f"Equity:    ${equity:>12,.2f}\n"
+        context += f"Positions: {len(positions) if positions else 0}\n\n"
+
+        # Current positions
+        context += f"📈 CURRENT POSITIONS\n"
+        if positions:
+            for p in positions:
+                pnl_pct = (p.unrealized_pnl / (p.avg_cost * p.quantity) * 100) if p.avg_cost > 0 else 0
+                context += f"  {p.symbol:6s} | Qty: {p.quantity:>4d} | Avg: ${p.avg_cost:>7.2f} | Now: ${p.current_price:>7.2f} | P&L: ${p.unrealized_pnl:>9,.2f} ({pnl_pct:>+6.2f}%)\n"
+        else:
+            context += "  (No positions)\n"
+
+        # Recent price action (last 5 prices for each symbol)
+        context += f"\n💹 RECENT PRICE ACTION (Last 5 ticks)\n"
+        for symbol in sorted(self.price_history.keys()):
+            prices = self.price_history[symbol][-5:]
+            if len(prices) >= 2:
+                price_change = prices[-1] - prices[0]
+                price_change_pct = (price_change / prices[0] * 100) if prices[0] > 0 else 0
+                prices_str = " → ".join([f"{p:.2f}" for p in prices])
+                context += f"  {symbol:6s} | {prices_str} (Δ {price_change:+.2f}, {price_change_pct:+.2f}%)\n"
+
+        # BB signals
+        context += f"\n🎯 BOLLINGER BANDS SIGNALS\n"
+        for symbol in sorted(self.analysis_results.keys()):
+            result = self.analysis_results[symbol]
+            signal_icon = "🟢" if result['signal'] == 'BUY' else "🔴" if result['signal'] == 'SELL' else "⚪"
+            context += f"  {signal_icon} {symbol:6s} | Signal: {result['signal']:4s} | Price: ${result['price']:>7.2f} | Upper: ${result['upper']:>7.2f} | Mid: ${result['middle']:>7.2f} | Lower: ${result['lower']:>7.2f}\n"
+
+        # Recent trades
+        context += f"\n📝 RECENT TRADES ({len(recent_trades)} trades)\n"
+        if recent_trades:
+            for i, trade in enumerate(recent_trades, 1):
+                action_icon = "🟢" if trade['action'] == 'BUY' else "🔴"
+                ts = trade['timestamp'].strftime('%m-%d %H:%M')
+                context += f"  {i:2d}. [{ts}] {action_icon} {trade['action']:4s} {trade['quantity']:>3d}x {trade['symbol']:6s} @ ${trade['price']:>7.2f} | {trade['reason']}\n"
+        else:
+            context += "  (No trades yet)\n"
+
+        return context
+
+    async def generate_llm_report(self):
+        log.info("LLM report generator started")
+
+        while not SHUTDOWN:
+            try:
+                if not self.llm_pool:
+                    await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
+                    continue
+
+                context = self.format_trading_context()
+
+                prompt = f"""{context}
+
+=== ANALYSIS REQUEST ===
+作為專業量化交易分析師，請基於以上交易系統狀態進行分析：
+
+1. 評估當前策略表現（根據近期交易和持倉盈虧）
+2. 分析市場趨勢（根據價格走勢和BB訊號）
+3. 識別潛在風險或機會
+4. 提供具體可行的操作建議
+
+請用150字以內提供精簡分析報告。"""
+
+                log.info("Generating LLM report...")
+                response = self.llm_pool.generate_response(prompt)
+
+                log.info(f"\n{'='*60}\n🤖 LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
+                # also print to file for record
+                with open("llm_report.txt", "a") as f:
+                    f.write(f"\n{'='*60}\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
+
+            except Exception as e:
+                log.error(f"LLM report error: {e}")
+
+            await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
+
+    async def execute_orders(self):
+        global SHUTDOWN
+        log.info("Order executor started (event-driven mode)")
+
+        while not SHUTDOWN:
+            try:
+                # Check if backtest period is over
+                if self.backtest_mode and self.should_exit_backtest():
+                    log.info("🏁 Backtest completed. Shutting down...")
+                    SHUTDOWN = True
+                    break
+
+                # Wait for signal events from the queue
+                # Note: timeout should NOT be scaled - it's real-world I/O operation
+                try:
+                    signal_event = await asyncio.wait_for(self.signal_queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+
+                symbol = signal_event['symbol']
+                signal = signal_event['signal']
+                result = signal_event['result']
+                price = result['price']
+
+                if self.backtest_mode:
+                    if hasattr(self.client.broker_api, 'get_system_time'):
+                        current_time = self.client.broker_api.get_system_time()
+                    else:
+                        current_time = datetime.now()
+
+                    start_date = self.start_time.date()
+                    current_date = current_time.date()
+                    calendar_days = (current_date - start_date).days
+
+                    market_close_time = current_time.replace(hour=13, minute=30, second=0, microsecond=0)
+                    if current_time >= market_close_time:
+                        completed_trading_days = calendar_days + 1
+                    else:
+                        completed_trading_days = calendar_days
+
+                    remaining = BACKTEST_DURATION_DAYS - completed_trading_days
+                    mode_prefix = f"[BACKTEST {remaining}d]"
+                else:
+                    mode_prefix = "[LIVE]"
+
+                log.info(f"{mode_prefix} ⚡ Processing signal event: {symbol} {signal} @ {price:.2f}")
+
+                positions = self.client.get_positions()
+                has_position = any(p.symbol == symbol for p in positions) if positions else False
+
+                if signal == 'BUY':
+                    quantity = self.calculate_position_size(price)
+
+                    if quantity > 0:
+                        lower_band = result.get('lower', 0)
+                        reason = f"price {price:.2f} <= lower band {lower_band:.2f}"
+
+                        log.info(f"{mode_prefix} 🟢 BUY Signal: {symbol} {quantity} shares @ ${price:.2f}")
+
+                        try:
+                            order_result = self.client.buy_stock(
+                                symbol,
+                                quantity=quantity,
+                                price=price * 1.01,
+                                intraday_odd=True
+                            )
+
+                            trade_record = {
+                                'action': 'BUY',
+                                'symbol': symbol,
+                                'quantity': quantity,
+                                'price': price,
+                                'reason': reason,
+                                'timestamp': datetime.now()
+                            }
+                            self.trade_log.append(trade_record)
+                            print(f"📝 BUY {quantity} shares of {symbol} at {price:.2f} ({reason})")
+
+                            log.info(f"{mode_prefix} ✅ Order placed: {order_result}")
+                        except Exception as e:
+                            log.error(f"{mode_prefix} ❌ Failed to place BUY order: {e}")
+
+                elif signal == 'SELL' and has_position:
+                    position = next((p for p in positions if p.symbol == symbol), None)
+                    if position:
+                        quantity = min(self.calculate_position_size(price), position.quantity)
+
+                        upper_band = result.get('upper', 0)
+                        reason = f"price {price:.2f} >= upper band {upper_band:.2f}"
+
+                        log.info(f"{mode_prefix} 🔴 SELL Signal: {symbol} {quantity} shares @ ${price:.2f}")
+
+                        try:
+                            order_result = self.client.sell_stock(
+                                symbol,
+                                quantity=quantity,
+                                price=price * 0.99,
+                                intraday_odd=False
+                            )
+
+                            trade_record = {
+                                'action': 'SELL',
+                                'symbol': symbol,
+                                'quantity': quantity,
+                                'price': price,
+                                'reason': reason,
+                                'timestamp': datetime.now()
+                            }
+                            self.trade_log.append(trade_record)
+                            print(f"📝 SELL {quantity} shares of {symbol} at {price:.2f} ({reason})")
+
+                            log.info(f"{mode_prefix} ✅ Order placed: {order_result}")
+                        except Exception as e:
+                            log.error(f"{mode_prefix} ❌ Failed to place SELL order: {e}")
+
+            except Exception as e:
+                log.error(f"Order execution error: {e}")
+
+    async def display_time(self):
+        log.info("Time display started")
+
+        while not SHUTDOWN:
+            if self.client.get_broker_name() == "mock":
+                ts = self.client.broker_api.get_system_time()
+            else:
+                ts = datetime.now()
+
+            time_str = ts.strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n{'='*60}")
+            print(f"Current Time: \033[93m{time_str}\033[0m")
+            print(f"{'='*60}\n")
+
+            await asyncio.sleep(self.mock_env_sleep(DISPLAY_TIME_INTERVAL))
+
+    async def trigger_order_matching(self):
+        if not (hasattr(self.client.broker_api, 'api') and
+                hasattr(self.client.broker_api.api, '_trigger_order_matching')):
+            log.info("Order matching task not needed (not using mock broker)")
+            return
+
+        log.info("Order matching task started")
+
+        while not SHUTDOWN:
+            print('check_if_any_order_can_be_filled()')
+            try:
+                self.client.broker_api.api._trigger_order_matching()
+            except Exception as e:
+                log.error(f"Order matching error: {e}")
+
+            await asyncio.sleep(self.mock_env_sleep(CHECK_FILL_INTERVAL))
+
+
+# ==================== Main Entry Point ====================
+def signal_handler(sig, frame):
+    global SHUTDOWN
+    log.info(f"Received signal {sig}, shutting down...")
+    SHUTDOWN = True
+
+
+async def async_main():
+    """Main async entry point"""
+    global SHUTDOWN
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Get broker type (default: mock)
+    broker_type = os.environ.get('BROKER_TYPE', 'mock').lower()
+
+    # Load broker/service configurations (API keys, certs, etc.)
+    load_cjconf()
+
+    # Determine backtest mode from env or default to 'y'
+    backtest_mode = os.environ.get('BACKTEST_MODE', 'y').lower() == 'y'
+
+    # Load system configurations from .cjsys file (intervals, window size, etc.)
+    load_cjsys(broker=broker_type, backtest_mode=backtest_mode)
+
+    # print_config()
+    # import time
+    # time.sleep(30)
+
+    # Create SystemConfig from loaded config dict
+    cfg = SystemConfig(
+        backtest_mode=config['backtest_mode'],
+        playback_speed=config['playback_speed'],
+        price_monitor_interval=config['price_monitor_interval'],
+        analysis_interval=config['analysis_interval'],
+        llm_report_interval=config['llm_report_interval'],
+        display_time_interval=config['display_time_interval'],
+        check_fill_interval=config['check_fill_interval'],
+        window_size=config['window_size'],
+        bb_min_width_pct=config['bb_min_width_pct'],
+        risk_max_position_pct=config['risk_max_position_pct'],
+        backtest_duration_days=config['backtest_duration'],
+    )
+
+    # Apply config to module-level globals
+    _apply_config(cfg)
+
+    log.info(
+        f"System config loaded: {broker_type} | "
+        f"{'BACKTEST' if cfg.backtest_mode else 'LIVE'} | "
+        f"speed={cfg.playback_speed}x | "
+        f"window={cfg.window_size} | "
+        f"duration={cfg.backtest_duration_days}d"
+    )
+
+    # Prepare broker client config
+    username = config.get('username', 'user000')
+    config["state_file"] = f"./{broker_type}_{username}.json"
+    config["mirror_db_path"] = f"./data/{broker_type}_{username}.db"
+
+    # Create broker client based on type
+    if broker_type == 'mock':
+        client = AccountClient(BrokerType.MOCK, **config)
+    elif broker_type == 'realistic':
+        real = AccountClient(BrokerType.SINOPAC, **config)
+        client = AccountClient(BrokerType.MOCK, real_account=real, **config)
+    else:
+        log.error(f"Unsupported broker type: {broker_type}")
+        return
+
+    client.connect()
+    log.info(f"Connected to {broker_type} broker")
+
+    system = TradingSystem(client)
+
+    initial_symbols = system.get_watch_symbols()
+    if not initial_symbols:
+        log.warning("⚠️  No positions found. System will monitor positions as they are created.")
+
+    tasks = [
+        asyncio.create_task(system.monitor_prices(), name="price_monitor"),
+        asyncio.create_task(system.analyze_signals(), name="signal_analysis"),
+        asyncio.create_task(system.generate_llm_report(), name="llm_report"),
+        asyncio.create_task(system.execute_orders(), name="order_executor"),
+        asyncio.create_task(system.display_time(), name="time_display"),
+        asyncio.create_task(system.trigger_order_matching(), name="order_matching"),
+    ]
+
+    os.system("clear")
+    log.info("🏁 Trading system started")
+    print("""
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%%%%%%%###%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%==*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%#+-.....:+#%%%=.......+%=..........-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%..+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%*...-+++=...#%%*+++++..+%*+++=..-++++%%%%%%%%%%%%%%%%%%%##%%%%%%%%%%%%##%#%..+%%%%%%##%%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%*..-#%%%%%#+#%%%%%%%%%..+%%%%%#..*%%%%%+.:%+-......%%#+:....-#:.+%%%+:....-#..+%%%*-....:=#%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%-.:%%%%%%%%%%%%%%%%%%%..+%%%%%#..*%%%%%+..-.-===-..%#:..=**+-...*%#-..=**+-...+%%-..=***-..*%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%..-%%%%%%%%%%%%%%%%%%%..+%%%%%#..*%%%%%+..:#%%%%+..%=..#%%%%%=..+%+..#%%%%%+..+#+..*#####-.:%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%-.:%%%%%%%%%++*%%%%%%%..+%%%%%#..*%%%%%+..*%%%%%###%:.-%%%%%%#..+%-.:%%%%%%# .+%=...........%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%*..-#%%%%%#=..*#%%%%%*..+%%%%%#..*%%%%%+..#%%%%%%%%%=..#%%%%%=..+%+..*%%%%%+..+%+..*%%%%%%%%%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%%*...=+*+=...*#::=++=..:%%%%%%#..*%%%%%+..#%%%%%%%%%#:..=**+-...+%#-..=**+-...+%%=..=+**=.:#%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%#+-.....:+#%#=:....:+#%%%%%%#..*%%%%%*..#%%%%%%%%%%#+:....-#:.*%%%+-....-*:.+%%%*-.....-*%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%%%%%###%%%%%%%%####%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%####%%%%%%%%%%%%##%%%%%%%%%%%%###%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+""")
+    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if BACKTEST_MODE else 'LIVE'}")
+
+    try:
+        while not SHUTDOWN:
+            await asyncio.sleep(system.mock_env_sleep(1))
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt received")
+
+    if BACKTEST_MODE:
+        system.print_backtest_summary()
+
+    log.info("Shutting down tasks...")
+    for task in tasks:
+        task.cancel()
+
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    client.disconnect()
+    log.info("Bye!")
+
+
+def main_system():
+    """Entry point for the trading system"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="CJTrade Trading System")
+    parser.add_argument("-B", "--broker", type=str, default="mock",
+                        choices=["mock", "realistic", "sinopac"],
+                        help="Broker type: mock, realistic, or sinopac")
+    parser.add_argument("-b", "--backtest", type=str, default='y',
+                        choices=['y', 'n'],
+                        help="Backtest mode: y or n")
+    args = parser.parse_args()
+
+    os.environ['BROKER_TYPE'] = args.broker
+    os.environ['BACKTEST_MODE'] = args.backtest
+
+    asyncio.run(async_main())

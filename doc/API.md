@@ -5,7 +5,7 @@
 The Beginner API provides a Pine Script-like interface for writing trading strategies. All functions are available in the `cjtrade.api.beginner` namespace.
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 ```
 
 ---
@@ -22,7 +22,7 @@ Manually set the global broker client instance.
 **Example:**
 ```python
 from cjtrade import AccountClient, BrokerType
-from cjtrade.api.beginner import set_client
+from cjtrade.pkgs.api.beginner import set_client
 
 client = AccountClient(BrokerType.SINOPAC)
 set_client(client)
@@ -258,7 +258,7 @@ Short aliases for common functions:
 
 **Example:**
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 print(f"Cash: {cash()}, Equity: {equity()}")
 pos = positions()
@@ -323,7 +323,7 @@ Represents OHLCV bar data.
 ## Strategy Template
 
 ```python
-from cjtrade.api.beginner import *
+from cjtrade.pkgs.api.beginner import *
 
 # Optional: Initialize once at start
 def setup():

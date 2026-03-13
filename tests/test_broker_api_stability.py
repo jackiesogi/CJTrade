@@ -104,8 +104,8 @@ Recommendations:
     )
     args = parser.parse_args()
 
-    from cjtrade.core.config_loader import load_supported_config_files
-    from cjtrade.core.account_client import BrokerType
+    from cjtrade.pkgs.config.config_loader import load_supported_config_files
+    from cjtrade.pkgs.brokers.account_client import BrokerType
     from tests.cj_api.base import BaseBrokerTest
 
     load_supported_config_files()

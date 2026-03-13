@@ -1,7 +1,7 @@
 import os
 
 import shioaji as sj
-from cjtrade.core.config_loader import load_supported_config_files
+from cjtrade.pkgs.config.config_loader import load_supported_config_files
 
 load_supported_config_files()
 
