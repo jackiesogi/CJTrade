@@ -122,7 +122,16 @@ class BrokerAPIBase(ABC):
         pass
 
     @abstractmethod
+    # TODO: To be removed
     def commit_order(self) -> OrderResult:
+        pass
+
+    # @abstractmethod
+    def sync_state(self) -> None:
+        """
+        This appears to replace `commit_order()` because `commit_order()` does not really
+        have a staging area in sinopac, instead `commit_order()` only sync account state.
+        """
         pass
 
     @abstractmethod
