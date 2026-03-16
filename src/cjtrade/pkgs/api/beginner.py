@@ -18,11 +18,13 @@ Example:
         return None
 """
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from typing import Callable
 from typing import Optional
 
+import numpy as np
 from cjtrade.pkgs.analytics.technical import ta
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
@@ -41,6 +43,62 @@ load_dotenv()
 _global_client: Optional[AccountClient] = None
 _current_symbol: Optional[str] = None
 _current_position: Optional[Position] = None
+
+
+@dataclass
+class KbarSeries:
+    """Beginner-friendly kbar container with vector fields + latest OHLCV shortcuts."""
+    symbol: str
+    timestamps: list
+    opens: np.ndarray
+    highs: np.ndarray
+    lows: np.ndarray
+    closes: np.ndarray
+    volumes: np.ndarray
+
+    @property
+    def open(self) -> float:
+        return float(self.opens[-1]) if len(self.opens) else 0.0
+
+    @property
+    def high(self) -> float:
+        return float(self.highs[-1]) if len(self.highs) else 0.0
+
+    @property
+    def low(self) -> float:
+        return float(self.lows[-1]) if len(self.lows) else 0.0
+
+    @property
+    def close(self) -> float:
+        return float(self.closes[-1]) if len(self.closes) else 0.0
+
+    @property
+    def volume(self) -> int:
+        return int(self.volumes[-1]) if len(self.volumes) else 0
+
+
+def to_kbar_series(kbars: Optional[list], symbol: str = "") -> Optional[KbarSeries]:
+    """Convert a list[Kbar] to KbarSeries used by beginner strategies."""
+    if not kbars:
+        return None
+
+    # Already in series-like shape
+    if hasattr(kbars, 'closes') and hasattr(kbars, 'close'):
+        return kbars
+
+    try:
+        return KbarSeries(
+            symbol=symbol,
+            timestamps=[k.timestamp for k in kbars],
+            opens=np.array([k.open for k in kbars], dtype=float),
+            highs=np.array([k.high for k in kbars], dtype=float),
+            lows=np.array([k.low for k in kbars], dtype=float),
+            closes=np.array([k.close for k in kbars], dtype=float),
+            volumes=np.array([k.volume for k in kbars], dtype=float),
+        )
+    except Exception as e:
+        print(f"Failed to convert kbars to series: {e}")
+        return None
 
 
 def _get_client() -> AccountClient:
@@ -73,7 +131,7 @@ def get_current_symbol() -> Optional[str]:
 
 # ============ Helper Functions ============
 def create_client(
-    broker_type: BrokerType = BrokerType.SINOPAC,
+    broker_type: BrokerType = BrokerType.MOCK,
     simulation: bool = False,
 ) -> AccountClient:
     """
@@ -129,7 +187,11 @@ def buy(
 
     client = _get_client()
     try:
-        result = client.buy_stock(symbol, qty=qty, price=price or 0, intraday_odd=intraday_odd)
+        # AccountClient uses `quantity`; keep backward-compatible fallback.
+        try:
+            result = client.buy_stock(symbol, quantity=qty, price=price or 0, intraday_odd=intraday_odd)
+        except TypeError:
+            result = client.buy_stock(symbol, qty=qty, price=price or 0, intraday_odd=intraday_odd)
         return result
     except Exception as e:
         print(f"Buy order failed: {e}")
@@ -163,7 +225,11 @@ def sell(
 
     client = _get_client()
     try:
-        result = client.sell_stock(symbol, qty=qty, price=price or 0, intraday_odd=intraday_odd)
+        # AccountClient uses `quantity`; keep backward-compatible fallback.
+        try:
+            result = client.sell_stock(symbol, quantity=qty, price=price or 0, intraday_odd=intraday_odd)
+        except TypeError:
+            result = client.sell_stock(symbol, qty=qty, price=price or 0, intraday_odd=intraday_odd)
         return result
     except Exception as e:
         print(f"Sell order failed: {e}")
@@ -258,7 +324,7 @@ def get_kbars(
     symbol: str,
     start: str,
     end: str,
-    interval: str = "1m",
+    interval: str = "1d",
 ) -> Optional[list]:
     """
     Get K-bar data for a symbol in a date range.
@@ -279,11 +345,24 @@ def get_kbars(
     """
     client = _get_client()
     try:
+        # Beginner-friendly: remember last queried symbol as context for buy/sell.
+        set_current_symbol(symbol)
         product = Product(symbol=symbol)
         return client.get_kbars(product, start, end, interval)
     except Exception as e:
         print(f"Failed to get kbars: {e}")
         return None
+
+
+def get_kbar_series(
+    symbol: str,
+    start: str,
+    end: str,
+    interval: str = "1d",
+) -> Optional[KbarSeries]:
+    """Fetch kbars and return beginner-friendly KbarSeries."""
+    raw = get_kbars(symbol=symbol, start=start, end=end, interval=interval)
+    return to_kbar_series(raw, symbol=symbol)
 
 
 # ============ Aliases for brevity ============
@@ -295,6 +374,8 @@ equity = get_total_equity
 positions = get_positions
 kbars = get_kbars
 snapshot_price = get_current_price
+to_series = to_kbar_series
+series = get_kbar_series
 
 
 # ============ Public API ============
@@ -316,6 +397,9 @@ __all__ = [
     'get_balance', 'cash',
     'get_total_equity', 'equity',
     'get_kbars', 'kbars',
+    'to_kbar_series', 'to_series',
+    'get_kbar_series', 'series',
+    'KbarSeries',
 
     # Visualization (optional)
     'KbarChartClient', 'KbarChartType',

@@ -4,17 +4,64 @@
 
 ## Introduction
 
-CJ Trade is a trading system development framework for `TWSE`, you can write your trading strategy using CJTrade API and deploy to any supported securities brokers!!!
+CJ Trade is a trading system development framework for `TWSE`.
+You can write your trading strategy using the CJTrade API and integrate it with any supported securities broker (證券商).
 
-It also comes with multiple great, out-of-the-box features, including:
-- AI-in-the-loop strategy.
-- Robust technical analysis tools.
-- News source integration.
-- CJTrade Interactive Shell for users to do manually trading / monitoring.
+It comes with two main components: `apps` and `pkgs`.
 
-## Start develop your trading strategy using CJTrade API
+* `pkgs` provide useful APIs for:
+  * Fetching financial news
+  * Calculating technical indicators (技術指標)
+  * Integrating with securities brokers
+  * Asking LLMs for advice
+  * Fetching financial statements (財務報表)
+  * Drawing K-bars (K線圖)
 
-See [API refernce](https://github.com/jackiesogi/CJTrade/tree/master/doc)
+* `apps` are example applications built using these `pkgs`.
+
+### Available apps in [`apps`](https://github.com/jackiesogi/CJTrade/tree/master/src/cjtrade/apps)
+
+>#### 1. CJTrade Interactive Shell
+
+A demonstration shell that showcases most of the capabilities provided by the CJTrade APIs.
+
+>#### 2. CJTrade System
+
+A 24/7 service that monitors prices, calculates Bollinger Bands (布林通道), generates AI-driven financial advice and account summaries, and places orders automatically so you don't have to trade manually.
+
+>#### 3. ArenaX
+
+A complete simulated execution environment using real historical price data. It supports order submission, time progression, and order matching, making it suitable for researchers who need to perform backtesting (回測) in a sandbox environment.
+
+<details>
+<summary><b>Supported Brokers</b></summary>
+
+<ul>
+<li>
+<b>Sinopac</b> (永豐金證券)<br>
+Full implementation with real-time market data and trading support.
+</li>
+
+<li>
+<b>ArenaX</b> (模擬環境)<br>
+Paper trading (模擬交易) and backtesting (回測) environment for strategy testing.
+</li>
+</ul>
+
+</details>
+
+<details>
+<summary><b>Coming Soon</b></summary>
+
+<ul>
+<li><b>Cathay</b> (國泰證券)</li>
+<li><b>Yuanta</b> (元大證券)</li>
+<li><b>Mega</b> (兆豐證券)</li>
+<li><b>Interactive Brokers</b> (盈透證券)</li>
+</ul>
+
+</details>
+
 
 ## Run CJTrade Interactive Shell
 The CJTrade interactive shell (`cjtrade_shell`), is built mainly for users to explore CJTrade API functionalities.
@@ -87,7 +134,7 @@ If you want to test it out, please follow the installation guide in the previous
 # Note that choosing `sinopac` as broker will place real order when strategy condition is met,
 # unless you expliclitly export an environment variable `export SIMULATION=y` before running this.
 export WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
-uv run system --broker=mock  # or realistic / sinopac
+uv run system --broker=mock --backtest=y         # or realistic / sinopac
 ```
 
 ## Test
@@ -103,29 +150,6 @@ uv run test --broker=sinopac --group=all
 ./tests/test_broker_api_stability.py --broker=mock --delay=8
 ```
 
----
+## Start develop your trading strategy using CJTrade API
 
-:warning: Below is for development
-
-## Project TODO
-Note that the todos listed here is for those brand new feature, those still don't have a specific file to put into, or those not sure where to put.
-If it is a modification to existing logic, please mark todo directly in that file, and it will be easier to trace using todo tree extension.
-
-- [ ] Add `get_latest_kbar() -> Kbar` or related feature that can fetch exact one kbar.
-- [x] Add abstraction to database interaction and think about what and how to record. (sqlite3 first)
-- [ ] Add candidate manager related feature.
-- [ ] Add `Dash` package and work with stateful UI (not only kbar chart but also some buttons and fields).
-
-### Kbar aggregation interval consistency
-- For mock securities, YFinance supports: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
-- For sinopac securities, Sinopac supports: N/A (Only 1m kbar)
-- For unified `AccountClient` class requires: 1m,3m,5m,10m,15m,20m,30m,45m,1h,90m,2h,1d,1w,1M
-Consider to align `AccountClient` requirements with yfinance so that there won't be any conversion needed.
-
-
-## For clear, maintainable branch design
-- `master`: Master branch.
-- `broker/{brokername}`: Broker's API bridging, data handling, broker-specific features and tests.
-- `test/{optinonal-name}`: Generic test script and integration test. (For testing broker's API stability -> `broker/{brokername}`)
-- `ui/{ui-type}`: Rendering chart, web interface, etc.
-- `misc/{misc-type}`: LLM / analytics features.
+See [API refernce](https://github.com/jackiesogi/CJTrade/tree/master/doc)

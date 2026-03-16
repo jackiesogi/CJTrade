@@ -94,7 +94,7 @@ class TestBeginnerAPI:
         self.mock_client.buy_stock.assert_called_once()
         call_args = self.mock_client.buy_stock.call_args
         assert call_args[0][0] == "2330"  # symbol
-        assert call_args[1]["qty"] == 100
+        assert call_args[1].get("quantity", call_args[1].get("qty")) == 100
 
     def test_buy_with_explicit_symbol(self):
         """Test buy order with explicit symbol"""
