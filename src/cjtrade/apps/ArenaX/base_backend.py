@@ -13,6 +13,7 @@ from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.order import OrderLot
+from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.order import OrderType
 from cjtrade.pkgs.models.order import PriceType
@@ -21,6 +22,20 @@ from cjtrade.pkgs.models.product import Exchange
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
 from cjtrade.pkgs.models.quote import Snapshot
+from cjtrade.pkgs.models.trade import Trade
+from cjtrade.apps.ArenaX.oder_result_helper import (
+    CANCELLED_ORDER_STANDARD,
+    COMMITTED_ORDER_STANDARD,
+    PLACED_ORDER_STANDARD,
+    REJECTED_ORDER_EXCEED_TRADING_LIMIT,
+    REJECTED_ORDER_HAS_BEEN_FILLED,
+    REJECTED_ORDER_NEGATIVE_PRICE,
+    REJECTED_ORDER_NEGATIVE_QUANTITY,
+    REJECTED_ORDER_NOT_FOUND_FOR_CANCEL,
+    REJECTED_ORDER_NOT_FOUND_FOR_COMMIT,
+    REJECTED_ORDER_NOT_SUFFICIENT_BALANCE,
+    REJECTED_ORDER_NOT_SUFFICIENT_STOCK,
+)
 
 NOT_AVAILABLE_FOR_THIS_BACKEND = None
 PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
@@ -283,6 +298,114 @@ class ArenaX_BackendBase:
 
         return self._create_fallback_snapshot(symbol, adjusted_mock_time)
 
+    def list_trades(self) -> List[Trade]:
+        if hasattr(self, "_check_if_any_order_filled"):
+            self._check_if_any_order_filled()
+
+        trades = []
+        all_orders = (
+            self.account_state.orders_placed
+            + self.account_state.orders_committed
+            + self.account_state.orders_filled
+            + self.account_state.orders_cancelled
+        )
+        for order in all_orders:
+            trades.append(
+                Trade(
+                    id=order.id,
+                    symbol=order.product.symbol,
+                    action=order.action.value,
+                    quantity=order.quantity,
+                    price=order.price,
+                    status=self.account_state.all_order_status.get(order.id, OrderStatus.UNKNOWN).value,
+                    order_type=order.order_type.value,
+                    price_type=order.price_type.value,
+                    order_lot=order.order_lot,
+                    order_datetime=order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    deals=0,
+                    ordno=order.id,
+                )
+            )
+        return trades
+
+    def place_order(self, order: Order) -> OrderResult:
+        if not self._is_valid_price(order):
+            return REJECTED_ORDER_NEGATIVE_PRICE(order)
+        if not self._is_valid_quantity(order):
+            return REJECTED_ORDER_NEGATIVE_QUANTITY(order)
+
+        if not self._is_within_trading_limit(order):
+            return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
+
+        if order.action == OrderAction.BUY:
+            if not self._is_sufficient_account_balance(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_BALANCE(order)
+        elif order.action == OrderAction.SELL:
+            if not self._is_sufficient_account_inventory(order):
+                return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order)
+
+        if hasattr(self, "market"):
+            order.opt_field["last_check_for_fill"] = self.market.get_market_time()["mock_current_time"]
+        else:
+            order.opt_field["last_check_for_fill"] = datetime.now()
+
+        self.account_state.orders_placed.append(order)
+        self.account_state.all_order_status[order.id] = OrderStatus.PLACED
+        return PLACED_ORDER_STANDARD(order)
+
+    def commit_order(self, order_id: str) -> OrderResult:
+        order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
+        if not order:
+            return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
+
+        self.account_state.orders_committed.append(order)
+        self.account_state.orders_placed.remove(order)
+
+        market_open = hasattr(self, "market") and self.market.is_market_open()
+        if market_open:
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MATCHING
+            status = OrderStatus.COMMITTED_WAIT_MATCHING
+        else:
+            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+            status = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+
+        return OrderResult(
+            status=status,
+            message="Order committed successfully." if market_open else "Order pending market open.",
+            metadata={"market_open": market_open},
+            linked_order=order.id,
+        )
+
+    def cancel_order(self, order_id: str) -> OrderResult:
+        order_to_cancel = None
+        source_list = None
+
+        for order in self.account_state.orders_placed:
+            if order.id == order_id:
+                order_to_cancel = order
+                source_list = self.account_state.orders_placed
+                break
+
+        if not order_to_cancel:
+            for order in self.account_state.orders_committed:
+                if order.id == order_id:
+                    order_to_cancel = order
+                    source_list = self.account_state.orders_committed
+                    break
+
+        if not order_to_cancel:
+            for order in self.account_state.orders_filled:
+                if order.id == order_id:
+                    return REJECTED_ORDER_HAS_BEEN_FILLED(order)
+
+        if not order_to_cancel:
+            return REJECTED_ORDER_NOT_FOUND_FOR_CANCEL(order_id)
+
+        source_list.remove(order_to_cancel)
+        self.account_state.orders_cancelled.append(order_to_cancel)
+        self.account_state.all_order_status[order_id] = OrderStatus.CANCELLED
+        return CANCELLED_ORDER_STANDARD(order_to_cancel)
+
     def _sync_with_real_account(self) -> None:
         """Sync position structure from real account (legacy-compatible)."""
         if not self.real_account:
@@ -422,6 +545,146 @@ class ArenaX_BackendBase:
             order_lot=order_lot,
             created_at=created_time,
         )
+
+    def _is_sufficient_account_balance(self, order: Order) -> bool:
+        required_amount = order.price * order.quantity
+        return self.account_state.balance >= required_amount
+
+    def _is_sufficient_account_inventory(self, order: Order) -> bool:
+        position = next((pos for pos in self.account_state.positions if pos.symbol == order.product.symbol), None)
+        return bool(position and position.quantity >= order.quantity)
+
+    def _is_valid_price(self, order: Order) -> bool:
+        return order.price > 0
+
+    def _is_valid_quantity(self, order: Order) -> bool:
+        return order.quantity > 0
+
+    def _is_within_trading_limit(self, order: Order) -> bool:
+        trade_limit = 1_000_000.0
+        if not hasattr(self, "market"):
+            return True
+
+        trades = self.list_trades()
+        today_str = self.market.get_market_time()["mock_current_time"].strftime("%Y-%m-%d")
+        traded_sum = 0.0
+        for trade in trades:
+            if trade.status in [
+                OrderStatus.COMMITTED_WAIT_MATCHING.value,
+                OrderStatus.FILLED.value,
+            ] and trade.order_datetime.startswith(today_str):
+                traded_sum += trade.price * trade.quantity
+        return traded_sum + (order.price * order.quantity) <= trade_limit
+
+    def _check_if_any_order_filled(self) -> bool:
+        if not hasattr(self, "market"):
+            return False
+
+        committed_copy = list(self.account_state.orders_committed)
+        for order in committed_copy:
+            target_price = order.price
+            cmp_time_range_start = order.opt_field.get(
+                "last_check_for_fill",
+                self.market.get_market_time()["mock_init_time"],
+            )
+            cmp_time_range_end = self.market.get_market_time()["mock_current_time"]
+
+            if cmp_time_range_end <= cmp_time_range_start:
+                continue
+
+            price_filled = False
+            if order.action == OrderAction.BUY:
+                price_filled = self._check_price_in_time_range(
+                    order.product.symbol,
+                    cmp_time_range_start,
+                    cmp_time_range_end,
+                    lambda p: p <= target_price,
+                )
+            elif order.action == OrderAction.SELL:
+                price_filled = self._check_price_in_time_range(
+                    order.product.symbol,
+                    cmp_time_range_start,
+                    cmp_time_range_end,
+                    lambda p: p >= target_price,
+                )
+
+            order.opt_field["last_check_for_fill"] = cmp_time_range_end
+
+            if price_filled and price_filled > 0:
+                try:
+                    self.account_state.orders_filled.append(order)
+                    if order in self.account_state.orders_committed:
+                        self.account_state.orders_committed.remove(order)
+                    self.account_state.all_order_status[order.id] = OrderStatus.FILLED
+
+                    fill_time = self.market.start_date + timedelta(minutes=price_filled)
+                    qty_signed = order.quantity if order.action == OrderAction.BUY else -order.quantity
+                    self.account_state.balance -= (qty_signed * order.price)
+
+                    self.account_state.fill_history.append({
+                        "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
+                        "order_id": order.id,
+                        "symbol": order.product.symbol,
+                        "action": order.action.value,
+                        "quantity": qty_signed,
+                        "price": order.price,
+                        "time": fill_time.isoformat(),
+                    })
+
+                    self._reconstruct_positions_from_history()
+                except Exception as exc:
+                    print(f"Error moving order {order.id} to filled: {exc}")
+        return True
+
+    def _check_price_in_time_range(
+        self,
+        symbol: str,
+        start_time: datetime,
+        end_time: datetime,
+        price_condition,
+    ) -> int:
+        try:
+            if symbol not in self.market.historical_data:
+                return False
+
+            data_info = self.market.historical_data[symbol]
+            data = data_info.get("data")
+            timestamps = data_info.get("timestamps")
+
+            if data is None or data.empty or timestamps is None:
+                return False
+
+            start_offset = int((start_time - self.market.start_date).total_seconds() / 60)
+            end_offset = int((end_time - self.market.start_date).total_seconds() / 60)
+            if end_offset <= start_offset:
+                return False
+
+            n = len(data)
+            if n == 0:
+                return False
+
+            for minute in range(start_offset + 1, end_offset + 1):
+                idx = minute % n
+                try:
+                    try:
+                        close_price = float(data["Close"].iat[idx])
+                    except Exception:
+                        close_price = float(data["Close"].iloc[idx].item())
+                except Exception:
+                    try:
+                        close_price = float(data.iloc[idx]["Close"])
+                    except Exception:
+                        try:
+                            close_price = float(data.iloc[idx]["close"])
+                        except Exception:
+                            continue
+
+                if price_condition(close_price):
+                    return minute
+            return -1
+        except Exception as exc:
+            print(f"_check_price_in_time_range error: {exc}")
+            return -1
 
     def _reconstruct_positions_from_history(self) -> None:
         if not self.account_state.fill_history:
