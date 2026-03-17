@@ -15,10 +15,6 @@ from cjtrade.pkgs.models.rank_type import *
 
 
 class BrokerType(Enum):
-    SINOPAC = "sinopac"  # 永豐金
-    YUANTA  = "yuanta"   # 元大
-    CATHAY  = "cathay"   # 國泰
-    MOCK    = "mock"     # 模擬券商
     ARENAX  = "arenax"   # 模擬券商 (新)
 
 class AccountState:
@@ -29,13 +25,7 @@ class AccountState:
         self.pending_orders: List[Order] = [] # Don't implement it for now, too complex.
         self.order_history: List[Order] = []  # Don't implement it for now, too complex.
 
-
-# AccountClient = Broker's API (sync source) + AccountState (local cached state)
-# For example, when user try to access account balance, AccountClient will:
-#   1. Call BrokerAPI to sync the latest state from remote broker server
-#   2. Update AccountState with the latest data
-#   3. Return the cached balance from AccountState
-class AccountClient:
+class ArenaX_AccountClient:
     """An unified API to interact with different brokers."""
 
     def __init__(self, broker_type: BrokerType, **config):
@@ -45,18 +35,9 @@ class AccountClient:
         self.broker_api_conn_keepalive = True  # For future use
 
     def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
-        if broker_type == BrokerType.SINOPAC:
-            from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
-            return SinopacBrokerAPI(**config)
-        elif broker_type == BrokerType.YUANTA:
-            from cjtrade.pkgs.brokers.yuanta.yuanta import YuantaBrokerAPI
-            return YuantaBrokerAPI(**config)
-        elif broker_type == BrokerType.CATHAY:
-            from cjtrade.pkgs.brokers.cathay.cathay import CathayBrokerAPI
-            return CathayBrokerAPI(**config)
-        elif broker_type == BrokerType.MOCK:
-            from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
-            return MockBrokerAPI(**config)
+        if broker_type == BrokerType.ARENAX:
+            from cjtrade.apps.ArenaX.arenax_broker_api import ArenaXBrokerAPI
+            return ArenaXBrokerAPI(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 
@@ -67,10 +48,7 @@ class AccountClient:
         self.account_state.balance = self.broker_api.get_balance()
         self.account_state.positions = self.broker_api.get_positions()
         self.account_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # self.account_state.pending_orders = self.broker_api.list_orders()
-        # self.account_state.order_history = []
 
-    # User need to call `connect()` before calling any other method
     def connect(self) -> bool:
         return self.broker_api.connect()
 
@@ -95,26 +73,9 @@ class AccountClient:
         return self.broker_api.get_snapshots(products)
 
     def register_order_callback(self, callback: OrderCallback) -> None:
-        """
-        Register callback for order status changes (including fills).
-
-        Args:
-            callback: Function(OrderEvent) -> None
-
-        Example:
-            def on_order_change(event: OrderEvent):
-                print(f"{event.old_status} → {event.new_status}")
-                if event.is_filled():
-                    # Handle fill
-                    update_position(event.symbol, event.filled_quantity)
-        """
         return self.broker_api.register_order_callback(callback)
 
     def get_kbars(self, product: Product, start: str, end: str, interval: str):
-        # note that the range is [start,end), end is exclusive.
-        # TODO: test each interval aggregation stability (especially edge cases)
-        # interval: '1m', '3m', '5m', '10m', '15m', '20m', '30m', '45m',
-        #           '1h', '90m', '2h', '1d', '1w', '1M'
         return self.broker_api.get_kbars(product, start, end, interval)
 
     def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:
