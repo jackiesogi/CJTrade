@@ -551,8 +551,8 @@ class CalendarCommand(CommandBase):
 
             # Check if it's a time adjustment command (+N or -N)
             if arg.startswith(('+', '-')):
-                if client.get_broker_name() != "mock":
-                    print("Error: Time adjustment only available in mock environment")
+                if client.get_broker_name() != "arenax":
+                    print("Error: Time adjustment only available in ArenaX environment")
                     return
 
                 try:
@@ -571,7 +571,7 @@ class CalendarCommand(CommandBase):
                 return
 
         # Get timestamp from broker or system
-        if client.get_broker_name() == "mock":
+        if client.get_broker_name() == "arenax":
             suffix = " (mock time)"
             ts = client.broker_api.get_system_time()
         else:
@@ -916,23 +916,16 @@ def main():
         config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
         client = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
-        # config["speed"] = 120.0  # 120x speed for mock broker
-        # config["state_file"] = f"./mock_{config['username']}.json"
-        # config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
-        # client = ArenaX_AccountClient(BrokerType.MOCK, **config)
         raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
     elif args.broker == 'realistic':
-        # config["speed"] = 60.0  # 60x speed for mock broker
-        # config["state_file"] = f"./realistic_{config['username']}.json"
-        # config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
-        # real = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
-        # client = ArenaX_AccountClient(BrokerType.MOCK, real_account=real, **config)
         raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
     elif args.broker == 'arenax':
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
         config["mirror_db_path"] = f"./data/arenax_{config['username']}.db"
-        client = ArenaX_AccountClient(BrokerType.ARENAX, **config)
+        # real = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
+        real = None
+        client = ArenaX_AccountClient(BrokerType.ARENAX, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         print(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

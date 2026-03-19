@@ -16,6 +16,7 @@ from cjtrade.pkgs.models.rank_type import *
 
 class BrokerType(Enum):
     ARENAX  = "arenax"   # 模擬券商 (新)
+    SINOPAC = "sinopac"
 
 class AccountState:
     def __init__(self):
@@ -36,8 +37,11 @@ class ArenaX_AccountClient:
 
     def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
         if broker_type == BrokerType.ARENAX:
-            from cjtrade.apps.ArenaX.arenax_broker_api import ArenaXBrokerAPI
+            from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
             return ArenaXBrokerAPI(**config)
+        elif broker_type == BrokerType.SINOPAC:
+            from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
+            return SinopacBrokerAPI(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 

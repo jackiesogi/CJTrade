@@ -14,7 +14,14 @@ def connect_sqlite(database: str = ":memory:"):
     try:
         # Allow cross-thread access for Shioaji callbacks
         # SQLite is still thread-safe as long as we don't have concurrent writes
-        conn = sqlite3.connect(database, check_same_thread=False)
+        import os
+        db_path = os.path.expanduser(database)
+        if db_path != ":memory:":
+            db_path = os.path.abspath(db_path)
+            parent_dir = os.path.dirname(db_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+        conn = sqlite3.connect(db_path, check_same_thread=False)
         return SqliteDatabaseConnection(conn)
     except ConnectionError as e:
         print(f"Failed to connect to SQLite database: {e}")

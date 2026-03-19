@@ -49,3 +49,4 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             print("Not able to fetch historical data within max_attempts. Please try again")
             return
         self.market.set_historical_time(datetime.now(), days_back=days_back)
+        print(self.market.get_market_time())

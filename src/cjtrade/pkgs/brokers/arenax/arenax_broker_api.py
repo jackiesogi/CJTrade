@@ -37,8 +37,10 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         self.backtest_duration = config.get('backtest_duration', 3)
         # Note that state_file is used to persist the mock broker's account state (positions, orders, etc.) across sessions.
         self.state_file = config.get('state_file', "mock_account_state.json")
-        if self.backtest_mode:
+        if self.backtest_mode == True and self.real_account is not None:
             self.api = ArenaX_Backend_Historical(real_account=self.real_account, playback_speed=self.mock_playback_speed, state_file=self.state_file, num_days_preload=self.backtest_duration)
+        elif self.backtest_mode == True and self.real_account is None:
+            self.api = ArenaX_Backend_None(state_file=self.state_file, playback_speed=self.mock_playback_speed, num_days_preload=self.backtest_duration)
         else:
             self.api = ArenaX_Backend_PaperTrade(real_account=self.real_account, playback_speed=1.0, state_file=self.state_file)
         self._connected = False
@@ -46,6 +48,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         # db connection
         self.username = config.get('username', 'Ariana')
         self.db_path = config.get('mirror_db_path', f'./data/arenax.db')
+        # print(f"ArenaXBroker will use mirror database at: {self.db_path}")
         self.db = None
 
     def connect(self) -> bool:
@@ -53,12 +56,12 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         try:
             self.api.login()
             self._connected = True
-            print("ArenaXBroker connected successfully")
             self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
+            print("ArenaXBroker connected successfully")
             return True
         except Exception as e:
-            print(f"MockBroker connection failed: {e}")
+            print(f"ArenaXBroker connection failed: {e}")
             self._connected = False
             return False
 

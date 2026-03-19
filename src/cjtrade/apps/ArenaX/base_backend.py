@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,17 @@ from typing import Optional
 
 import pandas as pd
 import yfinance as yf
+from cjtrade.apps.ArenaX.oder_result_helper import CANCELLED_ORDER_STANDARD
+from cjtrade.apps.ArenaX.oder_result_helper import COMMITTED_ORDER_STANDARD
+from cjtrade.apps.ArenaX.oder_result_helper import PLACED_ORDER_STANDARD
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_EXCEED_TRADING_LIMIT
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_HAS_BEEN_FILLED
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NEGATIVE_PRICE
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NEGATIVE_QUANTITY
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_CANCEL
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_BALANCE
+from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_STOCK
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
@@ -23,19 +35,6 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
 from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.trade import Trade
-from cjtrade.apps.ArenaX.oder_result_helper import (
-    CANCELLED_ORDER_STANDARD,
-    COMMITTED_ORDER_STANDARD,
-    PLACED_ORDER_STANDARD,
-    REJECTED_ORDER_EXCEED_TRADING_LIMIT,
-    REJECTED_ORDER_HAS_BEEN_FILLED,
-    REJECTED_ORDER_NEGATIVE_PRICE,
-    REJECTED_ORDER_NEGATIVE_QUANTITY,
-    REJECTED_ORDER_NOT_FOUND_FOR_CANCEL,
-    REJECTED_ORDER_NOT_FOUND_FOR_COMMIT,
-    REJECTED_ORDER_NOT_SUFFICIENT_BALANCE,
-    REJECTED_ORDER_NOT_SUFFICIENT_STOCK,
-)
 
 NOT_AVAILABLE_FOR_THIS_BACKEND = None
 PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
@@ -82,6 +81,8 @@ class ArenaX_BackendBase:
     ) -> None:
         self.account_state_default_file = state_file
         self.real_account = real_account
+        if self.real_account and not self.real_account.is_connected():
+            self.real_account.connect()  # Early connection for fetching data
         self.playback_speed = playback_speed
         self.num_days_preload = num_days_preload
         self.skip_data_preload = skip_data_preload
@@ -108,77 +109,7 @@ class ArenaX_BackendBase:
         if self.real_account:
             self.real_account.disconnect()
         with open(self.account_state_default_file, 'w') as f:
-            import json
-            data = {
-                "balance": self.account_state.balance,
-                "positions": [
-                    {
-                        "symbol": pos.symbol,
-                        "quantity": pos.quantity,
-                        "avg_cost": pos.avg_cost,
-                        "current_price": pos.current_price,
-                        "market_value": pos.market_value,
-                        "unrealized_pnl": pos.unrealized_pnl
-                    } for pos in self.account_state.positions
-                ],
-                "orders_placed": [
-                    {
-                        "id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "price": order.price,
-                        "quantity": order.quantity,
-                        "price_type": order.price_type.value,
-                        "order_type": order.order_type.value,
-                        "order_lot": order.order_lot,
-                        "created_at": order.created_at.isoformat()
-                    } for order in self.account_state.orders_placed
-                ],
-                "orders_committed": [
-                    {
-                        "id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "price": order.price,
-                        "quantity": order.quantity,
-                        "price_type": order.price_type.value,
-                        "order_type": order.order_type.value,
-                        "order_lot": order.order_lot,
-                        "created_at": order.created_at.isoformat()
-                    } for order in self.account_state.orders_committed
-                ],
-                "orders_filled": [
-                    {
-                        "id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "price": order.price,
-                        "quantity": order.quantity,
-                        "price_type": order.price_type.value,
-                        "order_type": order.order_type.value,
-                        "order_lot": order.order_lot,
-                        "created_at": order.created_at.isoformat()
-                    } for order in self.account_state.orders_filled
-                ],
-                "orders_cancelled": [
-                    {
-                        "id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "price": order.price,
-                        "quantity": order.quantity,
-                        "price_type": order.price_type.value,
-                        "order_type": order.order_type.value,
-                        "order_lot": order.order_lot,
-                        "created_at": order.created_at.isoformat()
-                    } for order in self.account_state.orders_cancelled
-                ],
-                "all_order_status": {
-                    order_id: status.value
-                    for order_id, status in self.account_state.all_order_status.items()
-                },
-                "fill_history": self.account_state.fill_history
-            }
+            data = self._serialize_state_to_json()
             json.dump(data, f, indent=4)
         self._connected = False
         print("Simulation environment stopped")
@@ -243,6 +174,7 @@ class ArenaX_BackendBase:
     def snapshot(self, symbol: str) -> Snapshot:
         if not hasattr(self, "market"):
             return self._create_fallback_snapshot(symbol, datetime.now())
+        self._check_if_any_order_filled()
 
         if symbol not in self.market.historical_data:
             if self.real_account and not self.real_account.is_connected():
@@ -298,9 +230,9 @@ class ArenaX_BackendBase:
 
         return self._create_fallback_snapshot(symbol, adjusted_mock_time)
 
+    # corresponding command in cjtrade shell: lsodr
     def list_trades(self) -> List[Trade]:
-        if hasattr(self, "_check_if_any_order_filled"):
-            self._check_if_any_order_filled()
+        self._check_if_any_order_filled()
 
         trades = []
         all_orders = (
@@ -406,6 +338,8 @@ class ArenaX_BackendBase:
         self.account_state.all_order_status[order_id] = OrderStatus.CANCELLED
         return CANCELLED_ORDER_STANDARD(order_to_cancel)
 
+
+#############################  Internal Function (start)  #############################
     def _sync_with_real_account(self) -> None:
         """Sync position structure from real account (legacy-compatible)."""
         if not self.real_account:
@@ -545,6 +479,79 @@ class ArenaX_BackendBase:
             order_lot=order_lot,
             created_at=created_time,
         )
+
+    def _serialize_state_to_json(self):
+        data = {
+            "balance": self.account_state.balance,
+            "positions": [
+                {
+                    "symbol": pos.symbol,
+                    "quantity": pos.quantity,
+                    "avg_cost": pos.avg_cost,
+                    "current_price": pos.current_price,
+                    "market_value": pos.market_value,
+                    "unrealized_pnl": pos.unrealized_pnl
+                } for pos in self.account_state.positions
+            ],
+            "orders_placed": [
+                {
+                    "id": order.id,
+                    "symbol": order.product.symbol,
+                    "action": order.action.value,
+                    "price": order.price,
+                    "quantity": order.quantity,
+                    "price_type": order.price_type.value,
+                    "order_type": order.order_type.value,
+                    "order_lot": order.order_lot,
+                    "created_at": order.created_at.isoformat()
+                } for order in self.account_state.orders_placed
+            ],
+            "orders_committed": [
+                {
+                    "id": order.id,
+                    "symbol": order.product.symbol,
+                    "action": order.action.value,
+                    "price": order.price,
+                    "quantity": order.quantity,
+                    "price_type": order.price_type.value,
+                    "order_type": order.order_type.value,
+                    "order_lot": order.order_lot,
+                    "created_at": order.created_at.isoformat()
+                } for order in self.account_state.orders_committed
+            ],
+            "orders_filled": [
+                {
+                    "id": order.id,
+                    "symbol": order.product.symbol,
+                    "action": order.action.value,
+                    "price": order.price,
+                    "quantity": order.quantity,
+                    "price_type": order.price_type.value,
+                    "order_type": order.order_type.value,
+                    "order_lot": order.order_lot,
+                    "created_at": order.created_at.isoformat()
+                } for order in self.account_state.orders_filled
+            ],
+            "orders_cancelled": [
+                {
+                    "id": order.id,
+                    "symbol": order.product.symbol,
+                    "action": order.action.value,
+                    "price": order.price,
+                    "quantity": order.quantity,
+                    "price_type": order.price_type.value,
+                    "order_type": order.order_type.value,
+                    "order_lot": order.order_lot,
+                    "created_at": order.created_at.isoformat()
+                } for order in self.account_state.orders_cancelled
+            ],
+            "all_order_status": {
+                order_id: status.value
+                for order_id, status in self.account_state.all_order_status.items()
+            },
+            "fill_history": self.account_state.fill_history
+        }
+        return data
 
     def _is_sufficient_account_balance(self, order: Order) -> bool:
         required_amount = order.price * order.quantity
@@ -826,3 +833,4 @@ class ArenaX_BackendBase:
             result.append(kbar)
 
         return result
+#############################  Internal Function (end)  #############################
