@@ -282,7 +282,7 @@ class ArenaX_BrokerSideServer:
                 self.backend._check_if_any_order_filled()
             self._stop_event.wait(self._match_interval)
 
-if __name__ == "__main__":
+def main():
     import argparse
     load_cjconf()
     load_cjsys()
@@ -301,3 +301,6 @@ if __name__ == "__main__":
         print("\nShutting down server...")
         server.stop_http()
         server.stop()
+
+if __name__ == "__main__":
+    main()

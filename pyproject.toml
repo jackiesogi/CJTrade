@@ -35,7 +35,7 @@ main = "cjtrade:cli"
 test = "cjtrade.test_runner:main"
 atest = "cjtrade.test_runner_arenax:main"
 # atest = "cjtrade.apps.ArenaX.tests.test_runner:main"
-# arenax = "cjtrade.apps.ArenaX.main:main"  # Placeholder for ArenaX server
+arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
 system = "cjtrade.apps.cjtrade_system.cjtrade_system:main_system"
 
 
