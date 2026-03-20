@@ -17,6 +17,7 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 		playback_speed: float = 1.0,
 		num_days_preload: int = 3,
 		skip_data_preload: bool = False,
+		**kwargs
 	) -> None:
 		super().__init__(
 			state_file=state_file,

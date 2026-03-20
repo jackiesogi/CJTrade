@@ -14,7 +14,7 @@ from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import *
 
 
-class BrokerType(Enum):
+class ArenaX_BrokerType(Enum):
     ARENAX  = "arenax"   # 模擬券商 (新)
     SINOPAC = "sinopac"
 
@@ -29,17 +29,17 @@ class AccountState:
 class ArenaX_AccountClient:
     """An unified API to interact with different brokers."""
 
-    def __init__(self, broker_type: BrokerType, **config):
+    def __init__(self, broker_type: ArenaX_BrokerType, **config):
         self.broker_type = broker_type
         self.broker_api = self._set_broker_api(broker_type, **config)
         self.account_state = AccountState()
         self.broker_api_conn_keepalive = True  # For future use
 
-    def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
-        if broker_type == BrokerType.ARENAX:
+    def _set_broker_api(self, broker_type: ArenaX_BrokerType, **config) -> BrokerAPIBase:
+        if broker_type == ArenaX_BrokerType.ARENAX:
             from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
             return ArenaXBrokerAPI(**config)
-        elif broker_type == BrokerType.SINOPAC:
+        elif broker_type == ArenaX_BrokerType.SINOPAC:
             from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
             return SinopacBrokerAPI(**config)
         else:
@@ -104,7 +104,7 @@ class ArenaX_AccountClient:
         return self.broker_api.get_broker_name()
 
     @property
-    def current_broker_type(self) -> BrokerType:
+    def current_broker_type(self) -> ArenaX_BrokerType:
         return self.broker_type
 
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:

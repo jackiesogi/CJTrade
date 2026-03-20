@@ -1,17 +1,33 @@
+import logging
+import os
 import threading
+import time
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable
 from typing import Optional
 
+from cjtrade.apps.ArenaX.arenax_account_client import *
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.hist_backend import ArenaX_Backend_Historical
 from cjtrade.apps.ArenaX.live_backend import ArenaX_Backend_PaperTrade
 from cjtrade.apps.ArenaX.none_backend import ArenaX_Backend_None
+from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.config.config_loader import load_supported_config_files
+from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
 from flask import request
 from werkzeug.serving import make_server
 
+backend_config = {}
+server_config = {}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)-8s: %(message)s"
+)
+log = logging.getLogger("cjtrade.arenax_server")
 
 def prepare_price_db(price_db_path: Optional[str]):
     if not price_db_path:
@@ -22,6 +38,59 @@ def prepare_price_db(price_db_path: Optional[str]):
 def regular_sort_price_db(price_db_path: Optional[str]):
     # Placeholder for scheduled maintenance
     return
+
+# CJCONF is for the brokers / services configuration (e.g. API keys, certs, etc.)
+def load_cjconf():
+    load_supported_config_files()
+    keys = ['API_KEY', 'SECRET_KEY', 'CA_CERT_PATH', 'CA_PASSWORD', 'SIMULATION',
+            'USERNAME', 'LLM_API_KEY', 'LLM_MODEL', 'GEMINI_API_KEY', 'NEWSAPI_API_KEY']
+    for key in keys:
+        if os.environ.get(key):
+            backend_config[key.lower()] = os.environ[key]
+
+    backend_config['simulation'] = backend_config.get('simulation', 'y').lower() == 'y'
+    backend_config['ca_path'] = backend_config.get('ca_cert_path', "")
+    backend_config['ca_passwd'] = backend_config.get('ca_password', "")
+
+# CJSYS is for CJTrade System itself
+def load_cjsys():
+    file_path = None
+
+    if file_path:
+        file_to_load = file_path
+    else:
+        file_to_load = Path(__file__).parent / "configs" / "arenax-server_default.cjsys"
+
+    log.info(f"Loading config file {file_to_load}")
+
+    load_dotenv(file_to_load, override=False)
+    keys = ['BACKTEST_MODE', 'BACKTEST_DURATION', 'BACKTEST_DURATION_DAYS', 'PLAYBACK_SPEED', 'WATCH_LIST',
+            'PRICE_MONITOR_INTERVAL', 'ANALYSIS_INTERVAL', 'LLM_REPORT_INTERVAL', 'DISPLAY_TIME_INTERVAL', 'CHECK_FILL_INTERVAL',
+            'WINDOW_SIZE', 'BB_MIN_WIDTH_PCT',
+            'RISK_MAX_POSITION_PCT']
+    for key in keys:
+        if os.environ.get(key):
+            log.info(f"  {key}={os.environ[key]}")
+            server_config[key.lower()] = os.environ[key]
+
+    # Adjust the types of certain keys
+    server_config['backtest_mode'] = server_config.get('backtest_mode', 'y').lower() == 'y'
+    server_config['playback_speed'] = float(server_config.get('playback_speed', 1.0))
+    server_config['backtest_duration_days'] = int(server_config.get('backtest_duration_days', 365))
+    server_config['watch_list'] = server_config.get('watch_list', "").split(',') if server_config.get('watch_list') else []
+    server_config['price_monitor_interval'] = float(server_config.get('price_monitor_interval', 60))
+    server_config['analysis_interval'] = float(server_config.get('analysis_interval', 30))
+    server_config['llm_report_interval'] = float(server_config.get('llm_report_interval', 300))
+    server_config['display_time_interval'] = float(server_config.get('display_time_interval', 40))
+    server_config['check_fill_interval'] = float(server_config.get('check_fill_interval', 60))
+    server_config['window_size'] = int(server_config.get('window_size', 10))
+    server_config['bb_min_width_pct'] = float(server_config.get('bb_min_width_pct', 0.01))
+    server_config['risk_max_position_pct'] = float(server_config.get('risk_max_position_pct', 0.05))
+
+    # For backward compatibility ('speed' will be replaced by 'playback_speed')
+    server_config['speed'] = server_config['playback_speed']
+    server_config['backtest_duration'] = server_config['backtest_duration_days']
+
 
 # Provide an interface for apps to:
 #   start / stop
@@ -44,11 +113,16 @@ class ArenaX_BrokerSideServer:
             self.backend = backend
         else:
             if backend_str == "hist":
-                self.backend = ArenaX_Backend_Historical()
+                # TODO: actually it is kind of weird bcuz the backend still needs
+                #       an `AccountClient` instance to fetch historical data, and
+                #       it is kina like a user-end code or frontend code.
+                self.real = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.SINOPAC, **backend_config)
+                self.client = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.ARENAX, real_account=self.real, **backend_config)
+                self.backend = ArenaX_Backend_Historical(real_account=self.client, **server_config)
             elif backend_str == "live":
-                self.backend = ArenaX_Backend_PaperTrade()
+                self.backend = ArenaX_Backend_PaperTrade(**backend_config)
             elif backend_str == "none":
-                self.backend = ArenaX_Backend_None()
+                self.backend = ArenaX_Backend_None(**backend_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
 
@@ -103,6 +177,24 @@ class ArenaX_BrokerSideServer:
                 preload_days=preload_days,
             )
             return jsonify({"ok": True, "preloaded_symbols": preloaded})
+
+        @app.get("/control/get-time")
+        def control_get_time():
+            t = self.backend.market.get_market_time()
+            return jsonify({
+                "real_init_time": t["real_init_time"],
+                "real_current_time": t["real_current_time"],
+                "mock_init_time": t["mock_init_time"],
+                "mock_current_time": t["mock_current_time"],
+                "playback_speed": t["playback_speed"],
+            })
+
+        @app.get("/control/get-config")
+        def control_get_config():
+            return jsonify({
+                "server_config": server_config,
+                "backend_config": backend_config,
+            })
 
         return app
 
@@ -190,6 +282,22 @@ class ArenaX_BrokerSideServer:
                 self.backend._check_if_any_order_filled()
             self._stop_event.wait(self._match_interval)
 
+if __name__ == "__main__":
+    import argparse
+    load_cjconf()
+    load_cjsys()
 
-class BrokersideServer(ArenaX_BrokerSideServer):
-    """Backward-compatible alias."""
+    parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server.")
+    parser.add_argument("--port", type=int, default=8801, help="Port to bind the server.")
+    parser.add_argument("--backend", type=str, choices=["hist", "live", "none"], default="hist", help="Backend type to use.")
+    args = parser.parse_args()
+
+    server = ArenaX_BrokerSideServer(host=args.host, port=args.port, backend_str=args.backend)
+    print(f"Starting server on {args.host}:{args.port} with backend '{args.backend}'...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        server.stop_http()
+        server.stop()

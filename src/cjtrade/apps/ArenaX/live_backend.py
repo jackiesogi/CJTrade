@@ -21,6 +21,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		state_file: str = "mock_account_state.json",
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
+		**kwargs
 	) -> None:
 		super().__init__(
 			state_file=state_file,

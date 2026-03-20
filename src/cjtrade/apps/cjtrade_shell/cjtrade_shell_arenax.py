@@ -923,8 +923,7 @@ def main():
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
         config["mirror_db_path"] = f"./data/arenax_{config['username']}.db"
-        # real = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
-        real = None
+        real = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
         client = ArenaX_AccountClient(BrokerType.ARENAX, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         print(f"Broker '{args.broker}' is currently not supported (coming soon)")
