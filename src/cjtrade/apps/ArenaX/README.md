@@ -35,6 +35,25 @@ There are 3 modes in ArenaX, they are categorized by their "price data source" a
 | `hist` | Custom broker API | Historical market replay for backtesting                  |
 | `none` (default) | `yfinance`        | Lightweight simulation **WITHOUT** needing a broker account |
 
+## Test with server admin shell
+
+### Start the server first!
+
+```sh
+uv run arenaxd
+```
+
+![server](./img/server.png)
+
+### Test with server admin shell
+
+```sh
+uv run aresh  # stands for "ARE"nax "SH"ell
+```
+
+![admin-shell](./img/admin_shell.png)
+
+
 
 ## Restful API
 
@@ -75,3 +94,8 @@ watch -n 3 -d --color "curl -s -X POST http://127.0.0.1:8801/control/get-config 
 ```
 
 > Note that `server_config` refers to the ArenaX broker-side server config i.e. listening address / port, and `backend_config` refers to the core logic that this broker-side server runs i.e. playback speed, backtest duration.
+
+## Development
+
+### Current Architecture
+![architecture](./img/arch.png)

@@ -36,6 +36,7 @@ test = "cjtrade.test_runner:main"
 atest = "cjtrade.test_runner_arenax:main"
 # atest = "cjtrade.apps.ArenaX.tests.test_runner:main"
 arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
+aresh = "cjtrade.apps.ArenaX.brokerside_server_admin_shell:main"
 system = "cjtrade.apps.cjtrade_system.cjtrade_system:main_system"
 
 

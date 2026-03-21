@@ -97,6 +97,9 @@ def load_cjsys():
 #   adjust market time / playback speed
 #   flush price data cache (don't do this)
 #   and all the communication are through the listening of background thread (main thread keep doing things)
+# TODO: Consider about how to manage AreanX_Market (Mainly for time management) and ArenaX_Backend
+#        because HTTP server starts means time starts to progress fastly but ArenaX_Backend does not
+#        automatically starts which will be a bit weird when calling snapshot().
 class ArenaX_BrokerSideServer:
     """Minimal broker-side server with REST control endpoints."""
 
@@ -112,17 +115,18 @@ class ArenaX_BrokerSideServer:
         if backend is not None:
             self.backend = backend
         else:
+            # TODO: Add more backend config
             if backend_str == "hist":
                 # TODO: actually it is kind of weird bcuz the backend still needs
                 #       an `AccountClient` instance to fetch historical data, and
                 #       it is kina like a user-end code or frontend code.
                 self.real = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.SINOPAC, **backend_config)
                 self.client = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.ARENAX, real_account=self.real, **backend_config)
-                self.backend = ArenaX_Backend_Historical(real_account=self.client, **server_config)
+                self.backend = ArenaX_Backend_Historical(real_account=self.real, **server_config)
             elif backend_str == "live":
-                self.backend = ArenaX_Backend_PaperTrade(**backend_config)
+                self.backend = ArenaX_Backend_PaperTrade(**server_config)
             elif backend_str == "none":
-                self.backend = ArenaX_Backend_None(**backend_config)
+                self.backend = ArenaX_Backend_None(**server_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
 
@@ -149,33 +153,31 @@ class ArenaX_BrokerSideServer:
                 "backend_connected": self.backend.is_connected() if hasattr(self.backend, "is_connected") else False,
             })
 
-        @app.post("/control/start")
+        @app.post("/control/start-backend")
         def control_start():
-            self.start()
+            self.start_backend()
             return jsonify({"ok": True, "running": self._running})
 
-        @app.post("/control/stop")
+        @app.post("/control/stop-backend")
         def control_stop():
-            self.stop()
+            self.stop_backend()
             return jsonify({"ok": True, "running": self._running})
 
+        # Note: for user, they only care about setting "mock current time" / "mock init time"
+        # server should record the anchor time (real init time) when receiving requests.
+        # User: want to backtest for another period -> set system time -> set playback speed -> start! -> backtest finished -> pause
+        # there are 3 levels of stop
+        #   1. Only stop time progress (mock current time would stop at a specific point)
+        #   2. Kill the backend (endpoint `/control/stop` do this)
+        #   3. Stop the whole server (kill the process at OS-level, there will be a systemd service file for this in the future)
         @app.post("/control/set-time")
         def control_set_time():
             payload = request.get_json(silent=True) or {}
             anchor_time = payload.get("anchor_time")
             if not anchor_time:
                 return jsonify({"ok": False, "error": "anchor_time is required"}), 400
-
-            days_back = payload.get("days_back")
-            preload_days = payload.get("preload_days")
-            preload_symbols = payload.get("preload_symbols")
             parsed_time = datetime.fromisoformat(anchor_time)
-            preloaded = self.set_system_time(
-                parsed_time,
-                days_back=days_back,
-                preload_symbols=preload_symbols,
-                preload_days=preload_days,
-            )
+            preloaded = self.set_system_time(parsed_time)
             return jsonify({"ok": True, "preloaded_symbols": preloaded})
 
         @app.get("/control/get-time")
@@ -187,7 +189,29 @@ class ArenaX_BrokerSideServer:
                 "mock_init_time": t["mock_init_time"],
                 "mock_current_time": t["mock_current_time"],
                 "playback_speed": t["playback_speed"],
+                "paused": t.get("paused", False),
+                "paused_time": t["paused_time"].isoformat() if t.get("paused_time") else None,
             })
+
+        @app.post("/control/pause-time-progress")
+        def control_pause():
+            if not hasattr(self.backend, "market") or not hasattr(self.backend.market, "pause_time_progress"):
+                return jsonify({"ok": False, "error": "pause not supported"}), 400
+            try:
+                paused_time = self.backend.market.pause_time_progress()
+                return jsonify({"ok": True, "paused": True, "paused_time": paused_time.isoformat()}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
+
+        @app.post("/control/resume-time-progress")
+        def control_resume():
+            if not hasattr(self.backend, "market") or not hasattr(self.backend.market, "resume_time_progress"):
+                return jsonify({"ok": False, "error": "resume not supported"}), 400
+            try:
+                baseline = self.backend.market.resume_time_progress()
+                return jsonify({"ok": True, "paused": False, "baseline": baseline.isoformat()}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/control/get-config")
         def control_get_config():
@@ -196,13 +220,20 @@ class ArenaX_BrokerSideServer:
                 "backend_config": backend_config,
             })
 
+        @app.get("/control/get-price")
+        def control_get_price():
+            symbol = request.args.get("symbol")
+            if not symbol:
+                return jsonify({"ok": False, "error": "symbol is required"}), 400
+            price = self.backend.snapshot(symbol)
+            return jsonify({"ok": True, "symbol": symbol, "price": str(price)})
+
         return app
 
-    def start(self) -> None:
+    def start_backend(self) -> None:
         if self._running:
             return
-        if hasattr(self.backend, "login"):
-            self.backend.login()
+        self.backend.login()
         self._stop_event.clear()
         self._matching_thread = threading.Thread(
             target=self._matching_loop,
@@ -212,14 +243,13 @@ class ArenaX_BrokerSideServer:
         self._matching_thread.start()
         self._running = True
 
-    def stop(self) -> None:
+    def stop_backend(self) -> None:
         if not self._running:
             return
         self._stop_event.set()
         if self._matching_thread:
             self._matching_thread.join(timeout=5)
-        if hasattr(self.backend, "logout"):
-            self.backend.logout()
+        self.backend.logout()
         self._running = False
 
     def start_http(self) -> None:
@@ -244,23 +274,21 @@ class ArenaX_BrokerSideServer:
         if self._http_thread:
             self._http_thread.join()
 
+    # Only set system mock_init_time and real_init_time without side-effect
     def set_system_time(
         self,
-        anchor_time: datetime,
-        days_back: Optional[int] = None,
-        preload_symbols: Optional[Iterable[str]] = None,
-        preload_days: Optional[int] = None,
+        mock_init_time: datetime,
+        real_init_time: Optional[datetime] = datetime.now(),
+        auto_start_progress: bool = True,
+        auto_preload_data: bool = True
     ) -> list[str]:
-        if not hasattr(self.backend, "market"):
-            self.backend.system_time_anchor = anchor_time
-            return []
+        self.backend.market.set_historical_time_abs(real_init_time, mock_init_time)
+        if not auto_start_progress:
+            self.backend.market.pause_time_progress()
+        if auto_preload_data:
+            pass
 
-        if days_back is None:
-            days_back = getattr(self.backend, "num_days_preload", 3)
-
-        self.backend.market.set_historical_time(anchor_time, days_back=days_back)
-        return self._preload_data(preload_symbols, preload_days)
-
+    # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
     def _preload_data(
         self,
         preload_symbols: Optional[Iterable[str]],
@@ -290,7 +318,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server.")
     parser.add_argument("--port", type=int, default=8801, help="Port to bind the server.")
-    parser.add_argument("--backend", type=str, choices=["hist", "live", "none"], default="hist", help="Backend type to use.")
+    parser.add_argument("--backend", type=str, choices=["hist", "live", "none"], default="none", help="Backend type to use.")
     args = parser.parse_args()
 
     server = ArenaX_BrokerSideServer(host=args.host, port=args.port, backend_str=args.backend)
@@ -300,7 +328,7 @@ def main():
     except KeyboardInterrupt:
         print("\nShutting down server...")
         server.stop_http()
-        server.stop()
+        server.stop_backend()
 
 if __name__ == "__main__":
     main()

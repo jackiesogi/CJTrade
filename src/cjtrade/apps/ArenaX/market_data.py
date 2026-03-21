@@ -29,6 +29,9 @@ class ArenaX_Market:
         self.start_date = 0
         self.real_account = real_account if real_account else None
         self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
+        # Pause/resume support
+        self.paused: bool = False
+        self.paused_time: datetime | None = None
 
     def set_playback_speed(self, speed: float):
         """
@@ -74,6 +77,24 @@ class ArenaX_Market:
         return True if not data.empty else False
 
 
+    def set_historical_time_abs(self, real_init_time: datetime, mock_init_time: datetime):
+        # yfinance api only keeps minute data within the last 30 days
+        self.real_init_time = real_init_time
+
+        real_current_time = self.real_init_time
+        self.start_date = mock_init_time
+        self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        # Skip weekends - make sure to keep hour=9 after recalculation
+        while self.start_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            days_back += 1
+            self.start_date = real_current_time - timedelta(days=days_back)
+            self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
+
+    # Alias
+    def set_historical_time_rel(self, real_init_time: datetime, days_back: int = 10):
+        self.set_historical_time(real_init_time, days_back)
+
     def set_historical_time(self, real_init_time: datetime, days_back: int = 10):
         # yfinance api only keeps minute data within the last 30 days
         self.real_init_time = real_init_time
@@ -100,8 +121,14 @@ class ArenaX_Market:
 
     def get_market_time(self):
         real_current_time = datetime.now()
-        time_offset = real_current_time - self.real_init_time
-        mock_current_time = self.start_date + time_offset * self.playback_speed + self.manual_time_offset
+        # If paused, return the frozen paused_time as mock_current_time
+        if self.paused and self.paused_time is not None:
+            mock_current_time = self.paused_time
+            time_offset = mock_current_time - self.start_date
+        else:
+            time_offset = real_current_time - self.real_init_time
+            mock_current_time = self.start_date + time_offset * self.playback_speed + self.manual_time_offset
+
         return {
             'real_current_time': real_current_time,
             'real_init_time': self.real_init_time,
@@ -109,8 +136,43 @@ class ArenaX_Market:
             'mock_current_time': mock_current_time,
             'time_offset': time_offset,
             'playback_speed': self.playback_speed,
-            'manual_time_offset': self.manual_time_offset
+            'manual_time_offset': self.manual_time_offset,
+            'paused': self.paused,
         }
+
+    def _compute_raw_mock_time(self) -> datetime:
+        """Compute mock time using current formula (ignores paused flag)."""
+        real_current_time = datetime.now()
+        time_offset = real_current_time - self.real_init_time
+        return self.start_date + time_offset * self.playback_speed + self.manual_time_offset
+
+    def pause_time_progress(self) -> datetime:
+        """Freeze mock time at current value.
+
+        Returns the paused mock_current_time.
+        """
+        if not self.paused:
+            self.paused_time = self._compute_raw_mock_time()
+            self.paused = True
+        return self.paused_time
+
+    def resume_time_progress(self) -> datetime:
+        """Resume time progression.
+
+        This sets the paused_time as the new start_date baseline and resets real_init_time
+        so that mock time continues from the frozen point.
+        Returns the new mock_current_time baseline (same as previous paused_time).
+        """
+        if not self.paused:
+            return self._compute_raw_mock_time()
+
+        baseline = self.paused_time or self._compute_raw_mock_time()
+        # Rebase timeline so no jump occurs and pause duration is ignored
+        self.start_date = baseline
+        self.real_init_time = datetime.now()
+        self.paused_time = None
+        self.paused = False
+        return baseline
 
     def adjust_to_market_hours(self, mock_current_time: datetime) -> datetime:
         """Adjust mock time to market hours (9:00-13:30).
