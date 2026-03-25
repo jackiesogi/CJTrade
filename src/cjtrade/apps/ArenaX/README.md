@@ -64,17 +64,17 @@ curl http://127.0.0.1:8801/health
 
 2. Start the server:
 ```sh
-curl -X POST http://127.0.0.1:8801/control/start
+curl -X POST http://127.0.0.1:8801/control/start-backend
 ```
 
 3. Stop the server:
 ```sh
-curl -X POST http://127.0.0.1:8801/control/stop
+curl -X POST http://127.0.0.1:8801/control/stop-backend
 ```
 
 4. Get system time:
 ```sh
-curl -X POST http://127.0.0.1:8801/control/get-time
+curl http://127.0.0.1:8801/control/get-time
 ```
 
 5. Set system time
@@ -85,12 +85,12 @@ curl -X POST -H "Content-Type: application/json" -d '{"anchor_time": "2026-03-20
 ### Useful test script
 1. Watch how fast time progress in ArenaX virtual enviroment
 ```sh
-watch -n 3 -d --color "curl -s -X POST http://127.0.0.1:8801/control/get-time | jq ."
+watch -n 3 -d --color "curl -s http://127.0.0.1:8801/control/get-time | jq ."
 ```
 
 2. Print backend config and server config in real time
 ```sh
-watch -n 3 -d --color "curl -s -X POST http://127.0.0.1:8801/control/get-config | jq ."
+watch -n 3 -d --color "curl -s http://127.0.0.1:8801/control/get-config | jq ."
 ```
 
 > Note that `server_config` refers to the ArenaX broker-side server config i.e. listening address / port, and `backend_config` refers to the core logic that this broker-side server runs i.e. playback speed, backtest duration.
