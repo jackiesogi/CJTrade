@@ -2,8 +2,11 @@
 # TODO: Add `Lock()`
 from datetime import datetime
 from datetime import timedelta
+from typing import List
+from typing import Optional
 
 from cjtrade.pkgs.db.db_base import *
+from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import *
 
 # Module-level connect functions
@@ -35,6 +38,118 @@ def connect_sqlite(database: str = ":memory:"):
 #         raise ImportError("duckdb is not installed. Install it with: pip install duckdb")
 #     conn = duckdb.connect(database=database)
 #     return DuckDBDatabaseConnection(conn)
+
+##########################   ArenaX-local-pricedb-specific CURD   ############################
+DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT = "./src/cjtrade/pkgs/db/sql/create_arenax_local_price_db.sql"
+
+def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None):
+    if conn is None:
+        return
+    try:
+        with open(DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT, 'r') as f:
+            sql_script = f.read()
+            conn.execute_script(sql_script)
+        conn.commit()
+        print("ArenaX local price tables are ready in local DB.")
+    except Exception as e:
+        print(f"Failed to prepare ArenaX local price tables in local DB: {e}")
+
+
+def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
+                                          symbol: str = None,
+                                          price: Kbar = None,
+                                          timeframe: str = "1m",
+                                          source: str = "unknown",
+                                          overwrite: bool = True):
+    """Insert a single Kbar into the local prices table.
+
+    Returns True on success, False on failure.
+    """
+    if conn is None or symbol is None or price is None:
+        return False
+
+    try:
+        # basic sanitization for SQL literals (escape single quotes)
+        symbol_s = symbol.replace("'", "''")
+        timeframe_s = (timeframe or '1m').replace("'", "''")
+        source_s = (source or 'unknown').replace("'", "''")
+
+        ts = int(price.timestamp.timestamp())
+        open_p = float(price.open) if price.open is not None else 'NULL'
+        high_p = float(price.high) if price.high is not None else 'NULL'
+        low_p = float(price.low) if price.low is not None else 'NULL'
+        close_p = float(price.close) if price.close is not None else 'NULL'
+        volume_p = float(price.volume) if price.volume is not None else 'NULL'
+
+        if overwrite:
+            sqlcmd = f"""
+                INSERT INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at)
+                VALUES ('{symbol_s}', '{timeframe_s}', {ts}, {open_p}, {high_p}, {low_p}, {close_p}, {volume_p}, '{source_s}', 0, strftime('%s','now'))
+                ON CONFLICT(symbol, timeframe, ts, source) DO UPDATE SET
+                  open=excluded.open,
+                  high=excluded.high,
+                  low=excluded.low,
+                  close=excluded.close,
+                  volume=excluded.volume,
+                  fetched_at=excluded.fetched_at;
+            """
+        else:
+            sqlcmd = f"""
+                INSERT OR IGNORE INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at)
+                VALUES ('{symbol_s}', '{timeframe_s}', {ts}, {open_p}, {high_p}, {low_p}, {close_p}, {volume_p}, '{source_s}', 0, strftime('%s','now'));
+            """
+
+        # ensure symbol exists in symbols table and update last_fetched
+        # sql_symbol_insert = f"INSERT OR IGNORE INTO symbols (symbol, first_seen, last_fetched) VALUES ('{symbol_s}', {ts}, {ts});"
+        # sql_symbol_update = f"UPDATE symbols SET last_fetched = {ts} WHERE symbol = '{symbol_s}' AND (last_fetched IS NULL OR last_fetched < {ts});"
+
+        conn.execute(sqlcmd)
+        # conn.execute(sql_symbol_insert)
+        # conn.execute(sql_symbol_update)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Failed to insert price for {symbol}: {e}")
+        return False
+
+
+# Get kbar data (List[Kbar]) for a symbol, [start_date, end_date]
+# Granularity: 1day
+def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
+                                         symbol: str = None,
+                                         timeframe: str = "1m",
+                                         start_ts: datetime = None,
+                                         end_ts: datetime = None) -> List[Kbar]:
+    results: List[Kbar] = []
+    if conn is None or symbol is None:
+        return results
+
+    try:
+        symbol_s = symbol.replace("'", "''")
+        timeframe_s = (timeframe or '1m').replace("'", "''")
+
+        where_clauses = [f"symbol = '{symbol_s}'", f"timeframe = '{timeframe_s}'"]
+        if start_ts is not None:
+            where_clauses.append(f"ts >= {int(start_ts.timestamp())}")
+        if end_ts is not None:
+            where_clauses.append(f"ts <= {int(end_ts.timestamp())}")
+
+        where_sql = ' AND '.join(where_clauses)
+        sqlcmd = f"SELECT ts, open, high, low, close, volume FROM prices WHERE {where_sql} ORDER BY ts ASC;"
+        rows = conn.execute(sqlcmd)
+        for r in rows:
+            ts = int(r[0])
+            o = float(r[1]) if r[1] is not None else 0.0
+            h = float(r[2]) if r[2] is not None else 0.0
+            l = float(r[3]) if r[3] is not None else 0.0
+            c = float(r[4]) if r[4] is not None else 0.0
+            v = int(r[5]) if r[5] is not None else 0
+            k = Kbar(datetime.fromtimestamp(ts), o, h, l, c, v)
+            results.append(k)
+        return results
+    except Exception as e:
+        print(f"Failed to query prices for {symbol}: {e}")
+        return results
 
 
 ##########################   CJTrade-specific CURD   ############################
