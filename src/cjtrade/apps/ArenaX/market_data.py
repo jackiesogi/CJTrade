@@ -86,9 +86,10 @@ class ArenaX_Market:
         self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
 
         # Skip weekends - make sure to keep hour=9 after recalculation
+        adjustment = 0
         while self.start_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            days_back += 1
-            self.start_date = real_current_time - timedelta(days=days_back)
+            adjustment += 1
+            self.start_date = mock_init_time - timedelta(days=adjustment)
             self.start_date = self.start_date.replace(hour=9, minute=0, second=0, microsecond=0)
 
     # Alias

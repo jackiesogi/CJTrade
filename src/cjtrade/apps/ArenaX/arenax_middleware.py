@@ -47,37 +47,39 @@ class ArenaXMiddleWare:
             return None
 
     def check_health(self, **kwargs) -> bool:
-        data = self._get("/health")
-        # return data is not None and data.get("ok", False)
+        data = self._get("health")
         return data
 
     def get_system_time(self, **kwargs):
-        return self._get("/control/get-time")
+        return self._get("control/get-time")
 
     def get_config(self, **kwargs):
-        return self._get("/control/get-config")
+        return self._get("control/get-config")
 
     def start_backend(self, **kwargs):
-        return self._post("/control/start-backend", headers=kwargs.get("headers"))
+        return self._post("control/start-backend", headers=kwargs.get("headers"))
 
     def stop_backend(self, **kwargs):
-        return self._post("/control/stop-backend", headers=kwargs.get("headers"))
+        return self._post("control/stop-backend", headers=kwargs.get("headers"))
 
     def pause_time_progress(self, **kwargs):
-        return self._post("/control/pause-time-progress", headers=kwargs.get("headers"))
+        return self._post("control/pause-time-progress", headers=kwargs.get("headers"))
 
     def resume_time_progress(self, **kwargs):
-        return self._post("/control/resume-time-progress", headers=kwargs.get("headers"))
+        return self._post("control/resume-time-progress", headers=kwargs.get("headers"))
 
-    def set_system_time(self, mock_init_time: str, days_back: int):
+    def set_system_time(self, mock_init_time: str, days_back: int = 5, preload_symbols: list | None = None, **kwargs):
         data = {
-            "mock_init_time": mock_init_time
+            "anchor_time": mock_init_time,
+            "days_back": days_back,
         }
-        return self._post("/control/set-time", data)
+        if preload_symbols:
+            data["preload_symbols"] = preload_symbols
+        return self._post("control/set-time", data, headers=kwargs.get("headers"))
 
     def get_price_from_exchange(self, symbol: str, **kwargs):
-        data = {"symbol": symbol}
-        return self._post("/control/get-price", data=data, headers=kwargs.get("headers"))
+        # server exposes GET /control/get-price?symbol=<symbol>
+        return self._get(f"control/get-price?symbol={symbol}")
 
 if __name__ == "__main__":
     import time

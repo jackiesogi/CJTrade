@@ -117,11 +117,12 @@ class ArenaX_BrokerSideServer:
         else:
             # TODO: Add more backend config
             if backend_str == "hist":
-                # TODO: actually it is kind of weird bcuz the backend still needs
-                #       an `AccountClient` instance to fetch historical data, and
-                #       it is kina like a user-end code or frontend code.
+                # real: connects to real broker (read-only, for market data / kbars)
+                # backend: simulation backend that uses real broker as data source
+                # Note: ArenaX AccountClient (ARENAX broker_type) is intentionally NOT
+                # created here to avoid a redundant ArenaX_Backend_Historical being
+                # instantiated inside ArenaXBrokerAPI.__init__.
                 self.real = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.SINOPAC, **backend_config)
-                self.client = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.ARENAX, real_account=self.real, **backend_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **server_config)
             elif backend_str == "live":
                 self.backend = ArenaX_Backend_PaperTrade(**server_config)
@@ -278,10 +279,12 @@ class ArenaX_BrokerSideServer:
     def set_system_time(
         self,
         mock_init_time: datetime,
-        real_init_time: Optional[datetime] = datetime.now(),
+        real_init_time: Optional[datetime] = None,
         auto_start_progress: bool = True,
         auto_preload_data: bool = True
     ) -> list[str]:
+        if real_init_time is None:
+            real_init_time = datetime.now()
         self.backend.market.set_historical_time_abs(real_init_time, mock_init_time)
         if not auto_start_progress:
             self.backend.market.pause_time_progress()
