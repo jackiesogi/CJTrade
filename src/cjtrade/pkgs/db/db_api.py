@@ -136,7 +136,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
             where_clauses.append(f"ts <= {int(end_ts.timestamp())}")
 
         where_sql = ' AND '.join(where_clauses)
-        sqlcmd = f"SELECT ts, open, high, low, close, volume FROM prices WHERE {where_sql} ORDER BY ts ASC;"
+        sqlcmd = f"SELECT ts, open, high, low, close, volume FROM arenax_prices WHERE {where_sql} ORDER BY ts ASC;"
         rows = conn.execute(sqlcmd)
         for r in rows:
             ts = int(r[0])
