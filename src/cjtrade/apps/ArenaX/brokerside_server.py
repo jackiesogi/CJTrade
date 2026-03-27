@@ -239,8 +239,10 @@ class ArenaX_BrokerSideServer:
             payload = request.get_json(silent=True) or {}
             api_key = payload.get("api_key")
             if api_key in self._valid_api_keys:
+                print(f"API key {api_key} is valid. Login successful.")
                 return jsonify({"ok": True, "message": "Login successful"})
             else:
+                print(f"API key {api_key} is invalid. Login failed.")
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
         @app.post("/account/logout")

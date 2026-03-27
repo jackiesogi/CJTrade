@@ -87,9 +87,9 @@ Recommendations:
     parser.add_argument(
         '--broker',
         type=str,
-        default='mock',
-        choices=['mock', 'sinopac', 'yuanta', 'cathay'],
-        help='Broker to test (default: mock)'
+        default='arenax',
+        choices=['mock', 'sinopac', 'yuanta', 'cathay', 'arenax'],
+        help='Broker to test (default: arenax)'
     )
     parser.add_argument(
         '--verbose',
@@ -106,6 +106,7 @@ Recommendations:
 
     from cjtrade.pkgs.config.config_loader import load_supported_config_files
     from cjtrade.pkgs.brokers.account_client import BrokerType
+    from cjtrade.apps.ArenaX.arenax_account_client import ArenaX_AccountClient, ArenaX_BrokerType
     from tests.cj_api.base import BaseBrokerTest
 
     load_supported_config_files()
@@ -115,12 +116,13 @@ Recommendations:
         'mock': BrokerType.MOCK,
         'sinopac': BrokerType.SINOPAC,
         'yuanta': BrokerType.YUANTA,
-        'cathay': BrokerType.CATHAY
+        'cathay': BrokerType.CATHAY,
+        'arenax': ArenaX_BrokerType.ARENAX
     }
     BaseBrokerTest.test_broker_type = broker_name_map[args.broker]
 
     # Set delay for real broker testing
-    if args.broker != 'mock':
+    if args.broker != 'mock' and args.broker != 'arenax':
         # Auto-set delay if not specified
         if args.delay == 0:
             args.delay = 8.0  # Default 8 seconds for real brokers

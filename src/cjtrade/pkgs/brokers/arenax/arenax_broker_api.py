@@ -403,6 +403,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         orders = summary.get("orders", []) if summary else []
         placed_orders = [o for o in orders if o.get("status") == OrderStatus.PLACED.value]
         for o in placed_orders:
+            print(f"Committing order {o.get('id') or o.get('order_id') or o.get('ordno')} with status {o.get('status')}")
             order_id = o.get("id") or o.get("order_id") or o.get("ordno")
             try:
                 update_at = self.get_system_time()["mock_current_time"]
