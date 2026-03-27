@@ -35,6 +35,7 @@ class AccountState:
 #   1. Call BrokerAPI to sync the latest state from remote broker server
 #   2. Update AccountState with the latest data
 #   3. Return the cached balance from AccountState
+# TODO: support the context manager protocol (with AccountClient() as account:)
 class AccountClient:
     """An unified API to interact with different brokers."""
 

@@ -55,6 +55,7 @@ def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None):
         print(f"Failed to prepare ArenaX local price tables in local DB: {e}")
 
 
+# TODO: Support List[Kbar] batch insert for better performance
 def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
                                           symbol: str = None,
                                           price: Kbar = None,

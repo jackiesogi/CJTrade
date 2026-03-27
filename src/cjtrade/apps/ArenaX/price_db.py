@@ -6,18 +6,46 @@ from cjtrade.pkgs.db.db_api import *
 
 # This code is designed for ArenaX backend to CURD price data into local price database
 class ArenaX_LocalPriceDB:
-    def __init__(self, ):
-        self.price_db = {}
+    def __init__(self, path):
+        self.path = path
+        self.conn = None
 
-    def get_price(self, symbol: str):
-        return self.price_db.get(symbol)
+    def connect(self):
+        self.conn = connect_sqlite(self.path)
 
-    def update_price(self, symbol: str, price: float):
-        self.price_db[symbol] = price
+    def disconnect(self):
+        if self.conn:
+            self.conn.close()
+            self.conn = None
 
-    def delete_price(self, symbol: str):
-        if symbol in self.price_db:
-            del self.price_db[symbol]
+    def insert_price(self, symbol: str,
+                     timeframe: str = "1m",
+                     price: Kbar = None,
+                     source: str = "unknown",
+                     overwrite: bool = True):
+        return insert_price_to_arenax_local_price_db(conn=self.conn,
+                                                     symbol=symbol,
+                                                     price=price,
+                                                     timeframe=timeframe,
+                                                     source=source,
+                                                     overwrite=overwrite)
+
+    def get_price(self, symbol: str,
+                  timeframe: str = "1m",
+                  start_ts: datetime = None,
+                  end_ts: datetime = None):
+        return get_price_from_arenax_local_price_db(conn=self.conn,
+                                                    symbol=symbol,
+                                                    timeframe=timeframe,
+                                                    start_ts=start_ts,
+                                                    end_ts=end_ts)
+
+    # def update_price(self, symbol: str, price: float):
+    #     self.price_db[symbol] = price
+
+    # def delete_price(self, symbol: str):
+    #     if symbol in self.price_db:
+    #         del self.price_db[symbol]
 
     def clear_db(self):
-        self.price_db.clear()
+        raise NotImplementedError("Clear DB functionality is not implemented yet.")

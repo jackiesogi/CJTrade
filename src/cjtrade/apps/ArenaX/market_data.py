@@ -9,6 +9,7 @@ from typing import List
 
 import pandas as pd
 import yfinance as yf
+from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
@@ -32,6 +33,9 @@ class ArenaX_Market:
         # Pause/resume support
         self.paused: bool = False
         self.paused_time: datetime | None = None
+
+        self.price_db = ArenaX_LocalPriceDB(path="data/arenax_price.db")
+        self.price_db.connect()  # TODO: currently no corresponding disconnect, need to add it in the right place (maybe in ArenaX_Backend?)
 
     def set_playback_speed(self, speed: float):
         """
@@ -249,8 +253,9 @@ class ArenaX_Market:
         """Load historical market data for a symbol.
 
         Data source priority:
-        1. Real account (if available) - via get_kbars()
-        2. Yahoo Finance - as fallback
+        1. ArenaX local price database (cache)
+        2. Real account (if available) - via get_kbars()
+        3. Yahoo Finance - as fallback
 
         Args:
             symbol: Stock symbol to load data for
@@ -263,10 +268,39 @@ class ArenaX_Market:
         end_date = self.start_date + timedelta(days=NUM_DAYS_PRELOAD)
 
         # Load historical data from real account for better data quality
-        if self.real_account and self.real_account.is_connected():
+        # TODO: should be something like check_time_range_available_in_price_db()
+        if self.price_db:
+            self._load_from_price_db(symbol, end_date)
+        elif self.real_account and self.real_account.is_connected():
             self._load_from_real_account(symbol, end_date)
         else:
             self._load_from_yahoo_finance(symbol, end_date)
+
+    def _load_from_price_db(self, symbol: str, end_date: datetime):
+        """Load historical data from ArenaX local price database."""
+        print(f"Loading historical data for {symbol}... (source: arenax cache)")
+        try:
+            # This will return List[Kbar]
+            ks = self.price_db.get_price(symbol=symbol, timeframe="1m", start_ts=self.start_date, end_ts=end_date)
+
+            if ks:
+                df = pd.DataFrame([{
+                    'Open': k.open,
+                    'High': k.high,
+                    'Low': k.low,
+                    'Close': k.close,
+                    'Volume': k.volume
+                } for k in ks], index=[k.timestamp for k in ks])
+
+                self.historical_data[symbol] = {
+                    'data': df,
+                    'timestamps': df.index.to_numpy(),
+                }
+                print(f"Loaded {len(df)} data points for {symbol} from local price database")
+
+        except Exception as e:
+            print(f"Error loading data from local price database for {symbol}: {e}")
+            self._store_empty_data(symbol, str(e))
 
     def _load_from_real_account(self, symbol: str, end_date: datetime):
         """Load historical data from real broker account."""
