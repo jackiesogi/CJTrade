@@ -271,6 +271,9 @@ class ArenaX_Market:
         # TODO: should be something like check_time_range_available_in_price_db()
         if self.price_db:
             self._load_from_price_db(symbol, end_date)
+
+        if self.historical_data.get(symbol) and not self.historical_data[symbol]['data'].empty:
+            return  # fetch successfully
         elif self.real_account and self.real_account.is_connected():
             self._load_from_real_account(symbol, end_date)
         else:
@@ -282,6 +285,7 @@ class ArenaX_Market:
         try:
             # This will return List[Kbar]
             ks = self.price_db.get_price(symbol=symbol, timeframe="1m", start_ts=self.start_date, end_ts=end_date)
+            # print(f"ks: {ks}")
 
             if ks:
                 df = pd.DataFrame([{

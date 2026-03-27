@@ -139,9 +139,13 @@ class ArenaX_BrokerSideServer:
         self._http_server = None
         self._http_thread: Optional[threading.Thread] = None
         self._running = False
+        self._valid_api_keys = set()            # Placeholder for API key management
+        self._valid_api_keys.add('testkey123')  # hardcoded API key for testing
 
         prepare_price_db(price_db_path)
         self._app = self._create_app()
+
+################################ HTTP Interface ##################################
 
     def _create_app(self) -> Flask:
         app = Flask(__name__)
@@ -229,7 +233,65 @@ class ArenaX_BrokerSideServer:
             price = self.backend.snapshot(symbol)
             return jsonify({"ok": True, "symbol": symbol, "price": str(price)})
 
+        @app.post("/account/login")
+        def login():
+            payload = request.get_json(silent=True) or {}
+            api_key = payload.get("api_key")
+            if api_key in self._valid_api_keys:
+                return jsonify({"ok": True, "message": "Login successful"})
+            else:
+                return jsonify({"ok": False, "message": "Invalid API key"}), 401
+
+        @app.post("/account/logout")
+        def logout():
+            return jsonify({"ok": True, "message": "Logout successful"})
+
+        # Contains account balance, positions, orders
+        @app.get("/account/summary")
+        def account_summary():
+            b = self.backend.account_balance()
+            p = self.backend.list_positions()
+            o = self.backend.list_trades()
+            return jsonify({
+                "ok": True,
+                "balance": b if b is not None else None,
+                "positions": p if p is not None else None,
+                "orders": o if o is not None else None,
+            })
+
+
+        @app.post("/trade/place-order")
+        def place_order():
+            pass
+
+        @app.post("/trade/cancel-order")
+        def cancel_order():
+            pass
+
+        @app.get("/market/snapshot")
+        def market_snapshot():
+            symbol = request.args.get("symbol")
+            if not symbol:
+                return jsonify({"ok": False, "error": "symbol is required"}), 400
+            price = self.backend.snapshot(symbol)
+            return jsonify({"ok": True, "symbol": symbol, "price": price})
+
+        @app.get("/market/kbars")
+        def market_kbars():
+            pass
+
+        @app.post("/trade/register-order-callback")
+        def register_order_callback():
+            pass
+
+        @app.get("/trade/get-broker-name")
+        def trade_get_broker_name():
+            return jsonify({"ok": True, "broker": self.backend.broker_name if hasattr(self.backend, "broker_name") else "unknown"})
+
         return app
+
+
+################################ Core logic ##################################
 
     def start_backend(self) -> None:
         if self._running:
@@ -263,6 +325,7 @@ class ArenaX_BrokerSideServer:
             daemon=True,
         )
         self._http_thread.start()
+        self.start_backend()      # TODO: Consider about disable auto-start (this may cause side-effect)
 
     def stop_http(self) -> None:
         if not self._http_server:

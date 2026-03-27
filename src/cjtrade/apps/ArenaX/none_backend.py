@@ -12,7 +12,7 @@ from cjtrade.pkgs.brokers.account_client import AccountClient
 class ArenaX_Backend_None(ArenaX_BackendBase):
 	def __init__(
 		self,
-		state_file: str = "mock_account_state.json",
+		state_file: str = "none_account_state.json",
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
 		num_days_preload: int = 3,

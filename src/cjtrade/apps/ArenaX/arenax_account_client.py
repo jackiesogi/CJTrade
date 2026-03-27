@@ -37,8 +37,10 @@ class ArenaX_AccountClient:
 
     def _set_broker_api(self, broker_type: ArenaX_BrokerType, **config) -> BrokerAPIBase:
         if broker_type == ArenaX_BrokerType.ARENAX:
-            from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
-            return ArenaXBrokerAPI(**config)
+            # from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
+            from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+            # return ArenaXBrokerAPI(**config)
+            return ArenaXBrokerAPI_v2(**config)
         elif broker_type == ArenaX_BrokerType.SINOPAC:
             from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
             return SinopacBrokerAPI(**config)

@@ -573,7 +573,7 @@ class CalendarCommand(CommandBase):
         # Get timestamp from broker or system
         if client.get_broker_name() == "arenax":
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()
+            ts = client.broker_api.get_system_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()
@@ -914,17 +914,21 @@ def main():
     if args.broker == 'sinopac':
         config["state_file"] = f"./sinopac_{config['username']}.json"
         config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
-        client = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
+        client = ArenaX_AccountClient(ArenaX_BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
         raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
     elif args.broker == 'realistic':
         raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
-    elif args.broker == 'arenax':
+    elif args.broker == 'arenax_legacy':
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
         config["mirror_db_path"] = f"./data/arenax_{config['username']}.db"
-        real = ArenaX_AccountClient(BrokerType.SINOPAC, **config)
-        client = ArenaX_AccountClient(BrokerType.ARENAX, real_account=real, **config)
+        real = ArenaX_AccountClient(ArenaX_BrokerType.SINOPAC, **config)
+        client = ArenaX_AccountClient(ArenaX_BrokerType.ARENAX, real_account=real, **config)
+    elif args.broker == "arenax":
+        # call config setting api to configure the broker server
+        config['api_key'] = 'testkey123'
+        client = ArenaX_AccountClient(ArenaX_BrokerType.ARENAX, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         print(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

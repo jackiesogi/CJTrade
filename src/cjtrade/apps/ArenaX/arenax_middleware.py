@@ -1,4 +1,5 @@
 import requests
+from flask import jsonify
 
 
 class ArenaXMiddleWare:
@@ -40,18 +41,34 @@ class ArenaXMiddleWare:
                 hdrs.update(headers)
 
             res = requests.post(url, json=data, headers=hdrs, timeout=3)
-            res.raise_for_status()
-            return res.json()
+
+            try:
+                # treat it as JSON response if possible
+                result = res.json()
+                return result
+            except ValueError:
+                # if not JSON format
+                res.raise_for_status()
+                return None
+
         except requests.exceptions.RequestException as e:
+            # Timeout, Connection Refused
             print(f"[ArenaX] Request failed: {e}")
             return None
+
 
     def check_health(self, **kwargs) -> bool:
         data = self._get("health")
         return data
 
-    def get_system_time(self, **kwargs):
-        return self._get("control/get-time")
+    def get_system_time(self, **kwargs) -> dict:
+        t = self._get("control/get-time")
+        if t:
+            return t
+        else:
+            print(f"Failed to get system time: {t.get('error') if t else 'No response'}")
+            return None
+
 
     def get_config(self, **kwargs):
         return self._get("control/get-config")
@@ -80,6 +97,37 @@ class ArenaXMiddleWare:
     def get_price_from_exchange(self, symbol: str, **kwargs):
         # server exposes GET /control/get-price?symbol=<symbol>
         return self._get(f"control/get-price?symbol={symbol}")
+
+    def login(self, api_key: str, **kwargs):
+        data = {"api_key": api_key}
+        response = self._post("account/login", data, headers=kwargs.get("headers"))
+        if response and response.get("ok") and response.get("message") == "Login successful":
+            return True
+        else:
+            raise ValueError(f"Login failed: {response.get("message")}")
+
+    def logout(self, **kwargs):
+        return self._post("account/logout", headers=kwargs.get("headers"))
+
+    def account_summary(self, **kwargs):
+        summary = self._get("account/summary")
+        if summary is None:
+            return None
+        else:
+            res = {}
+            res['balance'] = summary.get("balance")
+            res['positions'] = summary.get("positions", [])
+            res['orders'] = summary.get("orders", [])
+            return res
+
+    def snapshot(self, symbol: str, **kwargs):
+        res = self._get(f"market/snapshot?symbol={symbol}")
+        if res and res.get("ok"):
+            return res.get("price")  # return Snapshot object
+        else:
+            print(f"Failed to get snapshot for {symbol}: {res.get('error') if res else 'No response'}")
+            return None
+
 
 if __name__ == "__main__":
     import time

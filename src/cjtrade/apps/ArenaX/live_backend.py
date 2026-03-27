@@ -18,7 +18,7 @@ from cjtrade.pkgs.models.quote import Snapshot
 class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 	def __init__(
 		self,
-		state_file: str = "mock_account_state.json",
+		state_file: str = "live_account_state.json",
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
 		**kwargs
