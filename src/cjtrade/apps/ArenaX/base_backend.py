@@ -79,6 +79,7 @@ class ArenaX_BackendBase:
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
     ) -> None:
+        # print(f"num_days_preload: {num_days_preload}")
         self.account_state_default_file = state_file
         self.real_account = real_account
         if self.real_account and not self.real_account.is_connected():
@@ -359,6 +360,7 @@ class ArenaX_BackendBase:
                 return
 
             day_preload = self.num_days_preload if self.real_account else 5
+            # print(f"preload: {day_preload}")
             for pos in real_positions:
                 if (
                     not self.skip_data_preload
@@ -416,7 +418,7 @@ class ArenaX_BackendBase:
                         and pos.symbol not in getattr(self.market, "historical_data", {})
                         and hasattr(self.market, "create_historical_market")
                     ):
-                        self.market.create_historical_market(pos.symbol)
+                        self.market.create_historical_market(pos.symbol, self.num_days_preload)
 
             self.account_state.orders_placed = [
                 self._deserialize_order(order_data)

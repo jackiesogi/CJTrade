@@ -12,3 +12,13 @@ class Kbar:
     def __repr__(self):
         return (f"Kbar(timestamp={self.timestamp}, open={self.open}, high={self.high}, "
                 f"low={self.low}, close={self.close}, volume={self.volume})")
+
+    def to_dict(self):
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume
+        }

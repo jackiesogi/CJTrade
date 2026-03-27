@@ -1,0 +1,223 @@
+(CJTrade) jck@chenshoujis-MacBook-Air CJTrade % uv run atest --group=trading
+/Users/jck/Downloads/gitrepo/CJTrade/tests/test_cjtrade_integration_arenax.sh
+=== CJTrade Shell Integration Tests ===
+Broker: arenax
+Test Group: trading
+
+[1] Testing: clear (Clear screen)
+[SKIPPED] clear (not in selected test group)
+
+[2] Testing: info (Show system information)
+[SKIPPED] info (not in selected test group)
+
+[3] Testing: date (Display calendar)
+[SKIPPED] date (not in selected test group)
+
+[4] Testing: help (Show help message)
+[SKIPPED] help (not in selected test group)
+
+[5] Testing: buy (Buy 80 shares of 0050 @20.25)
+Found config file: /Users/jck/Downloads/gitrepo/CJTrade/system.cjconf
+Orders and Fills tables are ready in local DB.
+ArenaXBroker connected successfully
+Executing: buy 0050 20.25 80
+Buying 80 shares of 0050 at 20.25 (intraday_odd=True)
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              '13cc0ec795964f59b2e8819174d975cd', 'user000', 'na',
+              '0050', 'OrderAction.BUY', 'OrderType.ROD',
+              'PriceType.LMT', '20.25', '80',
+              'PLACED', '2026-06-09 17:36:20', NULL
+            )
+        
+Order 13cc0ec795964f59b2e8819174d975cd inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED_WAIT_MATCHING', updated_at = '2026-06-09 17:37:55'
+            WHERE order_id = 'd40051bd2e094958b75483ea680ea4f5'
+        
+Order d40051bd2e094958b75483ea680ea4f5 status updated to COMMITTED_WAIT_MATCHING in local DB.
+Order result: [OrderResult(status=<OrderStatus.COMMITTED_WAIT_MARKET_OPEN: 'COMMITTED_WAIT_MARKET_OPEN'>, message='Order pending market open.', metadata={'market_open': False}, linked_order='d40051bd2e094958b75483ea680ea4f5', id='f837ec7653b643c98e5bf8da7ffda6bc')]
+ArenaXBroker disconnected
+[PASSED] buy
+
+[6] Testing: sell (Sell 120 shares of 0050 @30.65)
+Found config file: /Users/jck/Downloads/gitrepo/CJTrade/system.cjconf
+Orders and Fills tables are ready in local DB.
+ArenaXBroker connected successfully
+Executing: sell 0050 30.65 120
+Selling 120 shares of 0050 at 30.65 (intraday_odd=True)
+
+            INSERT INTO orders (
+              order_id, user_id, broker, product_id,
+              side, order_type, price_type, price,
+              quantity, status, created_at, updated_at
+            )
+            VALUES (
+              'ddd93827a9ae454b8e0faa4362194a3f', 'user000', 'na',
+              '0050', 'OrderAction.SELL', 'OrderType.ROD',
+              'PriceType.LMT', '30.65', '120',
+              'PLACED', '2026-06-09 20:44:37', NULL
+            )
+        
+Order ddd93827a9ae454b8e0faa4362194a3f inserted in local DB.
+
+            UPDATE orders
+            SET status = 'COMMITTED_WAIT_MATCHING', updated_at = '2026-06-09 20:46:25'
+            WHERE order_id = '6387de1584fe4fc4983431898e1909cb'
+        
+Order 6387de1584fe4fc4983431898e1909cb status updated to COMMITTED_WAIT_MATCHING in local DB.
+Order result: [OrderResult(status=<OrderStatus.COMMITTED_WAIT_MARKET_OPEN: 'COMMITTED_WAIT_MARKET_OPEN'>, message='Order pending market open.', metadata={'market_open': False}, linked_order='6387de1584fe4fc4983431898e1909cb', id='cccf696ff2354124b018f12306c82dfb')]
+ArenaXBroker disconnected
+[PASSED] sell
+
+[7] Testing: cancel (Cancel pending orders)
+Found config file: /Users/jck/Downloads/gitrepo/CJTrade/system.cjconf
+Orders and Fills tables are ready in local DB.
+ArenaXBroker connected successfully
+Executing: cancel
+15 entries found.
+
+Processing 1/15
+  ID: f5ac3fc688c0437ab8adcdad1cb3694c
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MARKET_OPEN
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 2/15
+  ID: e03b6eae900b41fd9f7215e91908b6d3
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MARKET_OPEN
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 3/15
+  ID: 8b72a1472f034cce9afed0acf4d8d575
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MARKET_OPEN
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 4/15
+  ID: ec4f241d080c42b1b8e867d675fcf834
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MATCHING
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 5/15
+  ID: 367498a3abf5439cb1a76c161de1934d
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MARKET_OPEN
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 6/15
+  ID: d40051bd2e094958b75483ea680ea4f5
+  Symbol: 0050
+  Status: COMMITTED_WAIT_MARKET_OPEN
+  → Trying to cancel...
+  → Cancel failed: OrderResult.__init__() got an unexpected keyword argument 'order_id'
+
+Processing 7/15
+  ID: c7cc31303b7e4bd7a6e29d7aa3cb0187
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 8/15
+  ID: 47941f9c1d1c4a438257863882b64868
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 9/15
+  ID: 384957f5d8004f13b3775f972d3c6f62
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 10/15
+  ID: d44d78d969094771b496592ada0775a0
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 11/15
+  ID: a21334f0774443ebbd8d47db590d9d8a
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 12/15
+  ID: 422bd862caed4bf88181f63097e9b12b
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 13/15
+  ID: 6a35ef96c4484e0a82daa99034cc603e
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 14/15
+  ID: 8957390d974b4fe8bd9e2b8a40c74704
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+Processing 15/15
+  ID: 6387de1584fe4fc4983431898e1909cb
+  Symbol: 0050
+  Status: FILLED
+  → Skipping (Status: FILLED)
+
+=== Processing complete ===
+Attempted to cancel 0 orders
+ArenaXBroker disconnected
+[PASSED] cancel
+
+[8] Testing: lsodr (List all orders)
+[SKIPPED] lsodr (not in selected test group)
+
+[9] Testing: lspos (List all positions)
+[SKIPPED] lspos (not in selected test group)
+
+[10] Testing: balance (Check account balance)
+[SKIPPED] balance (not in selected test group)
+
+[11] Testing: ohlcv (Get OHLCV data for 2330)
+[SKIPPED] ohlcv (not in selected test group)
+
+[12] Testing: bidask (Get bid/ask for 2330)
+[SKIPPED] bidask (not in selected test group)
+
+[13] Testing: kbars (Get K-bar chart for 2330)
+[SKIPPED] kbars (not in selected test group)
+
+[14] Testing: rank (Get market movers ranking)
+[SKIPPED] rank (not in selected test group)
+
+[15] Testing: news (Search news)
+[SKIPPED] news (not in selected test group)
+
+[16] Testing: search (Search news with keyword)
+[SKIPPED] search (not in selected test group)
+
+
+
+=== Test Summary ===
+Total:   16
+Passed:  3
+Failed:  0
+Skipped: 13
+
+✓ All tests passed!
+(CJTrade) jck@chenshoujis-MacBook-Air CJTrade % 

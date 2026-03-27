@@ -33,9 +33,11 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
 
     def _initialize_market_time(self) -> None:
         attempt, max_attempts = 0, 30
-        days_back = random.randint(self.num_days_preload, 20)
         if self.real_account:
             days_back = random.randint(self.num_days_preload, 1300)
+        else:
+            raise ValueError("Historical backend requires a real account to fetch historical data.")
+            exit(1)
 
         dt = datetime.now() - timedelta(days=days_back)
         sleep(1)
@@ -43,7 +45,7 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
         while not self.market.fetching_available(dt) and attempt < max_attempts:
             sleep(0.5)
             attempt += 1
-            days_back = random.randint(self.num_days_preload, 20)
+            days_back = random.randint(self.num_days_preload, 1300)
             dt = datetime.now() - timedelta(days=days_back)
 
         if attempt >= max_attempts:

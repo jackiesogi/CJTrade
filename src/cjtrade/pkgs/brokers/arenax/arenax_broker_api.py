@@ -213,7 +213,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
             action=OrderAction.BUY,
             price_type=PriceType.LMT,
             order_type=OrderType.ROD,
-            order_lot=intraday_odd,
+            order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
             price=price
         )
@@ -236,7 +236,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
             action=OrderAction.SELL,
             price_type=PriceType.LMT,
             order_type=OrderType.ROD,
-            order_lot=intraday_odd,
+            order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
             price=price
         )
@@ -302,9 +302,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        snapshot = self.api.snapshot(product.symbol)
-        base_price = snapshot.close if snapshot else 100.0
+        snapshot = self.middleware.snapshot(product.symbol)
+        base_price = snapshot['close'] if snapshot else 100.0
 
+        # TODO: Backend need to query the real bid/ask price rather than simulating one
         return BidAsk(
             symbol=product.symbol,
             datetime=datetime.now(),
@@ -328,27 +329,29 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
         return snapshots
 
+    # TODO: Call backend to query real kbar rather than using yfinane one in user-side
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
         if not self._connected:
             raise ConnectionError("Not connected to simulation environment")
 
-        # yfinance directly supported intervals
-        yf_supported = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
+        return None  # TODO: Finish it!
+        # # yfinance directly supported intervals
+        # yf_supported = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
 
-        if interval in yf_supported:
-            # Direct fetch from yfinance
-            return self.api.kbars(product.symbol, start, end, interval)
-        else:
-            # Use internal aggregation for unsupported intervals
-            kbars_1m = self.api.kbars(product.symbol, start, end, "1m")
+        # if interval in yf_supported:
+        #     # Direct fetch from yfinance
+        #     return self.api.kbars(product.symbol, start, end, interval)
+        # else:
+        #     # Use internal aggregation for unsupported intervals
+        #     kbars_1m = self.api.kbars(product.symbol, start, end, "1m")
 
-            if not kbars_1m:
-                return []
+        #     if not kbars_1m:
+        #         return []
 
-            try:
-                return self.api._aggregate_kbars_internal(kbars_1m, interval)
-            except ValueError as e:
-                raise ValueError(f"Mock broker interval '{interval}' not supported: {e}") from e
+        #     try:
+        #         return self.api._aggregate_kbars_internal(kbars_1m, interval)
+        #     except ValueError as e:
+        #         raise ValueError(f"Mock broker interval '{interval}' not supported: {e}") from e
 
     def register_order_callback(self, callback: OrderCallback) -> None:
         """
@@ -373,9 +376,9 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             raise ConnectionError("Not connected to broker")
 
         # Overwrite created_at
-        order.created_at = self.api.market.get_market_time()["mock_current_time"]
+        order.created_at = self.get_system_time()["mock_current_time"]
 
-        res = self.api.place_order(order)
+        res = self.middleware.place_order(order)
 
         insert_new_order_to_db(conn=self.db, username=self.username, order=order)
         if res.status == OrderStatus.REJECTED:
@@ -384,9 +387,9 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def cancel_order(self, order_id: str) -> OrderResult:
-        res = self.api.cancel_order(order_id=order_id)
+        res = self.middleware.cancel_order(order_id=order_id)
 
-        update_at = self.api.market.get_market_time()["mock_current_time"]
+        update_at = self.get_system_time()["mock_current_time"]
 
         if res.status == OrderStatus.CANCELLED:
             update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED", updated_at=update_at)
@@ -395,11 +398,19 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     def commit_order(self) -> List[OrderResult]:
         res = []
-        # Use list() to avoid mutation during iteration
-        for otw_odr in list(self.api.account_state.orders_placed):
-            update_at = self.api.market.get_market_time()["mock_current_time"]
-            update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
-            res.append(self.api.commit_order(otw_odr.id))
+        # Use middleware account_summary to find placed orders
+        summary = self.middleware.account_summary()
+        orders = summary.get("orders", []) if summary else []
+        placed_orders = [o for o in orders if o.get("status") == OrderStatus.PLACED.value]
+        for o in placed_orders:
+            order_id = o.get("id") or o.get("order_id") or o.get("ordno")
+            try:
+                update_at = self.get_system_time()["mock_current_time"]
+                update_order_status_to_db(conn=self.db, oid=order_id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
+                commit_res = self.middleware.commit_order(order_id)
+                res.append(commit_res)
+            except Exception as e:
+                print(f"Error committing order {order_id}: {e}")
         return res
 
     def list_orders(self) -> List[Trade]:
@@ -438,7 +449,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             action=OrderAction.BUY,
             price_type=PriceType.LMT,
             order_type=OrderType.ROD,
-            order_lot=intraday_odd,
+            order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
             price=price
         )
@@ -461,7 +472,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             action=OrderAction.SELL,
             price_type=PriceType.LMT,
             order_type=OrderType.ROD,
-            order_lot=intraday_odd,
+            order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
             price=price
         )

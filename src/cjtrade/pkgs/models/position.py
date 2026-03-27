@@ -15,3 +15,13 @@ class Position:
 
     def __str__(self) -> str:
         return (f"Hold {self.quantity * 1000} shares of {self.symbol} with avg cost {self.avg_cost}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "quantity": self.quantity,
+            "avg_cost": self.avg_cost,
+            "current_price": self.current_price,
+            "market_value": self.market_value,
+            "unrealized_pnl": self.unrealized_pnl,
+        }

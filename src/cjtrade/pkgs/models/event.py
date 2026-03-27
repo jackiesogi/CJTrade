@@ -68,6 +68,23 @@ class OrderEvent:
     def is_rejected(self) -> bool:
         return self.new_status == OrderStatus.REJECTED
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_type": self.event_type.value if hasattr(self.event_type, 'value') else self.event_type,
+            "timestamp": self.timestamp.isoformat(),
+            "order_id": self.order_id,
+            "symbol": self.symbol,
+            "action": self.action.value if hasattr(self.action, 'value') else self.action,
+            "quantity": self.quantity,
+            "price": self.price,
+            "old_status": self.old_status.value if hasattr(self.old_status, 'value') else self.old_status,
+            "new_status": self.new_status.value if hasattr(self.new_status, 'value') else self.new_status,
+            "filled_quantity": self.filled_quantity,
+            "filled_price": self.filled_price,
+            "filled_value": self.filled_value,
+            "message": self.message,
+        }
+
 
 @dataclass
 class FillEvent:
@@ -109,6 +126,22 @@ class FillEvent:
     def is_complete_fill(self) -> bool:
         return self.order_status == OrderStatus.FILLED
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "order_id": self.order_id,
+            "symbol": self.symbol,
+            "action": self.action.value if hasattr(self.action, 'value') else self.action,
+            "filled_quantity": self.filled_quantity,
+            "filled_price": self.filled_price,
+            "filled_value": self.filled_value,
+            "total_filled_quantity": self.total_filled_quantity,
+            "remaining_quantity": self.remaining_quantity,
+            "order_status": self.order_status.value if hasattr(self.order_status, 'value') else self.order_status,
+            "fill_sequence": self.fill_sequence,
+            "deal_id": self.deal_id,
+        }
+
 
 @dataclass
 class PriceEvent:
@@ -141,6 +174,21 @@ class PriceEvent:
 
     broker_raw_data: Optional[Dict[str, Any]] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "symbol": self.symbol,
+            "current_price": self.current_price,
+            "previous_price": self.previous_price,
+            "condition_type": self.condition_type,
+            "threshold": self.threshold,
+            "price_change": self.price_change,
+            "price_change_percent": self.price_change_percent,
+            "volume": self.volume,
+            "bid_price": self.bid_price,
+            "ask_price": self.ask_price,
+        }
+
 
 @dataclass
 class TickEvent:
@@ -168,6 +216,15 @@ class TickEvent:
     tick_type: str = ""  # "BUY", "SELL", "NEUTRAL"
 
     broker_raw_data: Optional[Dict[str, Any]] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "symbol": self.symbol,
+            "price": self.price,
+            "volume": self.volume,
+            "tick_type": self.tick_type,
+        }
 
 
 from typing import Callable

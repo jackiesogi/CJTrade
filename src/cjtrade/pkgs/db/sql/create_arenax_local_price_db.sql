@@ -33,12 +33,19 @@ CREATE TABLE IF NOT EXISTS arenax_prices (
 -- Auxiliary indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_arenax_prices_ts ON arenax_prices(ts);
 
--- Coverage tracking
+-- Coverage tracking (multi-interval per symbol/timeframe to support gap-fill logic)
+-- Each row represents ONE contiguous fetched interval.
+-- The old single-row-per-symbol schema is superseded; a migration is applied at connect time.
 CREATE TABLE IF NOT EXISTS arenax_symbol_coverage (
-    symbol TEXT NOT NULL,
-    timeframe TEXT NOT NULL,
-    start_ts INTEGER,
-    end_ts INTEGER,
-    last_checked INTEGER,
-    PRIMARY KEY (symbol, timeframe)
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol      TEXT     NOT NULL,
+    timeframe   TEXT     NOT NULL,
+    start_ts    INTEGER  NOT NULL,   -- Unix epoch seconds (inclusive)
+    end_ts      INTEGER  NOT NULL,   -- Unix epoch seconds (inclusive)
+    source      TEXT     NOT NULL DEFAULT 'unknown',  -- 'yfinance' | 'sinopac' | 'manual'
+    last_checked INTEGER           DEFAULT (unixepoch()),
+    created_at  INTEGER           DEFAULT (unixepoch())
 );
+-- Fast range-lookup index
+CREATE INDEX IF NOT EXISTS idx_coverage_symbol_tf_start
+    ON arenax_symbol_coverage(symbol, timeframe, start_ts);

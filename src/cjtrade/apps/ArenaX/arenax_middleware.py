@@ -1,4 +1,5 @@
 import requests
+from cjtrade.pkgs.models import *
 from flask import jsonify
 
 
@@ -11,7 +12,7 @@ class ArenaXMiddleWare:
     def _get(self, path: str):
         url = f"{self.base_url}/{path}"
         try:
-            res = requests.get(url, timeout=3)
+            res = requests.get(url, timeout=10)
             res.raise_for_status()
             return res.json()
         except requests.exceptions.RequestException as e:
@@ -40,7 +41,7 @@ class ArenaXMiddleWare:
             if isinstance(headers, dict):
                 hdrs.update(headers)
 
-            res = requests.post(url, json=data, headers=hdrs, timeout=3)
+            res = requests.post(url, json=data, headers=hdrs, timeout=10)
 
             try:
                 # treat it as JSON response if possible
@@ -98,18 +99,19 @@ class ArenaXMiddleWare:
         # server exposes GET /control/get-price?symbol=<symbol>
         return self._get(f"control/get-price?symbol={symbol}")
 
-    def login(self, api_key: str, **kwargs):
+    def login(self, api_key: str, **kwargs) -> bool:
         data = {"api_key": api_key}
         response = self._post("account/login", data, headers=kwargs.get("headers"))
         if response and response.get("ok") and response.get("message") == "Login successful":
             return True
         else:
-            raise ValueError(f"Login failed: {response.get("message")}")
+            msg = None if response is None else response.get("message")
+            raise ValueError(f"Login failed: {msg}")
 
     def logout(self, **kwargs):
         return self._post("account/logout", headers=kwargs.get("headers"))
 
-    def account_summary(self, **kwargs):
+    def account_summary(self, **kwargs) -> dict:
         summary = self._get("account/summary")
         if summary is None:
             return None
@@ -120,13 +122,100 @@ class ArenaXMiddleWare:
             res['orders'] = summary.get("orders", [])
             return res
 
-    def snapshot(self, symbol: str, **kwargs):
+    def snapshot(self, symbol: str, **kwargs) -> dict:
         res = self._get(f"market/snapshot?symbol={symbol}")
         if res and res.get("ok"):
             return res.get("price")  # return Snapshot object
         else:
             print(f"Failed to get snapshot for {symbol}: {res.get('error') if res else 'No response'}")
             return None
+
+
+    def place_order(self, order: Order, **kwargs) -> OrderResult:
+        # Serialize Order to JSON-serializable payload
+        product = {
+            "symbol": getattr(order.product, 'symbol', None),
+            "exchange": getattr(order.product, 'exchange', None),
+            "type": getattr(order.product, 'type', None).value if hasattr(getattr(order.product, 'type', None), 'value') else getattr(order.product, 'type', None),
+        }
+
+        data = {
+            "product": product,
+            "action": order.action.value if hasattr(order.action, 'value') else order.action,
+            "price": float(order.price),
+            "quantity": int(order.quantity),
+            "price_type": order.price_type.value if hasattr(order.price_type, 'value') else order.price_type,
+            "order_type": order.order_type.value if hasattr(order.order_type, 'value') else order.order_type,
+            "order_lot": order.order_lot.value if hasattr(order.order_lot, 'value') else order.order_lot,
+            "created_at": order.created_at.isoformat() if hasattr(order, 'created_at') else None,
+            "id": order.id,
+            "opt_field": order.opt_field,
+        }
+
+        # Call server endpoint (broker-side server expects /trade/place-order)
+        res = self._post("trade/place-order", data, headers=kwargs.get("headers"))
+
+        if res is None:
+            raise ConnectionError("No response from ArenaX broker-side server")
+        if not res.get("ok", False):
+            raise ValueError(f"Place order failed: {res.get('error')}")
+
+        result = res.get("result")
+        if result is None:
+            raise ValueError("Unexpected empty result from broker server")
+
+        # Map server result dict to local OrderResult dataclass
+        status = result.get("status")
+        try:
+            status_enum = OrderStatus(status) if status is not None else OrderStatus.UNKNOWN
+        except Exception:
+            status_enum = OrderStatus.UNKNOWN
+
+        order_result = OrderResult(
+            status=status_enum,
+            message=result.get("message", ""),
+            metadata=result.get("metadata", {}),
+            linked_order=result.get("linked_order", ""),
+            id=result.get("id", result.get("order_id", order.id)),
+        )
+        return order_result
+
+    def cancel_order(self, order_id: str, **kwargs) -> OrderResult:
+        data = {"order_id": order_id}
+        res = self._post("trade/cancel-order", data, headers=kwargs.get("headers"))
+        
+        result_data = res.get("result", {})
+        # print(f"Cancel order response: {res}")
+        # print(f"status: {result_data.get('status')}")
+
+        order_result = OrderResult(
+            linked_order=result_data.get("linked_order"),
+            status=result_data.get("status"),
+            message=result_data.get("message", ""),
+            metadata=result_data.get("metadata", {}),
+        )
+        return order_result
+
+    def commit_order(self, order_id: str, **kwargs) -> List[OrderResult]:
+        data = {"order_id": order_id}
+        res = self._post("trade/commit-order", data, headers=kwargs.get("headers"))
+        if res is None:
+            return None
+        if not res.get("ok", False):
+            raise ValueError(f"Commit order failed: {res.get('error')}")
+
+        r = res.get("result")
+        if r is None:
+            return None
+
+        order_result = OrderResult(
+            status=OrderStatus(r.get("status")) if r.get("status") in [s.value for s in OrderStatus] else OrderStatus.UNKNOWN,
+            message=r.get("message", ""),
+            metadata=r.get("metadata", {}),
+            linked_order=r.get("linked_order", r.get("order_id", "")),
+            id=r.get("id", r.get("order_id", "")),
+        )
+        return order_result
 
 
 if __name__ == "__main__":

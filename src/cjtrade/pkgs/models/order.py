@@ -107,3 +107,13 @@ class OrderResult:
     metadata: Dict[str, Any]
     linked_order: str
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    def to_dict(self) -> Dict[str, Any]:
+        # Serialize to JSON-friendly dict
+        status_val = self.status.value if hasattr(self.status, 'value') else self.status
+        return {
+            "status": status_val,
+            "message": self.message,
+            "metadata": self.metadata,
+            "linked_order": self.linked_order,
+            "id": self.id,
+        }

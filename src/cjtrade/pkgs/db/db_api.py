@@ -50,9 +50,132 @@ def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None):
             sql_script = f.read()
             conn.execute_script(sql_script)
         conn.commit()
+        # _migrate_coverage_table_if_needed(conn)
         print("ArenaX local price tables are ready in local DB.")
     except Exception as e:
         print(f"Failed to prepare ArenaX local price tables in local DB: {e}")
+
+
+
+# ---------------------------------------------------------------------------
+# Coverage helpers
+# ---------------------------------------------------------------------------
+
+def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge a list of (start, end) integer intervals, returning sorted, non-overlapping list."""
+    if not intervals:
+        return []
+    sorted_ivs = sorted(intervals, key=lambda x: x[0])
+    merged: list[tuple[int, int]] = [sorted_ivs[0]]
+    for s, e in sorted_ivs[1:]:
+        last_s, last_e = merged[-1]
+        if s <= last_e + 1:          # adjacent or overlapping – extend
+            merged[-1] = (last_s, max(last_e, e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def get_coverage_ranges(conn: DatabaseConnection,
+                        symbol: str,
+                        timeframe: str = "1m") -> list[tuple[int, int]]:
+    """Return sorted, merged list of (start_ts, end_ts) epoch-second tuples for a symbol."""
+    symbol_s = symbol.replace("'", "''")
+    timeframe_s = timeframe.replace("'", "''")
+    rows = conn.execute(
+        f"SELECT start_ts, end_ts FROM arenax_symbol_coverage "
+        f"WHERE symbol='{symbol_s}' AND timeframe='{timeframe_s}' ORDER BY start_ts ASC"
+    )
+    if not rows:
+        return []
+    return _merge_intervals([(int(r[0]), int(r[1])) for r in rows])
+
+
+def compute_missing_ranges(conn: DatabaseConnection,
+                           symbol: str,
+                           timeframe: str,
+                           start_ts: int,
+                           end_ts: int) -> list[tuple[int, int]]:
+    """Return list of (start_ts, end_ts) sub-intervals of [start_ts, end_ts] NOT in cache.
+
+    Args:
+        start_ts / end_ts: Unix epoch seconds (inclusive on both ends).
+    Returns:
+        List of gap intervals that need to be fetched.
+    """
+    covered = get_coverage_ranges(conn, symbol, timeframe)
+    gaps: list[tuple[int, int]] = []
+    cursor = start_ts
+    for cov_s, cov_e in covered:
+        if cov_s > end_ts:
+            break                        # covered range is entirely after request window
+        if cov_e < cursor:
+            continue                     # covered range is entirely before current cursor
+        if cov_s > cursor:
+            gaps.append((cursor, cov_s - 1))   # gap before this covered interval
+        cursor = max(cursor, cov_e + 1)
+    if cursor <= end_ts:
+        gaps.append((cursor, end_ts))   # trailing gap
+    return gaps
+
+
+def upsert_coverage_range(conn: DatabaseConnection,
+                          symbol: str,
+                          timeframe: str,
+                          start_ts: int,
+                          end_ts: int,
+                          source: str = "unknown"):
+    """Insert a new covered interval and consolidate overlapping rows for cleanliness.
+
+    This uses an insert-then-compact strategy:
+      1. Insert the new row.
+      2. Find all rows (including the new one) that overlap/touch the new interval.
+      3. Merge them into a single row; delete the originals.
+    This keeps the table tidy even after many incremental fetches.
+    """
+    if start_ts > end_ts:
+        return
+
+    symbol_s = symbol.replace("'", "''")
+    timeframe_s = timeframe.replace("'", "''")
+    source_s = source.replace("'", "''")
+    now = int(datetime.utcnow().timestamp())
+
+    # 1. Insert new range
+    conn.execute(f"""
+        INSERT INTO arenax_symbol_coverage (symbol, timeframe, start_ts, end_ts, source, last_checked, created_at)
+        VALUES ('{symbol_s}', '{timeframe_s}', {start_ts}, {end_ts}, '{source_s}', {now}, {now})
+    """)
+    conn.commit()
+
+    # 2. Find all rows that overlap or are adjacent to [start_ts, end_ts]
+    rows = conn.execute(f"""
+        SELECT id, start_ts, end_ts FROM arenax_symbol_coverage
+        WHERE symbol='{symbol_s}' AND timeframe='{timeframe_s}'
+          AND start_ts <= {end_ts + 1}
+          AND end_ts   >= {start_ts - 1}
+        ORDER BY start_ts ASC
+    """)
+    if not rows or len(rows) <= 1:
+        return  # nothing to consolidate
+
+    # 3. Merge all found rows into one
+    ids     = [r[0] for r in rows]
+    merged_s = min(r[1] for r in rows)
+    merged_e = max(r[2] for r in rows)
+
+    ids_csv = ",".join(str(i) for i in ids[:-1])      # keep last, update it
+    keep_id = ids[-1]
+
+    conn.execute(f"""
+        UPDATE arenax_symbol_coverage
+        SET start_ts={merged_s}, end_ts={merged_e}, last_checked={now}
+        WHERE id={keep_id}
+    """)
+    conn.execute(f"""
+        DELETE FROM arenax_symbol_coverage WHERE id IN ({ids_csv})
+    """)
+    conn.commit()
 
 
 # TODO: Support List[Kbar] batch insert for better performance
@@ -314,3 +437,32 @@ if __name__ == "__main__":
     res = get_cj_order_id_from_db(conn, "f224a302")
     print(type(res))
     print(res)
+
+
+# def _migrate_coverage_table_if_needed(conn: DatabaseConnection):
+#     """Migrate arenax_symbol_coverage to multi-interval schema if it uses the old single-row PK."""
+#     try:
+#         # Probe for the new 'id' column – if it does not exist the table is on the old schema
+#         conn.execute("SELECT id FROM arenax_symbol_coverage LIMIT 1")
+#     except Exception:
+#         # Old schema detected – drop and recreate (coverage data is cheap to re-generate)
+#         print("[migration] Upgrading arenax_symbol_coverage to multi-interval schema…")
+#         conn.execute("DROP TABLE IF EXISTS arenax_symbol_coverage")
+#         conn.execute("""
+#             CREATE TABLE arenax_symbol_coverage (
+#                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
+#                 symbol      TEXT    NOT NULL,
+#                 timeframe   TEXT    NOT NULL,
+#                 start_ts    INTEGER NOT NULL,
+#                 end_ts      INTEGER NOT NULL,
+#                 source      TEXT    NOT NULL DEFAULT 'unknown',
+#                 last_checked INTEGER          DEFAULT (unixepoch()),
+#                 created_at  INTEGER          DEFAULT (unixepoch())
+#             )
+#         """)
+#         conn.execute("""
+#             CREATE INDEX IF NOT EXISTS idx_coverage_symbol_tf_start
+#                 ON arenax_symbol_coverage(symbol, timeframe, start_ts)
+#         """)
+#         conn.commit()
+#         print("[migration] arenax_symbol_coverage migration complete.")

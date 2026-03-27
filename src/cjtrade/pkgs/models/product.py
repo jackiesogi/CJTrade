@@ -43,3 +43,13 @@ class Product:
     category: str = ""
     tags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "type": self.type.value if hasattr(self.type, 'value') else self.type,
+            "exchange": self.exchange.value if hasattr(self.exchange, 'value') else self.exchange,
+            "category": self.category,
+            "tags": self.tags,
+            "metadata": self.metadata,
+        }

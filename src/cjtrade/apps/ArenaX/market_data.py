@@ -249,127 +249,190 @@ class ArenaX_Market:
 
         return market_open <= current_time <= market_close
 
+    # TODO: Check if the gap filling mechanism really work and is with correct timezone
     def create_historical_market(self, symbol: str, days_preload: int = 5):
-        """Load historical market data for a symbol.
+        """Load historical market data for a symbol with gap-aware caching.
 
-        Data source priority:
-        1. ArenaX local price database (cache)
-        2. Real account (if available) - via get_kbars()
-        3. Yahoo Finance - as fallback
+        Strategy
+        --------
+        1. Compute which sub-intervals of [start_date, end_date] are NOT yet cached
+           in the local price DB (``arenax_symbol_coverage``).
+        2. For every missing gap, fetch from ``real_account`` (preferred) or yfinance,
+           persist every fetched kbar and record the covered range so subsequent calls
+           skip that window.
+        3. Load the full [start_date, end_date] range from the local price DB and
+           build the in-memory ``historical_data`` DataFrame.
+
+        All fetching is fill-only (``overwrite=False``) – existing cached bars are
+        never overwritten unless the caller explicitly clears the DB.
 
         Args:
-            symbol: Stock symbol to load data for
+            symbol: Stock symbol to load data for.
+            days_preload: Number of days beyond ``start_date`` to pre-load.
         """
-        # Early return if data already loaded
+        # Skip if already loaded in memory
         if symbol in self.historical_data:
             return
 
-        NUM_DAYS_PRELOAD = days_preload
-        end_date = self.start_date + timedelta(days=NUM_DAYS_PRELOAD)
+        end_date = self.start_date + timedelta(days=days_preload)
 
-        # Load historical data from real account for better data quality
-        # TODO: should be something like check_time_range_available_in_price_db()
+        # ── 1. Identify missing ranges ───────────────────────────────────────
+        if self.price_db:
+            missing = self.price_db.get_missing_ranges(symbol, "1m", self.start_date, end_date)
+        else:
+            # No price DB – treat entire window as missing
+            missing = [(int(self.start_date.timestamp()), int(end_date.timestamp()))]
+
+        # ── 2. Fetch & cache each gap ────────────────────────────────────────
+        if missing:
+            print(f"[{symbol}] {len(missing)} gap(s) to fill: " +
+                  ", ".join(f"[{s},{e}]" for s, e in missing))
+            for gap_start_epoch, gap_end_epoch in missing:
+                gap_start = datetime.fromtimestamp(gap_start_epoch)
+                gap_end   = datetime.fromtimestamp(gap_end_epoch)
+                self._fetch_and_cache_range(symbol, gap_start, gap_end)
+
+        # ── 3. Load full requested range from local DB ───────────────────────
         if self.price_db:
             self._load_from_price_db(symbol, end_date)
 
-        if self.historical_data.get(symbol) and not self.historical_data[symbol]['data'].empty:
-            return  # fetch successfully
-        elif self.real_account and self.real_account.is_connected():
-            self._load_from_real_account(symbol, end_date)
-        else:
-            self._load_from_yahoo_finance(symbol, end_date)
+        # Fallback: if DB load produced nothing (e.g. no price_db at all)
+        if not self.historical_data.get(symbol) or self.historical_data[symbol]['data'].empty:
+            self._store_empty_data(symbol, "No data after gap-fill attempt")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _fetch_and_cache_range(self, symbol: str, gap_start: datetime, gap_end: datetime):
+        """Fetch kbars for [gap_start, gap_end] from the best available source,
+        persist them to the local price DB, and record coverage.
+
+        Fill-only: bars already present are *not* overwritten.
+        """
+        source = "yfinance"
+        kbars: list = []
+
+        if self.real_account and self.real_account.is_connected():
+            source = self.real_account.get_broker_name()
+            kbars = self._fetch_from_real_account(
+                symbol,
+                gap_start.strftime("%Y-%m-%d"),
+                gap_end.strftime("%Y-%m-%d")
+            )
+
+        if not kbars:
+            source = "yfinance"
+            kbars = self._fetch_from_yahoo_finance(
+                symbol,
+                gap_start.strftime("%Y-%m-%d"),
+                gap_end.strftime("%Y-%m-%d")
+            )
+
+        if not kbars:
+            print(f"[{symbol}] No data available for gap [{gap_start} – {gap_end}]")
+            return
+
+        # Persist – fill only (overwrite=False keeps existing bars intact)
+        if self.price_db:
+            saved = self.price_db.insert_prices_batch(
+                symbol, kbars, timeframe="1m", source=source, overwrite=False
+            )
+            print(f"[{symbol}] Cached {saved}/{len(kbars)} bars "
+                  f"({gap_start.date()} – {gap_end.date()}, source={source})")
+
+            # Record the covered range even if some bars already existed
+            if kbars:
+                actual_start = min(kb.timestamp for kb in kbars)
+                actual_end   = max(kb.timestamp for kb in kbars)
+                self.price_db.record_coverage(symbol, "1m", actual_start, actual_end, source)
+
+    def _fetch_from_real_account(self, symbol: str,
+                                  start: str, end: str,
+                                  interval: str = "1m") -> list:
+        """Fetch kbars from real_account; returns List[Kbar] or [] on failure."""
+        try:
+            kbars = self.real_account.get_kbars(
+                Product(symbol=symbol), start=start, end=end, interval=interval
+            )
+            return kbars or []
+        except Exception as exc:
+            print(f"[{symbol}] real_account fetch failed ({start}–{end}): {exc}")
+            return []
+
+    def _fetch_from_yahoo_finance(self, symbol: str,
+                                   start: str, end: str,
+                                   interval: str = "1m") -> list:
+        """Fetch kbars from yfinance; returns List[Kbar] or [] on failure."""
+        yf_symbol = f"{symbol}.TW"
+        try:
+            data = yf.download(
+                yf_symbol, start=start, end=end,
+                interval=interval, auto_adjust=True, progress=False
+            )
+            if data.empty:
+                return []
+            data = self._normalize_timezone(data)
+            kbars = []
+            for ts, row in data.iterrows():
+                kbars.append(Kbar(
+                    timestamp=ts.to_pydatetime(),
+                    open=round(row["Open"].item(), 2),
+                    high=round(row["High"].item(), 2),
+                    low=round(row["Low"].item(), 2),
+                    close=round(row["Close"].item(), 2),
+                    volume=int(row["Volume"].item()),
+                ))
+            return kbars
+        except Exception as exc:
+            print(f"[{symbol}] yfinance fetch failed ({start}–{end}): {exc}")
+            return []
 
     def _load_from_price_db(self, symbol: str, end_date: datetime):
-        """Load historical data from ArenaX local price database."""
-        print(f"Loading historical data for {symbol}... (source: arenax cache)")
+        """Load historical data from the local price database into self.historical_data."""
+        print(f"[{symbol}] Loading from local price cache ({self.start_date.date()} – {end_date.date()})…")
         try:
-            # This will return List[Kbar]
-            ks = self.price_db.get_price(symbol=symbol, timeframe="1m", start_ts=self.start_date, end_ts=end_date)
-            # print(f"ks: {ks}")
-
+            ks = self.price_db.get_price(
+                symbol=symbol, timeframe="1m",
+                start_ts=self.start_date, end_ts=end_date
+            )
             if ks:
                 df = pd.DataFrame([{
-                    'Open': k.open,
-                    'High': k.high,
-                    'Low': k.low,
-                    'Close': k.close,
-                    'Volume': k.volume
+                    'Open':   k.open,
+                    'High':   k.high,
+                    'Low':    k.low,
+                    'Close':  k.close,
+                    'Volume': k.volume,
                 } for k in ks], index=[k.timestamp for k in ks])
 
                 self.historical_data[symbol] = {
                     'data': df,
                     'timestamps': df.index.to_numpy(),
                 }
-                print(f"Loaded {len(df)} data points for {symbol} from local price database")
+                print(f"[{symbol}] Loaded {len(df)} bar(s) from local price cache")
+            else:
+                print(f"[{symbol}] Local price cache empty for requested range")
 
-        except Exception as e:
-            print(f"Error loading data from local price database for {symbol}: {e}")
-            self._store_empty_data(symbol, str(e))
+        except Exception as exc:
+            print(f"[{symbol}] Error loading from local price cache: {exc}")
+            self._store_empty_data(symbol, str(exc))
+
+    # NOTE: _load_from_real_account and _load_from_yahoo_finance are replaced by the
+    # lower-level _fetch_from_real_account / _fetch_from_yahoo_finance helpers above,
+    # which return List[Kbar] and let create_historical_market handle persistence.
+    # Kept as thin stubs so external callers do not break.
 
     def _load_from_real_account(self, symbol: str, end_date: datetime):
-        """Load historical data from real broker account."""
-        print(f"Loading historical data for {symbol}... (source: {self.real_account.get_broker_name()})")
-        try:
-            kbars = self.real_account.get_kbars(
-                Product(symbol=symbol),
-                start=self.start_date.strftime("%Y-%m-%d"),
-                end=end_date.strftime("%Y-%m-%d"),
-                interval="1m"
-            )
-
-            # Convert kbars to DataFrame
-            df = pd.DataFrame([{
-                'Open': kbar.open,
-                'High': kbar.high,
-                'Low': kbar.low,
-                'Close': kbar.close,
-                'Volume': kbar.volume
-            } for kbar in kbars], index=[kbar.timestamp for kbar in kbars])
-
-            if not df.empty:
-                self.historical_data[symbol] = {
-                    'data': df,
-                    'timestamps': df.index.to_numpy(),
-                }
-                print(f"Loaded {len(df)} data points for {symbol} from real account")
-            else:
-                self._store_empty_data(symbol, "No data from real account")
-
-        except Exception as e:
-            print(f"Error loading data from real account for {symbol}: {e}")
-            self._store_empty_data(symbol, str(e))
+        """Deprecated shim – use _fetch_and_cache_range instead."""
+        self._fetch_and_cache_range(symbol, self.start_date, end_date)
+        if self.price_db:
+            self._load_from_price_db(symbol, end_date)
 
     def _load_from_yahoo_finance(self, symbol: str, end_date: datetime):
-        """Load historical data from Yahoo Finance."""
-        print(f"Loading historical data for {symbol}... (source: yfinance)")
-        yf_symbol = f"{symbol}.TW"
-
-        try:
-            data = yf.download(
-                yf_symbol,
-                start=self.start_date.strftime("%Y-%m-%d"),
-                end=end_date.strftime("%Y-%m-%d"),
-                interval="1m",
-                auto_adjust=True,
-                progress=False
-            )
-
-            if data.empty:
-                self._store_empty_data(symbol, "No data from Yahoo Finance")
-                return
-
-            # Normalize timezone
-            data = self._normalize_timezone(data)
-
-            self.historical_data[symbol] = {
-                'data': data,
-                'timestamps': data.index.to_numpy(),
-            }
-            print(f"Loaded {len(data)} data points for {symbol}")
-
-        except Exception as e:
-            print(f"Error loading data for {symbol}: {e}")
-            self._store_empty_data(symbol, str(e))
+        """Deprecated shim – use _fetch_and_cache_range instead."""
+        self._fetch_and_cache_range(symbol, self.start_date, end_date)
+        if self.price_db:
+            self._load_from_price_db(symbol, end_date)
 
     def _normalize_timezone(self, data: pd.DataFrame) -> pd.DataFrame:
         """Normalize DataFrame timezone to naive Taiwan time."""

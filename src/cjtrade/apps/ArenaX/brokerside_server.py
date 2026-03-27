@@ -90,6 +90,7 @@ def load_cjsys():
     # For backward compatibility ('speed' will be replaced by 'playback_speed')
     server_config['speed'] = server_config['playback_speed']
     server_config['backtest_duration'] = server_config['backtest_duration_days']
+    server_config['num_days_preload'] = server_config['backtest_duration_days']
 
 
 # Provide an interface for apps to:
@@ -262,11 +263,65 @@ class ArenaX_BrokerSideServer:
 
         @app.post("/trade/place-order")
         def place_order():
-            pass
+            payload = request.get_json(silent=True) or {}
+            product_payload = payload.get("product") or {}
+            action = payload.get("action")
+            price = payload.get("price")
+            quantity = payload.get("quantity")
+            price_type = payload.get("price_type")
+            order_type = payload.get("order_type")
+            order_lot = payload.get("order_lot")
+            if not all([product_payload, action, price is not None, quantity is not None, price_type, order_type, order_lot]):
+                return jsonify({"ok": False, "error": "Missing required order fields"}), 400
+            try:
+                # Build Product from incoming dict
+                product = Product(**product_payload) if isinstance(product_payload, dict) else Product(symbol=product_payload)
+
+                # Normalize order_lot: could be string or already enum name
+                try:
+                    order_lot_enum = OrderLot(order_lot) if isinstance(order_lot, str) else OrderLot(order_lot)
+                except Exception:
+                    # Fallback: try boolean mapping
+                    order_lot_enum = OrderLot.IntraDayOdd if str(order_lot).lower() in ["1", "true", "yes"] else OrderLot.Common
+
+                order = Order(
+                    product=product,
+                    action=OrderAction(action),
+                    price=float(price),
+                    quantity=int(quantity),
+                    price_type=PriceType(price_type),
+                    order_type=OrderType(order_type),
+                    order_lot=order_lot_enum,
+                )
+                result = self.backend.place_order(order)
+                return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.post("/trade/cancel-order")
         def cancel_order():
-            pass
+            payload = request.get_json(silent=True) or {}
+            order_id = payload.get("order_id")
+            if not order_id:
+                return jsonify({"ok": False, "error": "order_id is required"}), 400
+            try:
+                result = self.backend.cancel_order(order_id)
+                # print(f"Cancel order result: {result}")
+                return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
+
+        @app.post("/trade/commit-order")
+        def commit_order():
+            payload = request.get_json(silent=True) or {}
+            order_id = payload.get("order_id")
+            if not order_id:
+                return jsonify({"ok": False, "error": "order_id is required"}), 400
+            try:
+                result = self.backend.commit_order(order_id)
+                return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/market/snapshot")
         def market_snapshot():
@@ -274,15 +329,25 @@ class ArenaX_BrokerSideServer:
             if not symbol:
                 return jsonify({"ok": False, "error": "symbol is required"}), 400
             price = self.backend.snapshot(symbol)
-            return jsonify({"ok": True, "symbol": symbol, "price": price})
+            print(type(price))  # Snapshot
+            print(type(price.to_dict()))  # dict
+            return jsonify({"ok": True, "symbol": symbol, "price": price.to_dict() if price else None})
 
         @app.get("/market/kbars")
         def market_kbars():
-            pass
+            symbol = request.args.get("symbol")
+            start = request.args.get("start")
+            end = request.args.get("end")
+            interval = request.args.get("interval", "1m")
+            try:
+                kbars = self.backend.kbars(symbol, start, end, interval)
+                return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.post("/trade/register-order-callback")
         def register_order_callback():
-            pass
+            return jsonify({"ok": False, "error": "not implemented"}), 501
 
         @app.get("/trade/get-broker-name")
         def trade_get_broker_name():

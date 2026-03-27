@@ -57,6 +57,25 @@ class Snapshot:
     sell_volume: int
     additional_note: Optional[str] = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "exchange": self.exchange,
+            "timestamp": self.timestamp.isoformat(),
+            "open": self.open,
+            "close": self.close,
+            "high": self.high,
+            "low": self.low,
+            "volume": self.volume,
+            "average_price": self.average_price,
+            "action": self.action.value if hasattr(self.action, 'value') else self.action,
+            "buy_price": self.buy_price,
+            "buy_volume": self.buy_volume,
+            "sell_price": self.sell_price,
+            "sell_volume": self.sell_volume,
+            "additional_note": self.additional_note,
+        }
+
 
 @dataclass
 class BidAsk:
@@ -66,3 +85,13 @@ class BidAsk:
     bid_volume: List[int]
     ask_price: List[float]
     ask_volume: List[int]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "datetime": self.datetime.isoformat(),
+            "bid_price": self.bid_price,
+            "bid_volume": self.bid_volume,
+            "ask_price": self.ask_price,
+            "ask_volume": self.ask_volume,
+        }
