@@ -9,15 +9,78 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
+# Declare variable to store PID
+ARENAX_PID=""
+
+# dependency check: jq
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}Error: 'jq' is not installed. Please install it first.${NC}"
+    exit 1
+fi
+
+# Define cleanup function
+function cleanup() {
+    if [ -n "$ARENAX_PID" ]; then
+        echo -e "\n${YELLOW}Stopping ArenaX broker server (PID: $ARENAX_PID)...${NC}"
+        kill $ARENAX_PID 2>/dev/null || true
+    fi
+}
+
+function ping_server_backend() {
+    local url="http://127.0.0.1:8801/health"
+
+    function check_status() {
+        local response
+        response=$(curl -s --max-time 3 "$url" 2>/dev/null) || return 1
+        if [[ $(echo "$response" | jq -r '.running' 2>/dev/null) == "true" ]]; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
+    check_status
+}
+
+# Add trap
+trap cleanup EXIT SIGINT SIGTERM
+
 echo -e "${YELLOW}======================================${NC}"
 echo -e "${YELLOW}CJTrade Broker API Stability Tests${NC}"
 echo -e "${YELLOW}======================================${NC}"
 echo ""
 
-# Run the tests
-uv run python tests/test_broker_api_stability.py | tee stability_test_output.log
+if [[ "$@" == *"--broker arenax"* ]] || [[ "$@" == *"--broker=arenax"* ]] || [[ -z "$@" ]]; then
+    if ! ping_server_backend > /dev/null; then
+        echo "Starting ArenaX broker server..."
+        # uv run arenaxd --backend=hist > /dev/null 2>&1 &
+        uv run arenaxd > /dev/null 2>&1 &  # for simplicity
+        ARENAX_PID=$!
 
-EXIT_CODE=$?
+        # start the server in background
+        echo -n "Waiting for server to be ready..."
+        for i in {1..60}; do
+            if ping_server_backend > /dev/null; then
+                echo -e " ${GREEN}Ready!${NC}"
+                sleep 2  # wait a bit to ensure server is fully up
+                break
+            fi
+            echo -n "."
+            sleep 1
+        done
+
+        if ! ping_server_backend > /dev/null; then
+            echo -e "\n${RED}Error: ArenaX server did not start within expected time.${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}ArenaX server is already running.${NC}"
+    fi
+fi
+
+# use PIPESTATUS[0] to ensure we capture the exit code of the test command, not tee
+uv run python tests/test_broker_api_stability.py "$@" | tee stability_test_output.log
+EXIT_CODE=${PIPESTATUS[0]}
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo ""

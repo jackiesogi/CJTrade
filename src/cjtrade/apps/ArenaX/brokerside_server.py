@@ -273,6 +273,7 @@ class ArenaX_BrokerSideServer:
             price_type = payload.get("price_type")
             order_type = payload.get("order_type")
             order_lot = payload.get("order_lot")
+            id = payload.get("id")   # <-- REALLY IMPORTANT bcuz we don't want to let factory method generate a new ID
             if not all([product_payload, action, price is not None, quantity is not None, price_type, order_type, order_lot]):
                 return jsonify({"ok": False, "error": "Missing required order fields"}), 400
             try:
@@ -281,6 +282,7 @@ class ArenaX_BrokerSideServer:
 
                 # Normalize order_lot: could be string or already enum name
                 try:
+                    # TODO: to-check, should be OrderLot(order_lot) or order_lot directly
                     order_lot_enum = OrderLot(order_lot) if isinstance(order_lot, str) else OrderLot(order_lot)
                 except Exception:
                     # Fallback: try boolean mapping
@@ -294,6 +296,7 @@ class ArenaX_BrokerSideServer:
                     price_type=PriceType(price_type),
                     order_type=OrderType(order_type),
                     order_lot=order_lot_enum,
+                    id=id,
                 )
                 result = self.backend.place_order(order)
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200

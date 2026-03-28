@@ -11,14 +11,14 @@ repos:
       - id: reorder-python-imports
   - repo: local
     hooks:
-      - id: "mock-broker-unittest"  # We skip the sinopac unit test
-        name: Run CJTrade mock broker unit test
-        entry: uv run python tests/test_broker_api_stability.py --broker=mock
+      - id: "ArenaX-broker-unittest"  # We skip the sinopac unit test
+        name: Run CJTrade ArenaX broker unit test
+        entry: bash tests/run_broker_stability_tests.sh --broker=arenax
         language: system
         pass_filenames: false
-      - id: "mock-shell"
-        name: Run CJTrade shell functional test (mock broker)
-        entry: uv run test --broker=mock --group=all
+      - id: "arenax-shell"
+        name: Run CJTrade shell functional test (arenax broker)
+        entry: uv run atest --broker=arenax --group=all
         language: system
         pass_filenames: false
       - id: "sinopac-shell"
@@ -26,3 +26,15 @@ repos:
         entry: uv run test --broker=sinopac --group=all
         language: system
         pass_filenames: false
+
+      # This section will be removed in the future as we are moving to ArenaX broker.
+      # - id: "mock-broker-unittest"  # We skip the sinopac unit test
+      #   name: Run CJTrade mock broker unit test
+      #   entry: bash tests/run_broker_stability_tests.sh --broker=mock
+      #   language: system
+      #   pass_filenames: false
+      # - id: "mock-shell"
+      #   name: Run CJTrade shell functional test (mock broker)
+      #   entry: uv run test --broker=mock --group=all
+      #   language: system
+      #   pass_filenames: false
