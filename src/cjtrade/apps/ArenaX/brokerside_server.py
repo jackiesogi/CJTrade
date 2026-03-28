@@ -273,6 +273,7 @@ class ArenaX_BrokerSideServer:
             price_type = payload.get("price_type")
             order_type = payload.get("order_type")
             order_lot = payload.get("order_lot")
+            opt_field = payload.get("opt_field")
             id = payload.get("id")   # <-- REALLY IMPORTANT bcuz we don't want to let factory method generate a new ID
             if not all([product_payload, action, price is not None, quantity is not None, price_type, order_type, order_lot]):
                 return jsonify({"ok": False, "error": "Missing required order fields"}), 400
@@ -297,8 +298,10 @@ class ArenaX_BrokerSideServer:
                     order_type=OrderType(order_type),
                     order_lot=order_lot_enum,
                     id=id,
+                    opt_field=opt_field,
                 )
                 result = self.backend.place_order(order)
+                print(f"Placing order {order.__dict__}: {result.__dict__ if result else None}")
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -311,7 +314,7 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": "order_id is required"}), 400
             try:
                 result = self.backend.cancel_order(order_id)
-                # print(f"Cancel order result: {result}")
+                print(f"Cancelling order {order_id}: {result}")
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -408,6 +411,24 @@ class ArenaX_BrokerSideServer:
         if self._http_thread:
             self._http_thread.join()
 
+    # NOTE: What if we call set_system_time when backend is not running? (haven't triggered backend.login())
+    #   ANS: The system time start to progress once the `ArenaX_Backend_Historical`
+    #        calls `_initialize_market_time()` in its `__init__`.
+    #        and the `ArenaX_Backend_Historical` instance is created when
+    #        `ArenaX_BrokerSideServer` is created, so it does not affect anything!
+    #        The `backend` and `backend.market` is still accessible,
+    #        `backend.login()`` (or calling `start_backend()`) only affects
+    #        whether account state is synced, and all the functions in `ArenaX_BackendBase`
+    #        that required `_connected` flag set.
+    #
+    # NOTE: What if set_system_time is called and the `auto_preload_data` is set when backend is not running?
+    #   ANS: Because the price data preload process requires account info (e.g. positions),
+    #        and the `real_account` is connected when the `ArenaX_BackendBase` is initialized,
+    #        and then `ArenaX_Backend_Historical` passes the `real_account` to `ArenaX_Market`,
+    #        so it is possible that the preload process can fetch data from real broker.
+    #        However, this is only for current behavior of `ArenaX_BackendBase`, so this is not
+    #        guaranteed that setting `auto_preload_data` will always work as expected.
+    #
     # Only set system mock_init_time and real_init_time without side-effect
     def set_system_time(
         self,
@@ -422,9 +443,28 @@ class ArenaX_BrokerSideServer:
         if not auto_start_progress:
             self.backend.market.pause_time_progress()
         if auto_preload_data:
-            pass
+            self._preload_data(None, None)
 
     # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
+    # NOTE: What if in the future `start_backend()` will not be automatically called when `start_http()`,
+    #       and especially when `playback_speed` is really high, and then user call `set_system_time()`
+    #       with `auto_preload_data=True` but backend is not running, will the preloaded data still be
+    #       available when backend is started? (Currently, when data is not enough, the `ArenaX_BackendBase`
+    #       will circularly reuse the existing data, so on the surface it does not really matter, but from
+    #       the backtesting point of view, it is really bad.)
+    #
+    # TODO: Consider about whether to:
+    #       1. Reset another random system time and preload data when backend is connected on the time
+    #          that all data has expired.
+    #       2. ......?
+    #
+    # NOTE: Because this `_preload_data()` function requires caller to know which symbols to preload,
+    #       but the `ArenaX_BrokerSideServer` itself only know `WATCH_LIST` from config, it does not
+    #       know about what positions the account has, although by current behavior, the `real_account`
+    #       is automatically connected when `ArenaX_BackendBase` is initialized, so it is possible for
+    #       `server._preload_data()` to ask the backend real_account what symbols to prealod. But this
+    #       data flow is a bit weird, so consider to bind the `_preload_data()` with backend life cycle,
+    #       so that there won't be any ambiguity about when and who to call the `_preload_data()`.
     def _preload_data(
         self,
         preload_symbols: Optional[Iterable[str]],
@@ -432,10 +472,21 @@ class ArenaX_BrokerSideServer:
     ) -> list[str]:
         if not hasattr(self.backend, "market"):
             return []
+
         symbols = [symbol for symbol in (preload_symbols or []) if symbol]
-        if not symbols:
+
+        if not symbols and not self.backend.real_account:
+            print("Warning: No symbols specified and cannot fetch positions from real account. Abort!")
             return []
+
+        if not self.backend.is_connected():
+            print("Warning: Calling _preload_data() when backend is not connected!")
+            print("         The symbols to preload may be outdated (only when backend.login() will sync account state)")
+        # NOTE: Weird data flow occurs here!
+        symbols = [s.symbol for s in self.backend.real_account.get_positions()] if not symbols else symbols
         days = preload_days or getattr(self.backend, "num_days_preload", 3)
+
+        print(f"Preloading data for symbols: {symbols} for {preload_days} days...")
         for symbol in symbols:
             self.backend.market.create_historical_market(symbol, days)
         return sorted(symbols)
@@ -443,7 +494,7 @@ class ArenaX_BrokerSideServer:
     def _matching_loop(self) -> None:
         while not self._stop_event.is_set():
             if hasattr(self.backend, "_check_if_any_order_filled"):
-                self.backend._check_if_any_order_filled()
+                self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
             self._stop_event.wait(self._match_interval)
 
 def main():

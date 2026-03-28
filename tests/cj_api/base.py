@@ -196,7 +196,7 @@ class BaseBrokerTest(unittest.TestCase):
     # ==================== Helper Methods ====================
 
     def _create_test_order(self, symbol: str = "0050", action: OrderAction = OrderAction.BUY,
-                          price: float = 50.0, quantity: int = 2) -> Order:
+                          price: float = 50.0, quantity: int = 2, test_case: str = "") -> Order:
         """Helper to create a test order"""
         product = Product(
             type=ProductType.STOCK,
@@ -204,6 +204,8 @@ class BaseBrokerTest(unittest.TestCase):
             symbol=symbol
         )
 
+        opt_field = {}
+        opt_field['test_case'] = test_case  # Add test case identifier to opt_field for tracking
         return Order(
             product=product,
             action=action,
@@ -211,7 +213,8 @@ class BaseBrokerTest(unittest.TestCase):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd,
             quantity=quantity,
-            price=price
+            price=price,
+            opt_field=opt_field
         )
 
     def _get_order_from_db(self, order_id: str) -> Dict:

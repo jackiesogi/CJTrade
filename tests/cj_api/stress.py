@@ -24,7 +24,7 @@ class TestStressScenarios(BaseBrokerTest):
         orders = []
 
         for i in range(order_count):
-            order = self._create_test_order(price=100.0 + i * 0.5)
+            order = self._create_test_order(price=100.0 + i * 0.5, test_case=f"40_{i}")
             result = self.client.place_order(order)
             orders.append(order.id)
             self.assertIsNotNone(result)
@@ -41,7 +41,7 @@ class TestStressScenarios(BaseBrokerTest):
 
         for i in range(10):
             action = OrderAction.BUY if i % 2 == 0 else OrderAction.SELL
-            order = self._create_test_order(action=action, price=100.0 + i)
+            order = self._create_test_order(action=action, price=100.0 + i, test_case=f"41_{i}")
             result = self.client.place_order(order)
             self.assertIsNotNone(result)
 

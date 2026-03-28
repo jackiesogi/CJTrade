@@ -271,6 +271,8 @@ class ArenaX_Market:
             days_preload: Number of days beyond ``start_date`` to pre-load.
         """
         # Skip if already loaded in memory
+
+        # print(f"create_historical_market() called for {symbol} with days_preload={days_preload}")
         if symbol in self.historical_data:
             return
 

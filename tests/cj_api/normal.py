@@ -23,7 +23,7 @@ class TestNormalOperations(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Basic order placement\n")
 
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="01")
         result = self.client.place_order(order)
 
         # Verify result
@@ -43,7 +43,7 @@ class TestNormalOperations(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Order commit flow\n")
 
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="02")
         place_result = self.client.place_order(order)
         # After place: should be PLACED (pending commit)
         self.assertEqual(place_result.status, OrderStatus.PLACED)
@@ -66,7 +66,7 @@ class TestNormalOperations(BaseBrokerTest):
             log_buffer.write("\n[TEST] Order cancellation\n")
 
         # Place and commit order
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="03")
         self.client.place_order(order)
         self.client.commit_order()
 
@@ -85,7 +85,7 @@ class TestNormalOperations(BaseBrokerTest):
 
         order_ids = []
         for i in range(5):
-            order = self._create_test_order(symbol="0050", price=100.0 + i)
+            order = self._create_test_order(symbol="0050", price=100.0 + i, test_case=f"04_{i}")
             result = self.client.place_order(order)
             self.assertEqual(result.status, OrderStatus.PLACED)
             order_ids.append(order.id)

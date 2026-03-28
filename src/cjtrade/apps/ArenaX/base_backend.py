@@ -90,6 +90,7 @@ class ArenaX_BackendBase:
         self._connected = False
         self.account_state = ArenaX_AccountState()
 
+    # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
     def login(self) -> bool:
         try:
             self._connected = True
@@ -172,6 +173,7 @@ class ArenaX_BackendBase:
             print(f"Error loading kbars for {symbol}: {exc}")
             return []
 
+    # TODO: Extract market data index computation logic to a separate instance or helper function
     def snapshot(self, symbol: str) -> Snapshot:
         if not hasattr(self, "market"):
             return self._create_fallback_snapshot(symbol, datetime.now())
@@ -263,19 +265,19 @@ class ArenaX_BackendBase:
 
     def place_order(self, order: Order) -> OrderResult:
         if not self._is_valid_price(order):
-            return REJECTED_ORDER_NEGATIVE_PRICE(order)
+            return REJECTED_ORDER_NEGATIVE_PRICE(order, metadata=order.opt_field)
         if not self._is_valid_quantity(order):
-            return REJECTED_ORDER_NEGATIVE_QUANTITY(order)
+            return REJECTED_ORDER_NEGATIVE_QUANTITY(order, metadata=order.opt_field)
 
         if not self._is_within_trading_limit(order):
-            return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order)
+            return REJECTED_ORDER_EXCEED_TRADING_LIMIT(order, metadata=order.opt_field)
 
         if order.action == OrderAction.BUY:
             if not self._is_sufficient_account_balance(order):
-                return REJECTED_ORDER_NOT_SUFFICIENT_BALANCE(order)
+                return REJECTED_ORDER_NOT_SUFFICIENT_BALANCE(order, metadata=order.opt_field)
         elif order.action == OrderAction.SELL:
             if not self._is_sufficient_account_inventory(order):
-                return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order)
+                return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order, metadata=order.opt_field)
 
         if hasattr(self, "market"):
             order.opt_field["last_check_for_fill"] = self.market.get_market_time()["mock_current_time"]
@@ -284,9 +286,10 @@ class ArenaX_BackendBase:
 
         self.account_state.orders_placed.append(order)
         self.account_state.all_order_status[order.id] = OrderStatus.PLACED
-        return PLACED_ORDER_STANDARD(order)
+        return PLACED_ORDER_STANDARD(order, metadata=order.opt_field)
 
     def commit_order(self, order_id: str) -> OrderResult:
+        self._check_if_any_order_filled()  # workaround
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
@@ -588,6 +591,7 @@ class ArenaX_BackendBase:
     def _check_if_any_order_filled(self) -> bool:
         if not hasattr(self, "market"):
             return False
+        # print("Checking for order fills...")
 
         committed_copy = list(self.account_state.orders_committed)
         for order in committed_copy:
@@ -639,6 +643,7 @@ class ArenaX_BackendBase:
                         "price": order.price,
                         "time": fill_time.isoformat(),
                     })
+                    print("Order filled:", order.id)
 
                     self._reconstruct_positions_from_history()
                 except Exception as exc:

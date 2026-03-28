@@ -21,7 +21,7 @@ class TestIntegrationFlows(BaseBrokerTest):
             log_buffer.write("\n[TEST] Full order lifecycle\n")
 
         # Place
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="50")
         place_result = self.client.place_order(order)
         self.assertEqual(place_result.status, OrderStatus.PLACED)
         self.assertTrue(self._verify_order_consistency(order.id, 'PLACED'))
@@ -47,9 +47,9 @@ class TestIntegrationFlows(BaseBrokerTest):
             log_buffer.write("\n[TEST] Mixed operations sequence\n")
 
         # Place multiple orders
-        order1 = self._create_test_order(symbol="0050")
-        order2 = self._create_test_order(symbol="0056")
-        order3 = self._create_test_order(symbol="2330")
+        order1 = self._create_test_order(symbol="0050", test_case="51a")
+        order2 = self._create_test_order(symbol="0056", test_case="51b")
+        order3 = self._create_test_order(symbol="2330", test_case="51c")
 
         self.client.place_order(order1)
         self.client.place_order(order2)

@@ -152,7 +152,7 @@ class SetTimeCommand(CommandBase):
         anchor_time = args[0]
         # parse to isoformat
         anchor_time = datetime.fromisoformat(anchor_time).isoformat()
-        res = client.set_time(anchor_time, headers={"X-Client": "admin-shell"})
+        res = client.set_system_time(anchor_time, headers={"X-Client": "admin-shell"})
         print(f"Set-time response: {res}")
 
 

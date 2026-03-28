@@ -23,7 +23,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         orders = []
         for i in range(3):
-            order = self._create_test_order(symbol=f"00{50+i}")
+            order = self._create_test_order(symbol=f"00{50+i}", test_case=f"20_{i}")
             self.client.place_order(order)
             orders.append(order)
 
@@ -42,7 +42,7 @@ class TestStateConsistency(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Status update consistency\n")
 
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="21")
         self.client.place_order(order)
 
         # Initial status
@@ -71,7 +71,7 @@ class TestStateConsistency(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Timestamp updates\n")
 
-        order = self._create_test_order()
+        order = self._create_test_order(test_case="22")
         self.client.place_order(order)
 
         db_order1 = self._get_order_from_db(order.id)
@@ -90,7 +90,7 @@ class TestStateConsistency(BaseBrokerTest):
             log_buffer.write("\n[TEST] DB connection recovery\n")
 
         # Place order
-        order1 = self._create_test_order()
+        order1 = self._create_test_order(test_case="23a")
         self.client.place_order(order1)
 
         # Disconnect and reconnect
@@ -98,7 +98,7 @@ class TestStateConsistency(BaseBrokerTest):
         self.client.connect()
 
         # Place another order
-        order2 = self._create_test_order(symbol="2330")
+        order2 = self._create_test_order(symbol="2330", test_case="23b")
         result = self.client.place_order(order2)
 
         # Should work after reconnection
@@ -117,7 +117,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         expected_count = 7
         for i in range(expected_count):
-            order = self._create_test_order()
+            order = self._create_test_order(test_case=f"24_{i}")
             self.client.place_order(order)
 
         db_orders = self._get_all_orders_from_db()
@@ -131,7 +131,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         orders = []
         for i in range(2, 5):
-            order = self._create_test_order(symbol=f"236{i}")
+            order = self._create_test_order(symbol=f"236{i}", test_case=f"30_{i}")
             self.client.place_order(order)
             orders.append(order)
 
@@ -152,7 +152,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         placed_orders = []
         for i in range(5):
-            order = self._create_test_order()
+            order = self._create_test_order(test_case=f"31_{i}")
             self.client.place_order(order)
             placed_orders.append(order.id)
 
@@ -175,7 +175,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         # Place some orders
         for _ in range(3):
-            order = self._create_test_order()
+            order = self._create_test_order(test_case=f"32_{_}")
             self.client.place_order(order)
 
         balance2 = self.client.get_balance()
