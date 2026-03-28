@@ -248,7 +248,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
             return self.commit_order()
 
 
-from cjtrade.apps.ArenaX.arenax_middleware import *
+from cjtrade.pkgs.brokers.arenax.arenax_middleware import *
 # The version that really connect to the ArenaX standalone server via ArenaXMiddleWare
 class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def __init__(self, **config: Any):

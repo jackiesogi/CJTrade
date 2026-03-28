@@ -183,7 +183,7 @@ class ArenaXMiddleWare:
     def cancel_order(self, order_id: str, **kwargs) -> OrderResult:
         data = {"order_id": order_id}
         res = self._post("trade/cancel-order", data, headers=kwargs.get("headers"))
-        
+
         result_data = res.get("result", {})
         # print(f"Cancel order response: {res}")
         # print(f"status: {result_data.get('status')}")

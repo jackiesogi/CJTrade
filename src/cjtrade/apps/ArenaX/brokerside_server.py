@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Iterable
 from typing import Optional
 
-from cjtrade.apps.ArenaX.arenax_account_client import *
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.hist_backend import ArenaX_Backend_Historical
 from cjtrade.apps.ArenaX.live_backend import ArenaX_Backend_PaperTrade
@@ -19,6 +18,7 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from werkzeug.serving import make_server
+# from cjtrade.apps.ArenaX.arenax_account_client import *
 
 backend_config = {}
 server_config = {}
@@ -123,7 +123,7 @@ class ArenaX_BrokerSideServer:
                 # Note: ArenaX AccountClient (ARENAX broker_type) is intentionally NOT
                 # created here to avoid a redundant ArenaX_Backend_Historical being
                 # instantiated inside ArenaXBrokerAPI.__init__.
-                self.real = ArenaX_AccountClient(broker_type=ArenaX_BrokerType.SINOPAC, **backend_config)
+                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **backend_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **server_config)
             elif backend_str == "live":
                 self.backend = ArenaX_Backend_PaperTrade(**server_config)

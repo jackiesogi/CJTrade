@@ -58,6 +58,11 @@ class AccountClient:
         elif broker_type == BrokerType.MOCK:
             from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
             return MockBrokerAPI(**config)
+        elif broker_type == BrokerType.ARENAX:
+            # from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
+            from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+            # return ArenaXBrokerAPI(**config)
+            return ArenaXBrokerAPI_v2(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
 

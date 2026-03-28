@@ -14,7 +14,7 @@ import unittest
 from typing import Dict
 from typing import List
 
-from cjtrade.apps.ArenaX.arenax_account_client import *
+from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
 from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
@@ -29,6 +29,7 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
 
 from tests.utils.test_formatter import get_log_buffer
+# from cjtrade.apps.ArenaX.arenax_account_client import *
 # Import log buffer from formatter
 
 
@@ -75,7 +76,7 @@ class BaseBrokerTest(unittest.TestCase):
         broker_type = self.test_broker_type if self.test_broker_type is not None else BrokerType.MOCK
 
         # SAFETY CHECK: Warn and require confirmation when using real brokers
-        if broker_type != BrokerType.MOCK and broker_type != ArenaX_BrokerType.ARENAX:
+        if broker_type != BrokerType.MOCK and broker_type != BrokerType.ARENAX:
             broker_name = broker_type.value.upper()
             warning = f"\n{'='*70}\n"
             warning += f"⚠️  WARNING: Testing with {broker_name} broker!\n"
@@ -110,14 +111,14 @@ class BaseBrokerTest(unittest.TestCase):
             'state_file': self.account_state_path
         }
 
-        if broker_type == ArenaX_BrokerType.ARENAX:
+        if broker_type == BrokerType.ARENAX:
             self.config['api_key'] = 'testkey123'  # ArenaX test key
-            self.client = ArenaX_AccountClient(ArenaX_BrokerType.ARENAX, **self.config)
+            self.client = AccountClient(BrokerType.ARENAX, **self.config)
         else:
             self.client = AccountClient(broker_type, **self.config)
 
         # Connect with retry mechanism for real brokers
-        if broker_type != BrokerType.MOCK and broker_type != ArenaX_BrokerType.ARENAX:
+        if broker_type != BrokerType.MOCK and broker_type != BrokerType.ARENAX:
             self._connect_with_retry()
         else:
             self.client.connect()

@@ -106,7 +106,8 @@ Recommendations:
 
     from cjtrade.pkgs.config.config_loader import load_supported_config_files
     from cjtrade.pkgs.brokers.account_client import BrokerType
-    from cjtrade.apps.ArenaX.arenax_account_client import ArenaX_AccountClient, ArenaX_BrokerType
+    # from cjtrade.apps.ArenaX.arenax_account_client import AccountClient, BrokerType
+    from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
     from tests.cj_api.base import BaseBrokerTest
 
     load_supported_config_files()
@@ -117,7 +118,7 @@ Recommendations:
         'sinopac': BrokerType.SINOPAC,
         'yuanta': BrokerType.YUANTA,
         'cathay': BrokerType.CATHAY,
-        'arenax': ArenaX_BrokerType.ARENAX
+        'arenax': BrokerType.ARENAX
     }
     BaseBrokerTest.test_broker_type = broker_name_map[args.broker]
 

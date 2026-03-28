@@ -13,16 +13,17 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
-from cjtrade.apps.ArenaX.arenax_account_client import *
 from cjtrade.pkgs.analytics.fundamental import *
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.analytics.technical.models import *
 from cjtrade.pkgs.analytics.technical.strategies.fixed_price import *
+from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.models import *
 from dotenv import load_dotenv
+# from cjtrade.apps.ArenaX.arenax_account_client import *
 # from cjtrade.pkgs.brokers.account_client import *
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
 
@@ -41,7 +42,7 @@ class CommandBase(ABC):
         self.variadic: bool = False  # If True, accepts variable number of arguments
 
     @abstractmethod
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         """Execute the command with given arguments"""
         pass
 
@@ -98,7 +99,7 @@ class BuyCommand(CommandBase):
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         price = float(args[1])
         quantity = int(args[2])
@@ -117,7 +118,7 @@ class SellCommand(CommandBase):
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         price = float(args[1])
         quantity = int(args[2])
@@ -136,7 +137,7 @@ class SnapshotCommand(CommandBase):
         self.params = ["symbol"]  # At least one symbol required
         self.variadic = True  # Accept variable number of symbols
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         products = [Product(symbol=symbol) for symbol in args]
         snapshots = client.get_snapshots(products)
 
@@ -162,7 +163,7 @@ class BidAskCommand(CommandBase):
         self.params = ["symbol"]
         self.optional_params = ["intraday_odd"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         intraday_odd = bool(int(args[1])) if len(args) > 1 else False
 
@@ -181,7 +182,7 @@ class ListOrdersCommand(CommandBase):
         self.name = "lsodr"
         self.description = "List all orders"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         print("=== Order List ===")
         try:
             orders = client.list_orders()
@@ -209,7 +210,7 @@ class ListPositionsCommand(CommandBase):
         self.name = "lspos"
         self.description = "List all positions"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         positions = client.get_positions()
 
         if positions:
@@ -284,7 +285,7 @@ class RunAanalyticsCommand(CommandBase):
         self.description = "Run analytics"
         self.params = ["symbol", "buy_target_price", "sell_target_price", "delay"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         buy = float(args[1])
         sell = float(args[2])
@@ -330,7 +331,7 @@ class BalanceCommand(CommandBase):
         self.name = "balance"
         self.description = "Show account balance"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         balance = client.get_balance()
         print(f"Account Balance: {balance}")
 
@@ -342,7 +343,7 @@ class AnnouncementCommand(CommandBase):
         self.description = "Get recent important announcements"
         self.optional_params = ["days"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         days = int(args[0]) if len(args) > 0 else 3
         async def _async_get_announcement():
             async with CompanyInfoProvider() as provider:
@@ -366,7 +367,7 @@ class SearchOnlineNewsCommand(CommandBase):
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["query"]
 
-    def execute(self, client: ArenaX_AccountClient, *args, **config) -> None:
+    def execute(self, client: AccountClient, *args, **config) -> None:
         selection = config.get('news_source', 'cnyes').lower()
 
         # TODO: parse all valid env var into config table
@@ -404,7 +405,7 @@ class KbarsCommand(CommandBase):
         self.params = ["symbol"]
         self.description = "Get K-bars (candlestick data)"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
         # TODO: Mock only have one kbar in List, Sinopac should have all kbars in the query range
         kbars = client.get_kbars(Product(symbol=symbol), start="2026-01-07", end="2026-01-08", interval="1m")
@@ -424,7 +425,7 @@ class LLMCommand(CommandBase):
             deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
         )
 
-    def format_account_state(self, client: ArenaX_AccountClient, search_news: bool, **config) -> str:
+    def format_account_state(self, client: AccountClient, search_news: bool, **config) -> str:
         balance = client.get_balance()
         positions = client.get_positions()
         orders = client.list_orders()
@@ -438,7 +439,7 @@ class LLMCommand(CommandBase):
         position_summary = "\n".join([f"{p.symbol}: {p.quantity} shares at avg cost {p.avg_cost}" for p in positions])
         return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         prompt = args[0]
         # check if prompt have specific keyword
         search_news_trigger_keywords = ["新聞", "近期", "趨勢", "分析", "看法", "觀點", "評論", "世界",
@@ -458,7 +459,7 @@ class MoversCommand(CommandBase):
         self.name = "rank"
         self.description = "Rank market movers"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         movers = client.get_market_movers()
         if not movers:
             print("No market movers data available.")
@@ -473,7 +474,7 @@ class CancelAllCommand(CommandBase):
         self.name = "cancel"
         self.description = "Cancel all active orders"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
             # Use unified broker API interface
             orders = client.list_orders()
@@ -524,7 +525,7 @@ class HelpCommand(CommandBase):
         self.name = "help"
         self.description = "Show this help message"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         for cmd in command_registry.values():
             print(f"  {cmd.get_help()}")
 
@@ -543,7 +544,7 @@ class CalendarCommand(CommandBase):
         self.ncal_script = project_root / 'cjtrade' / 'pkgs' / 'utils' / 'ncal.py'
         self.date_script = project_root / 'cjtrade' / 'pkgs' / 'utils' / 'date.py'
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import sys
 
         if len(args) == 1:
@@ -597,7 +598,7 @@ class InfoCommand(CommandBase):
         self.name = "info"
         self.description = "Shell info"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
             subprocess.check_output(
                 ["git", "rev-parse", "--is-inside-work-tree"],
@@ -622,7 +623,7 @@ class ClearCommand(CommandBase):
         self.name = "clear"
         self.description = "Clear the screen"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import os
         import sys
 
@@ -644,7 +645,7 @@ class SystemCommand(CommandBase):
         self.optional_args = ["cmd"]
         self.description = "Execute OS command"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         if len(args) == 0:
             import platform
             print("OS:", platform.system())
@@ -668,7 +669,7 @@ class ExitCommand(CommandBase):
         self.name = "exit"
         self.description = "Close interactive shell"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         global exit_flag
         exit_flag = True
 
@@ -682,7 +683,7 @@ class KbarAggregationCommand(CommandBase):
         self.params = ["symbol", "range", "interval"]  # range means [T-range, T+1)
         self.description = "Replay historical K-bar and do aggregation"
 
-    def execute(self, client: ArenaX_AccountClient, *args, **kwargs) -> None:
+    def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import webbrowser
         import os
 
@@ -721,7 +722,7 @@ class KbarAggregationCommand(CommandBase):
                                       start=start_date, end=end_date, interval=interval)
 
 
-def get_historical_kbars_helper(client: ArenaX_AccountClient, on_ready=None, symbol="2308",
+def get_historical_kbars_helper(client: AccountClient, on_ready=None, symbol="2308",
                                   start="2026-01-07", end="2026-01-08", interval="15m") -> str:
     product = Product(symbol=symbol)
     # Drawer setup
@@ -784,13 +785,13 @@ def register_commands():
         command_registry[cmd.name] = cmd
 
 
-def set_exit_flag(client: ArenaX_AccountClient):
+def set_exit_flag(client: AccountClient):
     global exit_flag
     exit_flag = True
 
 
 # ========== Command Processing ==========
-def process_command(cmd_line: str, client: ArenaX_AccountClient, **config: Any):
+def process_command(cmd_line: str, client: AccountClient, **config: Any):
     """Parse and execute command with arguments"""
     cmd_line = cmd_line.strip()
 
@@ -846,7 +847,7 @@ def init_readline():
     readline.set_history_length(MAX_HISTORY_SIZE)
     readline.parse_and_bind("tab: complete")
 
-def interactive_shell(client: ArenaX_AccountClient, config: dict = None):
+def interactive_shell(client: AccountClient, config: dict = None):
     global exit_flag
     exit_flag = False
 
@@ -914,7 +915,7 @@ def main():
     if args.broker == 'sinopac':
         config["state_file"] = f"./sinopac_{config['username']}.json"
         config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
-        client = ArenaX_AccountClient(ArenaX_BrokerType.SINOPAC, **config)
+        client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
         raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
     elif args.broker == 'realistic':
@@ -923,12 +924,12 @@ def main():
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
         config["mirror_db_path"] = f"./data/arenax_{config['username']}.db"
-        real = ArenaX_AccountClient(ArenaX_BrokerType.SINOPAC, **config)
-        client = ArenaX_AccountClient(ArenaX_BrokerType.ARENAX, real_account=real, **config)
+        real = AccountClient(BrokerType.SINOPAC, **config)
+        client = AccountClient(BrokerType.ARENAX, real_account=real, **config)
     elif args.broker == "arenax":
         # call config setting api to configure the broker server
         config['api_key'] = 'testkey123'
-        client = ArenaX_AccountClient(ArenaX_BrokerType.ARENAX, **config)
+        client = AccountClient(BrokerType.ARENAX, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         print(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

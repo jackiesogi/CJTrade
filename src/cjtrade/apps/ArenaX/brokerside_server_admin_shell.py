@@ -14,17 +14,18 @@ from typing import Optional
 from xmlrpc import client
 
 import pandas as pd
-from cjtrade.apps.ArenaX.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.analytics.fundamental import *
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.analytics.technical.models import *
 from cjtrade.pkgs.analytics.technical.strategies.fixed_price import *
 from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.models import *
 from dotenv import load_dotenv
+# from cjtrade.apps.ArenaX.arenax_middleware import ArenaXMiddleWare
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
 
 exit_flag = False
