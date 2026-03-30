@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
 from flask import request
+from flask import send_from_directory
 from werkzeug.serving import make_server
 # from cjtrade.apps.ArenaX.arenax_account_client import *
 
@@ -150,6 +151,15 @@ class ArenaX_BrokerSideServer:
 
     def _create_app(self) -> Flask:
         app = Flask(__name__)
+
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        @app.route('/favicon.ico')
+        def favicon():
+            return send_from_directory(
+                os.path.join(BASE_DIR, 'static'),  # folder for static files
+                'cj.ico',  # filename
+                mimetype='image/vnd.microsoft.icon'
+            )
 
         @app.get("/health")
         def health():
@@ -337,8 +347,8 @@ class ArenaX_BrokerSideServer:
             if not symbol:
                 return jsonify({"ok": False, "error": "symbol is required"}), 400
             price = self.backend.snapshot(symbol)
-            print(type(price))  # Snapshot
-            print(type(price.to_dict()))  # dict
+            # print(type(price))  # Snapshot
+            # print(type(price.to_dict()))  # dict
             return jsonify({"ok": True, "symbol": symbol, "price": price.to_dict() if price else None})
 
         @app.get("/market/kbars")
