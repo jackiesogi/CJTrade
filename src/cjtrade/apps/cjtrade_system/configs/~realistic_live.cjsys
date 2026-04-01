@@ -1,0 +1,21 @@
+# Realistic Broker - Live Mode Configuration
+# Real-time trading with conservative settings
+
+# Trading Mode
+BACKTEST_MODE=n
+PLAYBACK_SPEED=1.0
+# BACKTEST_DURATION_DAYS= (NOT AVAILABLE)
+
+# System Intervals (seconds)
+PRICE_MONITOR_INTERVAL=12
+ANALYSIS_INTERVAL=30
+LLM_REPORT_INTERVAL=300
+DISPLAY_TIME_INTERVAL=40
+CHECK_FILL_INTERVAL=30
+
+# Technical Analysis Parameters
+WINDOW_SIZE=50
+BB_MIN_WIDTH_PCT=0.01
+
+# Risk Management
+RISK_MAX_POSITION_PCT=0.05

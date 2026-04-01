@@ -1,0 +1,60 @@
+# Realistic Broker - Backtest Mode Configuration
+# Moderate speed with realistic market conditions
+
+# =====================================   CJTrade System Launch Mode   ======================================
+# `hist` mode stands for "historical" mode.
+# `hist` mode consumes historical price data from broker API and conducts backtesting (回測)
+#
+# 3 main modes:
+# |       Mode       | Price Data Source  |  Use Case                                | Need broker account? |
+# | ---------------- | ------------------ | ---------------------------------------- | -------------------- |
+# | `live`           | Custom broker API  | Paper trading with real-time market data | Yes                  |
+# | `hist`           | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
+# | `none` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
+CJSYS_LAUNCH_MODE = hist  # set launch mode to `hist`
+# ===========================================================================================================
+
+
+# =======================================   Backtest Configuration   ========================================
+# backtest duration controls how many days of historical data to use for backtesting.
+CJSYS_BACKTEST_DURATION_DAYS  = 300
+
+# playback speed controls how fast the time advances in virtual environment during backtesting.
+# 3000x means 1 second in real time corresponds to 3000 seconds (50 minutes) in backtest time.
+# Because CJTrade System would skip non-trading hours and weekends, 1-year backtest with 12000x playback speed
+# would take around 7 minutes to complete.
+#
+# Supported playback speeds:
+#   [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
+CJSYS_BACKTEST_PLAYBACK_SPEED = 12000.0
+# ===========================================================================================================
+
+
+# =========================================   General Configuration   =======================================
+# watch list controls which stock tickers to include in the backtest (comma-separated e.g. 0050,2330,2317)
+# If empty, it will use the positions in your current portfolio as the watch list for backtesting.
+CJSYS_WATCH_LIST              =
+# ===========================================================================================================
+
+
+# ======================================  System Intervals (seconds)  =======================================
+# This section control how often the system performs certain actions during backtesting.
+# Adjusting these intervals can help balance between realism and speed of backtesting.
+CJSYS_ANALYSIS_INTERVAL       = 240      # seconds in virtual environment
+CJSYS_CHECK_FILL_INTERVAL     = 120      # seconds in virtual environment
+CJSYS_DISPLAY_TIME_INTERVAL   = 60       # seconds in virtual environment
+CJSYS_LLM_REPORT_INTERVAL     = 500000   # seconds in virtual environment
+CJSYS_PRICE_MONITOR_INTERVAL  = 120      # seconds in virtual environment
+# ===========================================================================================================
+
+
+# ====================================  Technical Analysis Parameters  ======================================
+# Bollinger Bands (BB) parameters
+CJSYS_BB_MIN_WIDTH_PCT        = 0.01
+CJSYS_BB_WINDOW_SIZE          = 100
+# ===========================================================================================================
+
+
+# =========================================     Risk Management    ==========================================
+CJSYS_RISK_MAX_POSITION_PCT   = 0.05
+# ===========================================================================================================

@@ -74,18 +74,9 @@ def load_cjsys():
             server_config[key.lower()] = os.environ[key]
 
     # Adjust the types of certain keys
-    server_config['backtest_mode'] = server_config.get('backtest_mode', 'y').lower() == 'y'
+    # server_config['backtest_mode'] = server_config.get('backtest_mode', 'y').lower() == 'y'
     server_config['playback_speed'] = float(server_config.get('playback_speed', 1.0))
     server_config['backtest_duration_days'] = int(server_config.get('backtest_duration_days', 365))
-    server_config['watch_list'] = server_config.get('watch_list', "").split(',') if server_config.get('watch_list') else []
-    server_config['price_monitor_interval'] = float(server_config.get('price_monitor_interval', 60))
-    server_config['analysis_interval'] = float(server_config.get('analysis_interval', 30))
-    server_config['llm_report_interval'] = float(server_config.get('llm_report_interval', 300))
-    server_config['display_time_interval'] = float(server_config.get('display_time_interval', 40))
-    server_config['check_fill_interval'] = float(server_config.get('check_fill_interval', 60))
-    server_config['window_size'] = int(server_config.get('window_size', 10))
-    server_config['bb_min_width_pct'] = float(server_config.get('bb_min_width_pct', 0.01))
-    server_config['risk_max_position_pct'] = float(server_config.get('risk_max_position_pct', 0.05))
 
     # For backward compatibility ('speed' will be replaced by 'playback_speed')
     server_config['speed'] = server_config['playback_speed']
@@ -118,11 +109,7 @@ class ArenaX_BrokerSideServer:
         else:
             # TODO: Add more backend config
             if backend_str == "hist":
-                # real: connects to real broker (read-only, for market data / kbars)
-                # backend: simulation backend that uses real broker as data source
-                # Note: ArenaX AccountClient (ARENAX broker_type) is intentionally NOT
-                # created here to avoid a redundant ArenaX_Backend_Historical being
-                # instantiated inside ArenaXBrokerAPI.__init__.
+                # Current default, ArenaX use sinopac backend for price feed.
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **backend_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **server_config)
             elif backend_str == "live":

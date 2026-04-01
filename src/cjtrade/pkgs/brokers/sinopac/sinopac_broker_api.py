@@ -445,6 +445,15 @@ class SinopacBrokerAPI(BrokerAPIBase):
         market_close_time = now.replace(hour=13, minute=30, second=0, microsecond=0)
         return market_open_time <= now <= market_close_time
 
+    def get_system_time(self) -> dict:
+        # TODO: Delete unused fields.
+        return {
+            "mock_current_time": "not a mock broker",
+            "real_current_time": datetime.now(),
+            "mock_init_time": "not a mock broker",
+            "real_init_time": "not a mock broker",
+        }
+
 
     def get_broker_name(self) -> str:
         return "sinopac"

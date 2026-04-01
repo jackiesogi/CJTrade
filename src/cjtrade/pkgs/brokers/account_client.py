@@ -59,9 +59,10 @@ class AccountClient:
             from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
             return MockBrokerAPI(**config)
         elif broker_type == BrokerType.ARENAX:
-            # from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI
+            # User can set their `real_account` backend (for price feed) via tweaking
+            # configurations in ArenaX Brokerside Server and Backend.
+            # This is the server's business, not the client's. (`AccountClient` just acts as a pure client)
             from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
-            # return ArenaXBrokerAPI(**config)
             return ArenaXBrokerAPI_v2(**config)
         else:
             raise ValueError(f"Unsupported broker type: {broker_type}")
@@ -140,6 +141,9 @@ class AccountClient:
 
     def is_market_open(self) -> bool:
         return self.broker_api.is_market_open()
+
+    def get_market_time(self) -> bool:
+        return self.broker_api.get_market_time()
 
     def get_broker_name(self) -> str:
         return self.broker_api.get_broker_name()

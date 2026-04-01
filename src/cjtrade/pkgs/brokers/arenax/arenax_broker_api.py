@@ -424,11 +424,15 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def get_broker_name(self) -> str:
         return "arenax"
 
-    def get_system_time(self) -> datetime:
+    def get_market_time(self) -> dict:
+        return self.get_system_time()
+
+    def get_system_time(self) -> dict:
 
         def to_datetime(rfc1223_str):
             return datetime.strptime(rfc1223_str, '%a, %d %b %Y %H:%M:%S %Z')
 
+        # middleware systime returns rfc1223 str, need conversion
         t = self.middleware.get_system_time()
 
         return {
