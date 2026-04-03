@@ -10,18 +10,18 @@ CJSYS_WATCH_LIST              =
 # ======================================  System Intervals (seconds)  =======================================
 # This section control how often the system performs certain actions during backtesting.
 # Adjusting these intervals can help balance between realism and speed of backtesting.
-CJSYS_ANALYSIS_INTERVAL       = 240      # seconds in virtual environment
-CJSYS_CHECK_FILL_INTERVAL     = 120      # seconds in virtual environment
-CJSYS_DISPLAY_TIME_INTERVAL   = 60       # seconds in virtual environment
-CJSYS_LLM_REPORT_INTERVAL     = 500000   # seconds in virtual environment
-CJSYS_PRICE_MONITOR_INTERVAL  = 120      # seconds in virtual environment
+CJSYS_ANALYSIS_INTERVAL       = 30       # seconds in real time
+CJSYS_CHECK_FILL_INTERVAL     = 40       # seconds in real time
+CJSYS_DISPLAY_TIME_INTERVAL   = 60       # seconds in real time
+CJSYS_LLM_REPORT_INTERVAL     = 500000   # seconds in real time
+CJSYS_PRICE_MONITOR_INTERVAL  = 60       # seconds in real time
 # ===========================================================================================================
 
 
 # ====================================  Technical Analysis Parameters  ======================================
 # Bollinger Bands (BB) parameters
 CJSYS_BB_MIN_WIDTH_PCT        = 0.01
-CJSYS_BB_WINDOW_SIZE          = 100
+CJSYS_BB_WINDOW_SIZE          = 20       # Bollinger Bands: 20-day window with 2 standard deviations
 # ===========================================================================================================
 
 

@@ -1,0 +1,49 @@
+# Realistic Broker - Backtest Mode Configuration
+# Moderate speed with realistic market conditions
+
+# =====================================   CJTrade System Launch Mode   ======================================
+# `hist` mode stands for "historical" mode.
+# `hist` mode consumes historical price data from broker API and conducts backtesting (回測)
+#
+# 3 main modes:
+# |       Mode       | Price Data Source  |  Use Case                                | Need broker account? |
+# | ---------------- | ------------------ | ---------------------------------------- | -------------------- |
+# | `live`           | Custom broker API  | Paper trading with real-time market data | Yes                  |
+# | `hist`           | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
+# | `none` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
+AX_LAUNCH_MODE = hist  # set launch mode to `hist`
+
+AX_REAL_ACCOUNT_BROKER_TYPE = sinopac # Bind to launch mode
+# ===========================================================================================================
+
+
+# =======================================   Backtest Configuration   ========================================
+# backtest duration controls how many days of historical data to use for backtesting.
+AX_BACKTEST_DURATION_DAYS  = 300
+
+# playback speed controls how fast the time advances in virtual environment during backtesting.
+# 3000x means 1 second in real time corresponds to 3000 seconds (50 minutes) in backtest time.
+# Because CJTrade System would skip non-trading hours and weekends, 1-year backtest with 12000x playback speed
+# would take around 7 minutes to complete.
+#
+# Supported playback speeds:
+#   [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
+AX_BACKTEST_PLAYBACK_SPEED = 12000.0
+# ===========================================================================================================
+
+
+# =========================================   General Configuration   =======================================
+AX_HOST_ADDRESS = 127.0.0.1
+AX_HOST_PORT = 8801
+AX_STATE_FILE = hist_account_state.json
+AX_SKIP_DATA_PRELOAD = n
+AX_AUTO_TIME_PROGRESS = y
+AX_AUTO_START_BACKEND = y
+# ===========================================================================================================
+
+
+# ======================================  System Intervals (seconds)  =======================================
+# This section control how often the system performs certain actions during backtesting.
+# Adjusting these intervals can help balance between realism and speed of backtesting.
+AX_ORDER_MATCHING_INTERVAL  = 1.0      # seconds in virtual environment
+# ===========================================================================================================

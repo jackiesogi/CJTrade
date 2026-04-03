@@ -1,0 +1,39 @@
+# Realistic Broker - Backtest Mode Configuration
+# Moderate speed with realistic market conditions
+
+# =====================================   CJTrade System Launch Mode   ======================================
+# `hist` mode stands for "historical" mode.
+# `hist` mode consumes historical price data from broker API and conducts backtesting (回測)
+#
+# 3 main modes:
+# |       Mode       | Price Data Source  |  Use Case                                | Need broker account? |
+# | ---------------- | ------------------ | ---------------------------------------- | -------------------- |
+# | `live`           | Custom broker API  | Paper trading with real-time market data | Yes                  |
+# | `hist`           | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
+# | `none` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
+AX_LAUNCH_MODE = live  # set launch mode to `live`
+
+AX_REAL_ACCOUNT_BROKER_TYPE = sinopac  # Bind to launch mode
+# ===========================================================================================================
+
+
+# =======================================   Backtest Configuration   ========================================
+# Backtest configuration not available in `live` mode !!!
+# ===========================================================================================================
+
+
+# =========================================   General Configuration   =======================================
+AX_HOST_ADDRESS = 127.0.0.1
+AX_HOST_PORT = 8801
+AX_STATE_FILE = live_account_state.json
+AX_SKIP_DATA_PRELOAD = n
+AX_AUTO_TIME_PROGRESS = y
+AX_AUTO_START_BACKEND = y
+# ===========================================================================================================
+
+
+# ======================================  System Intervals (seconds)  =======================================
+# This section control how often the system performs certain actions during live paper trading.
+# Adjusting these intervals can help balance between realism and speed of live paper trading.
+AX_ORDER_MATCHING_INTERVAL  = 1.0      # seconds in virtual environment
+# ===========================================================================================================

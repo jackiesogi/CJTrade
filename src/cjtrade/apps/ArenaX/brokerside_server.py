@@ -54,32 +54,41 @@ def load_cjconf():
     backend_config['ca_passwd'] = backend_config.get('ca_password', "")
 
 # CJSYS is for CJTrade System itself
-def load_cjsys():
-    file_path = None
+def load_cjsys(backend_str: str = "none"):
+    # Choose config file based on backend type
+    config_filename = f"{backend_str}.cjsys"
+    file_to_load = Path(__file__).parent / "configs" / config_filename
 
-    if file_path:
-        file_to_load = file_path
-    else:
-        file_to_load = Path(__file__).parent / "configs" / "arenax-server_default.cjsys"
+    if not file_to_load.exists():
+        # Fallback to default if specific backend config doesn't exist
+        log.warning(f"Config file {config_filename} not found, using default")
+        file_to_load = Path(__file__).parent / "configs" / "none.cjsys"
 
     log.info(f"Loading config file {file_to_load}")
 
     load_dotenv(file_to_load, override=False)
-    keys = ['BACKTEST_MODE', 'BACKTEST_DURATION', 'BACKTEST_DURATION_DAYS', 'PLAYBACK_SPEED', 'WATCH_LIST',
-            'PRICE_MONITOR_INTERVAL', 'ANALYSIS_INTERVAL', 'LLM_REPORT_INTERVAL', 'DISPLAY_TIME_INTERVAL', 'CHECK_FILL_INTERVAL',
-            'WINDOW_SIZE', 'BB_MIN_WIDTH_PCT',
-            'RISK_MAX_POSITION_PCT']
+    keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
+            'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_DATA_PRELOAD', 'AX_AUTO_TIME_PROGRESS',
+            'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
-            server_config[key.lower()] = os.environ[key]
+            # Remove 'AX_' prefix and store with snake_case
+            config_key = key[3:].lower()  # Strip 'AX_' and convert to lowercase
+            server_config[config_key] = os.environ[key]
 
-    # Adjust the types of certain keys
-    # server_config['backtest_mode'] = server_config.get('backtest_mode', 'y').lower() == 'y'
-    server_config['playback_speed'] = float(server_config.get('playback_speed', 1.0))
-    server_config['backtest_duration_days'] = int(server_config.get('backtest_duration_days', 365))
+    # Type conversions for specific keys
+    if 'backtest_playback_speed' in server_config:
+        server_config['playback_speed'] = float(server_config['backtest_playback_speed'])
+    else:
+        server_config['playback_speed'] = float(server_config.get('playback_speed', 1.0))
 
-    # For backward compatibility ('speed' will be replaced by 'playback_speed')
+    if 'backtest_duration_days' in server_config:
+        server_config['backtest_duration_days'] = int(server_config['backtest_duration_days'])
+    else:
+        server_config['backtest_duration_days'] = int(server_config.get('backtest_duration_days', 365))
+
+    # For backward compatibility
     server_config['speed'] = server_config['playback_speed']
     server_config['backtest_duration'] = server_config['backtest_duration_days']
     server_config['num_days_preload'] = server_config['backtest_duration_days']
@@ -99,7 +108,7 @@ class ArenaX_BrokerSideServer:
     def __init__(
         self,
         price_db_path: Optional[str] = None,
-        backend_str: str = "hist",
+        backend_str: str = "none",
         backend: Optional[ArenaX_BackendBase] = None,
         host: str = "127.0.0.1",
         port: int = 8801,
@@ -499,14 +508,14 @@ class ArenaX_BrokerSideServer:
 
 def main():
     import argparse
-    load_cjconf()
-    load_cjsys()
-
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server.")
     parser.add_argument("--port", type=int, default=8801, help="Port to bind the server.")
     parser.add_argument("--backend", type=str, choices=["hist", "live", "none"], default="none", help="Backend type to use.")
     args = parser.parse_args()
+
+    load_cjconf()
+    load_cjsys(backend_str=args.backend)
 
     server = ArenaX_BrokerSideServer(host=args.host, port=args.port, backend_str=args.backend)
     print(f"Starting server on {args.host}:{args.port} with backend '{args.backend}'...")
