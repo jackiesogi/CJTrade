@@ -14,6 +14,7 @@ from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
 
 from tests.cj_api.base import BaseBrokerTest
+from tests.utils.get_test_price import *
 from tests.utils.test_formatter import get_log_buffer
 
 
@@ -29,8 +30,9 @@ class TestEdgeCases(BaseBrokerTest):
         fake_order_id = "nonexistent_order_id"
         result = self.client.cancel_order(fake_order_id)
 
-        # Should handle gracefully
         self.assertIsNotNone(result)
+        self.assertIn(result.status, [OrderStatus.REJECTED])
+        self.assertIn("not found", result.message.lower())
 
     def test_11_cancel_already_cancelled_order(self):
         """Test cancelling an already cancelled order (idempotency)"""
@@ -38,7 +40,7 @@ class TestEdgeCases(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Cancel already cancelled order\n")
 
-        order = self._create_test_order(test_case="11")
+        order = self._create_test_order(test_case="11", price=unlikely_fill_buy_price(self.client, "0050"))
         self.client.place_order(order)
         self.client.commit_order()
 
@@ -48,7 +50,8 @@ class TestEdgeCases(BaseBrokerTest):
 
         # Second cancellation - should be idempotent
         result2 = self.client.cancel_order(order.id)
-        # Result may vary, but should not crash
+        self.assertEqual(result2.status, OrderStatus.REJECTED)
+        self.assertIn("not found", result2.message.lower())
 
     def test_12_cancel_filled_order(self):
         """Test cancelling an order that is already filled"""
@@ -71,6 +74,7 @@ class TestEdgeCases(BaseBrokerTest):
         # Should either reject or be already filled
         self.assertIsNotNone(result)
         self.assertIn(result.status, [OrderStatus.REJECTED])
+        self.assertIn("filled", result.message.lower())
 
     def test_13_invalid_order_parameters_zero_quantity(self):
         """Test order with zero quantity"""
@@ -84,6 +88,7 @@ class TestEdgeCases(BaseBrokerTest):
         # Should be rejected or handled gracefully
         self.assertIsNotNone(result)
         self.assertEqual(result.status, OrderStatus.REJECTED)
+        self.assertIn("positive", result.message.lower())
 
     def test_14_invalid_order_parameters_negative_price(self):
         """Test order with negative price"""
@@ -97,6 +102,7 @@ class TestEdgeCases(BaseBrokerTest):
         # Should be rejected
         self.assertIsNotNone(result)
         self.assertEqual(result.status, OrderStatus.REJECTED)
+        self.assertIn("positive", result.message.lower())
 
     def test_15_invalid_order_parameters_negative_quantity(self):
         """Test order with negative quantity"""
@@ -109,6 +115,8 @@ class TestEdgeCases(BaseBrokerTest):
 
         # Should be rejected
         self.assertIsNotNone(result)
+        self.assertEqual(result.status, OrderStatus.REJECTED)
+        self.assertIn("positive", result.message.lower())
 
     def test_16_commit_without_pending_orders(self):
         """Test committing when there are no pending orders"""
@@ -137,6 +145,7 @@ class TestEdgeCases(BaseBrokerTest):
 
         # Reconnect for tearDown
         self.client.connect()
+        self.client.cancel_order(order.id)  # cleanup
 
     def test_18_large_quantity_order(self):
         """Test order with very large quantity"""
@@ -149,6 +158,9 @@ class TestEdgeCases(BaseBrokerTest):
 
         # Should handle or reject based on broker rules
         self.assertIsNotNone(result)
+        self.assertIn(result.status, [OrderStatus.PLACED, OrderStatus.REJECTED])
+
+        self.client.cancel_order(order.id)  # cleanup if placed
 
     def test_19_extreme_price_values(self):
         """Test orders with extreme price values"""
@@ -160,8 +172,10 @@ class TestEdgeCases(BaseBrokerTest):
         order1 = self._create_test_order(price=9999.99, quantity=1, test_case="19a")
         result1 = self.client.place_order(order1)
         self.assertIsNotNone(result1)
+        self.client.cancel_order(order1.id)  # cleanup if placed
 
         # Very low price (but positive)
         order2 = self._create_test_order(price=0.01, quantity=100, test_case="19b")
         result2 = self.client.place_order(order2)
         self.assertIsNotNone(result2)
+        self.client.cancel_order(order2.id)  # cleanup if placed

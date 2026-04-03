@@ -11,6 +11,7 @@ from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.order import OrderStatus
 
 from tests.cj_api.base import BaseBrokerTest
+from tests.utils.get_test_price import *
 from tests.utils.test_formatter import get_log_buffer
 
 
@@ -37,6 +38,8 @@ class TestNormalOperations(BaseBrokerTest):
         self.assertEqual(db_order['product_id'], '0050')
         self.assertEqual(db_order['side'], 'OrderAction.BUY')
 
+        self.client.cancel_order(order.id)  # Cleanup after test
+
     def test_02_order_commit_flow(self):
         """Test order commit after placement"""
         log_buffer = get_log_buffer()
@@ -59,6 +62,8 @@ class TestNormalOperations(BaseBrokerTest):
         db_order = self._get_order_from_db(order.id)
         self.assertIn(db_order['status'], ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN'])
 
+        self.client.cancel_order(order.id)  # Cleanup after test
+
     def test_03_order_cancellation(self):
         """Test order cancellation"""
         log_buffer = get_log_buffer()
@@ -66,7 +71,7 @@ class TestNormalOperations(BaseBrokerTest):
             log_buffer.write("\n[TEST] Order cancellation\n")
 
         # Place and commit order
-        order = self._create_test_order(test_case="03")
+        order = self._create_test_order(test_case="03", price=unlikely_fill_buy_price(self.client, '0050'))
         self.client.place_order(order)
         self.client.commit_order()
 
@@ -76,6 +81,7 @@ class TestNormalOperations(BaseBrokerTest):
 
         # Verify DB updated
         self.assertTrue(self._verify_order_consistency(order.id, 'CANCELLED'))
+        self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_04_multiple_orders_sequential(self):
         """Test placing multiple orders sequentially"""
@@ -103,6 +109,7 @@ class TestNormalOperations(BaseBrokerTest):
                 order_id,
                 ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN']
             ))
+            self.client.cancel_order(order_id)  # Cleanup after test
 
     def test_05_buy_and_sell_operations(self):
         """Test buy and sell stock operations"""
@@ -125,3 +132,7 @@ class TestNormalOperations(BaseBrokerTest):
 
         self.assertGreater(len(buy_orders), 0)
         self.assertGreater(len(sell_orders), 0)
+
+        # Cleanup after test
+        for order in buy_orders + sell_orders:
+            self.client.cancel_order(order['order_id'])

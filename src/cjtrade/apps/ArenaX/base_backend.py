@@ -173,7 +173,38 @@ class ArenaX_BackendBase:
             print(f"Error loading kbars for {symbol}: {exc}")
             return []
 
-    # TODO: Extract market data index computation logic to a separate instance or helper function
+    def _calculate_kbar_index(self, symbol: str, mock_time: datetime) -> int:
+        """Return the row-index of the latest kbar whose timestamp <= mock_time.
+
+        Uses binary search (numpy.searchsorted) on the pre-built timestamps array
+        so the result is always aligned to real kbar timestamps rather than an
+        assumed-uniform minute grid.  This prevents drift when:
+          - A trading day has fewer than the expected 270 1-min bars (common with
+            real-broker data or yfinance gaps).
+          - adjust_time() jumps across multiple days at once.
+
+        Returns -1 when no data is available for the symbol.
+        """
+        import numpy as np
+
+        if symbol not in self.market.historical_data:
+            return -1
+
+        info = self.market.historical_data[symbol]
+        timestamps = info.get("timestamps")
+        if timestamps is None or len(timestamps) == 0:
+            return -1
+
+        # Normalise both sides to datetime64[ns] (timezone-naive, UTC+8 wall clock)
+        # – timestamps from pandas DataFrame index are already naive UTC+8
+        # – mock_time is also naive UTC+8 (produced by ArenaX_Market)
+        target = np.datetime64(mock_time.replace(tzinfo=None), 'ns')
+        ts_arr = timestamps.astype('datetime64[ns]')
+
+        # side='right': first index where ts > target, minus 1 → last bar with ts <= target
+        idx = int(np.searchsorted(ts_arr, target, side='right')) - 1
+        return max(0, min(idx, len(timestamps) - 1))
+
     def snapshot(self, symbol: str) -> Snapshot:
         if not hasattr(self, "market"):
             return self._create_fallback_snapshot(symbol, datetime.now())
@@ -186,12 +217,8 @@ class ArenaX_BackendBase:
             day_preload = self.num_days_preload if self.real_account else 5
             self.market.create_historical_market(symbol, day_preload)
 
-        time = self.market.get_market_time()
-        mock_current_time = time["mock_current_time"]
+        mock_current_time = self.market.get_market_time()["mock_current_time"]
         adjusted_mock_time = self.market.adjust_to_market_hours(mock_current_time)
-
-        mock_time_offset = adjusted_mock_time - self.market.start_date
-        minutes_passed = int(mock_time_offset.total_seconds() / 60)
 
         if symbol in self.market.historical_data:
             data_info = self.market.historical_data[symbol]
@@ -199,7 +226,7 @@ class ArenaX_BackendBase:
             timestamps = data_info["timestamps"]
 
             if not data.empty and timestamps is not None:
-                data_idx = minutes_passed % len(data)
+                data_idx = self._calculate_kbar_index(symbol, adjusted_mock_time)
                 daily_data = data.iloc[: data_idx + 1]
 
                 if len(daily_data) > 0:
@@ -289,7 +316,6 @@ class ArenaX_BackendBase:
         return PLACED_ORDER_STANDARD(order, metadata=order.opt_field)
 
     def commit_order(self, order_id: str) -> OrderResult:
-        self._check_if_any_order_filled()  # workaround
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
@@ -304,6 +330,8 @@ class ArenaX_BackendBase:
         else:
             self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
             status = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+
+        self._check_if_any_order_filled()  # workaround
 
         return OrderResult(
             status=status,
@@ -601,6 +629,8 @@ class ArenaX_BackendBase:
                 self.market.get_market_time()["mock_init_time"],
             )
             cmp_time_range_end = self.market.get_market_time()["mock_current_time"]
+
+            # print(f"Checking order {order.id} from {cmp_time_range_start} to {cmp_time_range_end} against target price {target_price} !!!")
 
             if cmp_time_range_end <= cmp_time_range_start:
                 continue

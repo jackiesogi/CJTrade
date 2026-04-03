@@ -8,6 +8,7 @@ Tests complete workflows combining multiple operations:
 from cjtrade.pkgs.models.order import OrderStatus
 
 from tests.cj_api.base import BaseBrokerTest
+from tests.utils.get_test_price import *
 from tests.utils.test_formatter import get_log_buffer
 
 
@@ -21,7 +22,7 @@ class TestIntegrationFlows(BaseBrokerTest):
             log_buffer.write("\n[TEST] Full order lifecycle\n")
 
         # Place
-        order = self._create_test_order(test_case="50")
+        order = self._create_test_order(test_case="50", price=unlikely_fill_buy_price(self.client, '0050'))
         place_result = self.client.place_order(order)
         self.assertEqual(place_result.status, OrderStatus.PLACED)
         self.assertTrue(self._verify_order_consistency(order.id, 'PLACED'))
@@ -71,3 +72,6 @@ class TestIntegrationFlows(BaseBrokerTest):
             order3.id,
             ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN']
         ))
+
+        self.client.cancel_order(order1.id)
+        self.client.cancel_order(order3.id)

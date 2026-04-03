@@ -32,6 +32,8 @@ class TestStressScenarios(BaseBrokerTest):
         # Verify all in DB
         db_orders = self._get_all_orders_from_db()
         self.assertEqual(len(db_orders), order_count)
+        for order_id in orders:
+            self.client.cancel_order(order_id)  # Cleanup
 
     def test_41_alternating_buy_sell(self):
         """Test alternating buy and sell orders"""
@@ -51,3 +53,7 @@ class TestStressScenarios(BaseBrokerTest):
 
         self.assertEqual(buy_count, 5)
         self.assertEqual(sell_count, 5)
+
+        # Cleanup after test
+        for order in db_orders:
+            self.client.cancel_order(order['order_id'])

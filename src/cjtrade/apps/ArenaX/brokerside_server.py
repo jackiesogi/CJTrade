@@ -298,8 +298,9 @@ class ArenaX_BrokerSideServer:
                     opt_field=opt_field,
                 )
                 result = self.backend.place_order(order)
-                print(f"Placing order {order.__dict__}: {result.__dict__ if result else None}")
-                return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
+                print(f"Placing order {order.__dict__}")
+                print(f"Order result: {result.__dict__ if result else None}")
+                return jsonify({"ok":True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -311,7 +312,8 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": "order_id is required"}), 400
             try:
                 result = self.backend.cancel_order(order_id)
-                print(f"Cancelling order {order_id}: {result}")
+                print(f"Cancelling order {order_id}")
+                print(f"Order result: {result.__dict__ if result else None}")
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -493,6 +495,7 @@ class ArenaX_BrokerSideServer:
             if hasattr(self.backend, "_check_if_any_order_filled"):
                 self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
             self._stop_event.wait(self._match_interval)
+            # self._stop_event.wait(100)
 
 def main():
     import argparse

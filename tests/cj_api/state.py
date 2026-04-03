@@ -9,6 +9,7 @@ Tests database and internal state consistency:
 - Balance and position tracking
 """
 from tests.cj_api.base import BaseBrokerTest
+from tests.utils.get_test_price import *
 from tests.utils.test_formatter import get_log_buffer
 
 
@@ -35,6 +36,7 @@ class TestStateConsistency(BaseBrokerTest):
             db_order = self._get_order_from_db(order.id)
             self.assertIsNotNone(db_order)
             self.assertEqual(db_order['product_id'], order.product.symbol)
+            self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_21_db_status_update_consistency(self):
         """Test that status updates are consistent"""
@@ -42,7 +44,7 @@ class TestStateConsistency(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Status update consistency\n")
 
-        order = self._create_test_order(test_case="21")
+        order = self._create_test_order(test_case="21", price=unlikely_fill_buy_price(self.client, '0050'))
         self.client.place_order(order)
 
         # Initial status
@@ -64,6 +66,7 @@ class TestStateConsistency(BaseBrokerTest):
         # Committed status depends on market hours
         self.assertIn(committed_status, ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN'])
         self.assertEqual(cancelled_status, 'CANCELLED')
+        self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_22_db_timestamp_updates(self):
         """Test that timestamps are correctly updated"""
@@ -82,6 +85,7 @@ class TestStateConsistency(BaseBrokerTest):
         self.client.commit_order()
         db_order2 = self._get_order_from_db(order.id)
         self.assertIsNotNone(db_order2['updated_at'])
+        self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_23_db_connection_recovery(self):
         """Test database operations after reconnection"""
@@ -108,6 +112,8 @@ class TestStateConsistency(BaseBrokerTest):
         # Verify both orders in DB
         all_orders = self._get_all_orders_from_db()
         self.assertEqual(len(all_orders), 2)
+        self.client.cancel_order(order1.id)  # Cleanup after test
+        self.client.cancel_order(order2.id)  # Cleanup after test
 
     def test_24_db_order_count_accuracy(self):
         """Test that order count in DB matches operations"""
@@ -119,6 +125,7 @@ class TestStateConsistency(BaseBrokerTest):
         for i in range(expected_count):
             order = self._create_test_order(test_case=f"24_{i}")
             self.client.place_order(order)
+            self.client.cancel_order(order.id)  # cancel does not impact order count
 
         db_orders = self._get_all_orders_from_db()
         self.assertEqual(len(db_orders), expected_count)
@@ -143,6 +150,7 @@ class TestStateConsistency(BaseBrokerTest):
                 order.id,
                 ['COMMITTED_WAIT_MATCHING', 'COMMITTED_WAIT_MARKET_OPEN']
             ))
+            self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_31_order_list_completeness(self):
         """Test that list_orders returns all orders"""
@@ -163,6 +171,9 @@ class TestStateConsistency(BaseBrokerTest):
 
         # Verify count
         self.assertGreaterEqual(len(broker_trades), 5)
+        # Cleanup after test
+        for order_id in placed_orders:
+            self.client.cancel_order(order_id)
 
     def test_32_balance_consistency(self):
         """Test that balance remains consistent"""
@@ -180,6 +191,7 @@ class TestStateConsistency(BaseBrokerTest):
 
         balance2 = self.client.get_balance()
         self.assertIsInstance(balance2, (int, float))
+        self.client.cancel_order(order.id)  # Cleanup after test
 
     def test_33_position_consistency(self):
         """Test that positions are tracked consistently"""
