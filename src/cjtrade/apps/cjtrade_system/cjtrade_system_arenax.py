@@ -32,7 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)-8s: %(message)s"
 )
-log = logging.getLogger("cjtrade.system")
+log = logging.getLogger("cjtrade.system_arenax")
 
 # load_supported_config_files()
 # Need to read from env variables
@@ -54,58 +54,48 @@ def load_cjconf():
 
 
 # CJSYS is for CJTrade System itself
-def load_cjsys(broker: str, backtest_mode: bool):
+# Note that need to consider bridging to real brokers in the future, so don't
+# make CJSYS too specific to ArenaX !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+def load_cjsys(broker: str, mode: str):
     """
     Load CJTrade system configuration from .cjsys files
-
-    Note: mock + live mode is NOT supported
-    - mock broker uses yfinance data which has 15-minute delay
-    - live mode requires real-time data, so use 'realistic' broker instead
-    - mock broker is only suitable for backtest mode (historical data replay)
     """
     # Find config file relative to this module
     import pathlib
     config_dir = pathlib.Path(__file__).parent / "configs"
-    mode = 'backtest' if backtest_mode else 'live'
     file_to_load = config_dir / f"{broker}_{mode}.cjsys"
 
-    if mode == 'live' and broker == 'mock':
-        log.error("Using LIVE mode for mock broker does not make sense!"
+    if mode == 'live' and broker == 'arenax':
+        log.error("Using LIVE mode for arenax broker does not make sense!"
                   " If you want to use live mode, please switch to the 'realistic'!")
         exit(1)
 
     if not file_to_load.exists():
-        log.warning(f"Config file {file_to_load} not found")
+        log.warning(f"Config file {file_to_load} not found, create one based on the template in configs/ dir")
         return
 
     log.info(f"Loading config file {file_to_load}")
     load_dotenv(file_to_load, override=False)
-    keys = ['BACKTEST_MODE', 'BACKTEST_DURATION', 'BACKTEST_DURATION_DAYS', 'PLAYBACK_SPEED', 'WATCH_LIST',
-            'PRICE_MONITOR_INTERVAL', 'ANALYSIS_INTERVAL', 'LLM_REPORT_INTERVAL', 'DISPLAY_TIME_INTERVAL', 'CHECK_FILL_INTERVAL',
-            'WINDOW_SIZE', 'BB_MIN_WIDTH_PCT',
-            'RISK_MAX_POSITION_PCT']
+    keys = ['CJSYS_WATCH_LIST', 'CJSYS_ANALYSIS_INTERVAL', 'CJSYS_CHECK_FILL_INTERVAL', 'CJSYS_BACKTEST_DURATION_DAYS',
+            'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL', 'CJSYS_PRICE_MONITOR_INTERVAL',
+            'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
             config[key.lower()] = os.environ[key]
 
     # Adjust the types of certain keys
-    config['backtest_mode'] = config.get('backtest_mode', 'y').lower() == 'y'
-    config['playback_speed'] = float(config.get('playback_speed', 1.0))
-    config['backtest_duration_days'] = int(config.get('backtest_duration_days', 365))
-    config['watch_list'] = config.get('watch_list', "").split(',') if config.get('watch_list') else []
-    config['price_monitor_interval'] = float(config.get('price_monitor_interval', 60))
-    config['analysis_interval'] = float(config.get('analysis_interval', 30))
-    config['llm_report_interval'] = float(config.get('llm_report_interval', 300))
-    config['display_time_interval'] = float(config.get('display_time_interval', 40))
-    config['check_fill_interval'] = float(config.get('check_fill_interval', 60))
-    config['window_size'] = int(config.get('window_size', 10))
-    config['bb_min_width_pct'] = float(config.get('bb_min_width_pct', 0.01))
-    config['risk_max_position_pct'] = float(config.get('risk_max_position_pct', 0.05))
-
-    # For backward compatibility ('speed' will be replaced by 'playback_speed')
-    config['speed'] = config['playback_speed']
-    config['backtest_duration'] = config['backtest_duration_days']
+    config['launch_mode'] = mode
+    config['backtest_duration_days'] = int(config.get('cjsys_backtest_duration_days', 7))
+    config['watch_list'] = config.get('cjsys_watch_list', "").split(',') if config.get('cjsys_watch_list') else []
+    config['analysis_interval'] = float(config.get('cjsys_analysis_interval', 30))
+    config['check_fill_interval'] = float(config.get('cjsys_check_fill_interval', 60))
+    config['display_time_interval'] = float(config.get('cjsys_display_time_interval', 40))
+    config['llm_report_interval'] = float(config.get('cjsys_llm_report_interval', 300))
+    config['price_monitor_interval'] = float(config.get('cjsys_price_monitor_interval', 60))
+    config['bb_min_width_pct'] = float(config.get('cjsys_bb_min_width_pct', 0.01))
+    config['bb_window_size'] = int(config.get('cjsys_bb_window_size', 10))
+    config['risk_max_position_pct'] = float(config.get('cjsys_risk_max_position_pct', 0.05))
 
 
 def print_config():
@@ -114,34 +104,41 @@ def print_config():
 # ==================== System Config ====================
 @dataclass
 class SystemConfig:
-    backtest_mode: bool
-    playback_speed: float
-    price_monitor_interval: float
+    watch_list: str
     analysis_interval: float
-    llm_report_interval: float
-    display_time_interval: float
     check_fill_interval: float
-    window_size: int
+    display_time_interval: float
+    llm_report_interval: float
+    price_monitor_interval: float
     bb_min_width_pct: float
+    bb_window_size: int
     risk_max_position_pct: float
-    backtest_duration_days: float = 0.0
+    launch_mode: str
+    backtest_duration_days: float
+    # backtest_playback_speed: float
 
 
 def _apply_config(cfg: SystemConfig) -> None:
     """Write a SystemConfig into module-level globals used by all coroutines."""
-    global BACKTEST_MODE, PRICE_MONITOR_INTERVAL, ANALYSIS_INTERVAL
-    global LLM_REPORT_INTERVAL, DISPLAY_TIME_INTERVAL, CHECK_FILL_INTERVAL
-    global WINDOW_SIZE, BB_MIN_WIDTH_PCT, RISK_MAX_POSITION_PCT, BACKTEST_DURATION_DAYS
-    BACKTEST_MODE              = cfg.backtest_mode
+    global LAUNCH_MODE
+    global BACKTEST_DURATION_DAYS, BACKTEST_PLAYBACK_SPEED
+    global WATCH_LIST
+    global ANALYSIS_INTERVAL, CHECK_FILL_INTERVAL, DISPLAY_TIME_INTERVAL, LLM_REPORT_INTERVAL, PRICE_MONITOR_INTERVAL
+    global BB_MIN_WIDTH_PCT, BB_WINDOW_SIZE
+    global RISK_MAX_POSITION_PCT
+
+    BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
+    # BACKTEST_PLAYBACK_SPEED    = cfg.backtest_playback_speed
+    LAUNCH_MODE                = cfg.launch_mode
+    WATCH_LIST                 = cfg.watch_list
     PRICE_MONITOR_INTERVAL     = cfg.price_monitor_interval
     ANALYSIS_INTERVAL          = cfg.analysis_interval
-    LLM_REPORT_INTERVAL        = cfg.llm_report_interval
-    DISPLAY_TIME_INTERVAL      = cfg.display_time_interval
     CHECK_FILL_INTERVAL        = cfg.check_fill_interval
-    WINDOW_SIZE                = cfg.window_size
+    DISPLAY_TIME_INTERVAL      = cfg.display_time_interval
+    LLM_REPORT_INTERVAL        = cfg.llm_report_interval
     BB_MIN_WIDTH_PCT           = cfg.bb_min_width_pct
+    BB_WINDOW_SIZE             = cfg.bb_window_size
     RISK_MAX_POSITION_PCT      = cfg.risk_max_position_pct
-    BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
 
 
 SHUTDOWN = False
@@ -154,13 +151,13 @@ def calculate_bollinger_bands_mock(symbol: str, prices: List[float]) -> Dict:
         return None
 
     # Need at least WINDOW_SIZE data points for reliable BB calculation
-    if len(prices) < WINDOW_SIZE:
-        log.debug(f"BB {symbol}: Insufficient data ({len(prices)}/{WINDOW_SIZE} prices)")
+    if len(prices) < BB_WINDOW_SIZE:
+        log.debug(f"BB {symbol}: Insufficient data ({len(prices)}/{BB_WINDOW_SIZE} prices)")
         return None
     current_price, prices_array = prices[-1], np.array(prices, dtype=float)
 
     # Calculate Bollinger Bands using TA-Lib
-    upper_bands, middle_bands, lower_bands = ta.bb(prices_array, timeperiod=WINDOW_SIZE, nbdevup=2, nbdevdn=2)
+    upper_bands, middle_bands, lower_bands = ta.bb(prices_array, timeperiod=BB_WINDOW_SIZE, nbdevup=2, nbdevdn=2)
     upper, middle, lower = upper_bands[-1], middle_bands[-1], lower_bands[-1]
     std_dev = (upper - middle) / 2  # Because upper = middle + 2*std
     band_width = (upper - lower) / middle if middle > 0 else 0
@@ -190,34 +187,32 @@ def calculate_bollinger_bands_mock(symbol: str, prices: List[float]) -> Dict:
         'std_dev': round(std_dev, 2), 'band_width': round(band_width * 100, 2)
     }
 
-
 # ==================== Trading System Class ====================
 class TradingSystem:
     def __init__(self, client: AccountClient):
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, Dict] = {}
-        self.llm_client_1: Optional[ChatPDFClient] = None
-        self.llm_client_2: Optional[GeminiClient] = None
         self.llm_pool: Optional[List] = None
+        self.launch_mode = LAUNCH_MODE
 
-        if hasattr(self.client.broker_api, 'get_system_time'):
-            self.start_time = self.client.broker_api.get_system_time()
+        if self.launch_mode in ['hist', 'none']:
+            self.start_time = self.client.broker_api.get_system_time()['mock_current_time']
             log.info(f"⏰ Using mock market start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         else:
             self.start_time = datetime.now()
             log.info(f"⏰ Using real system time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        self.backtest_mode = BACKTEST_MODE
         self.trade_log: List[Dict] = []
         self.strategy_cash_flow = 0.0
         self.signal_queue: Queue = Queue()
 
         # Get playback speed from mock broker backend (for time-scaled delays)
         self.playback_speed = 1.0
-        if hasattr(self.client.broker_api, 'api') and hasattr(self.client.broker_api.api, 'market'):
-            self.playback_speed = self.client.broker_api.api.market.playback_speed
-            log.info(f"⚡ Playback speed: {self.playback_speed}x")
+        if self.launch_mode in ['hist', 'none']:
+            #self.playback_speed = self.client.broker_api.api.market.playback_speed
+            self.playback_speed = self.client.broker_api.middleware.get_config()['internal_config']['playback_speed']
+            log.info(f"⚡ Playback speed: {self.playback_speed}x (response from server, not set by user)")
 
         self.initial_balance = self.client.get_balance()
         self.initial_positions = self.client.get_positions()
@@ -251,22 +246,23 @@ class TradingSystem:
         return seconds / self.playback_speed
 
     def get_watch_symbols(self) -> List[str]:
-        """Get list of symbols to monitor from current positions"""
+        """Get list of symbols to monitor from watch_list config + current positions"""
         symbols = []
         try:
-            symbols = config.get('watch_list', [])
+            symbols = list(config.get('watch_list', []))
             positions = self.client.get_positions()
             if positions:
-                s = [p.symbol for p in positions]
-                symbols = list(set(symbols + s))
-                log.info(f"Watching {len(symbols)} symbols from positions: {', '.join(symbols)}")
+                position_symbols = [p.symbol for p in positions]
+                symbols = list(set(symbols + position_symbols))
 
             if len(symbols) == 0:
-                log.warning("No position to monitor (Try `export WATCH_LIST=2330,0050` env variable)")
+                log.warning("No symbols to monitor – set CJSYS_WATCH_LIST in your .cjsys config or ensure you have open positions")
+            else:
+                log.info(f"Watching {len(symbols)} symbol(s): {', '.join(sorted(symbols))}")
 
             return symbols
         except Exception as e:
-            log.error(f"Failed to get positions: {e}")
+            log.error(f"Failed to get watch symbols: {e}")
             return []
 
     def get_total_equity(self) -> float:
@@ -302,12 +298,12 @@ class TradingSystem:
         - Day 0: 09:00 start, 13:30 close = 1 completed trading day
         - After 13:30, the day is considered complete
         """
-        if not self.backtest_mode:
+        if not self.launch_mode in ['hist', 'none']:
             return False
 
-        # Use mock market time if available
-        if hasattr(self.client.broker_api, 'get_system_time'):
-            current_time = self.client.broker_api.get_system_time()
+        # Use mock market time for backtest modes; live mode uses real wall-clock time
+        if self.launch_mode in ['hist', 'none']:
+            current_time = self.client.broker_api.get_system_time()['mock_current_time']
         else:
             current_time = datetime.now()
 
@@ -470,24 +466,13 @@ class TradingSystem:
 
         while not SHUTDOWN:
             try:
-                is_market_open = self.client.broker_api.api.market.is_market_open()
+                # is_market_open = self.client.broker_api.api.market.is_market_open()  # only specific to MockBroker
+                is_market_open = self.client.is_market_open()  # only specific to MockBroker
 
-                # Auto-skip to next trading day at 2PM (only in backtest mode)
-                if not is_market_open and self.backtest_mode:
-                    current_time = self.client.broker_api.get_system_time()
-
-                    # Check if it's 2PM (14:00)
-                    market = self.client.broker_api.api.market
-                    # log.info("⏭️  2PM reached, skipping to next trading day (9AM)...")
-
-                    # calculate diff to next day 9AM
-                    diff = ((current_time + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0) - current_time).total_seconds()
-                    diff = diff / 3600
-                    print(f"current time {current_time}")
-                    market.adjust_time(diff)  # Jump 19 hours: 14:00 + 19 = 09:00 next day
-                    print(f"current time {current_time}")
-
-                    log.debug("⏸️  Market closed, skipping price monitoring")
+                # Market closed: server handles time-skipping internally (AX_SKIP_NON_TRADING_HOURS).
+                # cjtrade_system simply waits; no direct adjust_time() call needed.
+                if not is_market_open:
+                    log.debug("⏸️  Market closed, waiting for server to advance time...")
                     await asyncio.sleep(self.mock_env_sleep(PRICE_MONITOR_INTERVAL))
                     continue
 
@@ -528,12 +513,12 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 symbols = list(self.price_history.keys())
-                log.info(f"Analyzing {len(symbols)} symbols: {symbols}")
+                log.debug(f"Analyzing {len(symbols)} symbols: {symbols}")  # debug: empty on first tick is normal
 
                 for symbol in symbols:
                     history_len = len(self.price_history.get(symbol, []))
 
-                    if history_len < WINDOW_SIZE:
+                    if history_len < BB_WINDOW_SIZE:
                         continue
 
                     result = calculate_bollinger_bands_mock(
@@ -660,7 +645,7 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 # Check if backtest period is over
-                if self.backtest_mode and self.should_exit_backtest():
+                if self.launch_mode in ['hist', 'none'] and self.should_exit_backtest():
                     log.info("🏁 Backtest completed. Shutting down...")
                     SHUTDOWN = True
                     break
@@ -677,11 +662,8 @@ class TradingSystem:
                 result = signal_event['result']
                 price = result['price']
 
-                if self.backtest_mode:
-                    if hasattr(self.client.broker_api, 'get_system_time'):
-                        current_time = self.client.broker_api.get_system_time()
-                    else:
-                        current_time = datetime.now()
+                if self.launch_mode in ['hist', 'none']:
+                    current_time = self.client.broker_api.get_system_time()['mock_current_time']
 
                     start_date = self.start_time.date()
                     current_date = current_time.date()
@@ -775,10 +757,10 @@ class TradingSystem:
         log.info("Time display started")
 
         while not SHUTDOWN:
-            if self.client.get_broker_name() == "mock":
-                ts = self.client.broker_api.get_system_time()
+            if self.client.get_broker_name() == "arenax":
+                ts = self.client.broker_api.get_system_time()['mock_current_time']
             else:
-                ts = datetime.now()
+                ts = self.client.broker_api.get_system_time()['real_current_time']
 
             time_str = ts.strftime('%Y-%m-%d %H:%M:%S')
             print(f"\n{'='*60}")
@@ -796,9 +778,10 @@ class TradingSystem:
         log.info("Order matching task started")
 
         while not SHUTDOWN:
-            print('check_if_any_order_can_be_filled()')
+            # print('check_if_any_order_can_be_filled()')
             try:
-                self.client.broker_api.api._trigger_order_matching()
+                pass
+                # self.client.broker_api.api._trigger_order_matching()
             except Exception as e:
                 log.error(f"Order matching error: {e}")
 
@@ -819,16 +802,16 @@ async def async_main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     # Get broker type (default: mock)
-    broker_type = os.environ.get('BROKER_TYPE', 'mock').lower()
+    broker_type = os.environ.get('BROKER_TYPE', 'arenax').lower()
 
     # Load broker/service configurations (API keys, certs, etc.)
     load_cjconf()
 
     # Determine backtest mode from env or default to 'y'
-    backtest_mode = os.environ.get('BACKTEST_MODE', 'y').lower() == 'y'
+    launch_mode = os.environ.get('LAUNCH_MODE').lower()
 
     # Load system configurations from .cjsys file (intervals, window size, etc.)
-    load_cjsys(broker=broker_type, backtest_mode=backtest_mode)
+    load_cjsys(broker=broker_type, mode=launch_mode)
 
     # print_config()
     # import time
@@ -836,17 +819,17 @@ async def async_main():
 
     # Create SystemConfig from loaded config dict
     cfg = SystemConfig(
-        backtest_mode=config['backtest_mode'],
-        playback_speed=config['playback_speed'],
-        price_monitor_interval=config['price_monitor_interval'],
+        backtest_duration_days=config['backtest_duration_days'],
+        watch_list=config['watch_list'],
         analysis_interval=config['analysis_interval'],
-        llm_report_interval=config['llm_report_interval'],
+        check_fill_interval=config['check_fill_interval'],   # maybe not needed
         display_time_interval=config['display_time_interval'],
-        check_fill_interval=config['check_fill_interval'],
-        window_size=config['window_size'],
+        llm_report_interval=config['llm_report_interval'],
+        price_monitor_interval=config['price_monitor_interval'],
         bb_min_width_pct=config['bb_min_width_pct'],
+        bb_window_size=config['bb_window_size'],
         risk_max_position_pct=config['risk_max_position_pct'],
-        backtest_duration_days=config['backtest_duration'],
+        launch_mode=config['launch_mode'],
     )
 
     # Apply config to module-level globals
@@ -854,10 +837,7 @@ async def async_main():
 
     log.info(
         f"System config loaded: {broker_type} | "
-        f"{'BACKTEST' if cfg.backtest_mode else 'LIVE'} | "
-        f"speed={cfg.playback_speed}x | "
-        f"window={cfg.window_size} | "
-        f"duration={cfg.backtest_duration_days}d"
+        f"window={cfg.bb_window_size} | "
     )
 
     # Prepare broker client config
@@ -866,17 +846,21 @@ async def async_main():
     config["mirror_db_path"] = f"./data/{broker_type}_{username}.db"
 
     # Create broker client based on type
-    if broker_type == 'mock':
-        client = AccountClient(BrokerType.MOCK, **config)
-    elif broker_type == 'realistic':
-        real = AccountClient(BrokerType.SINOPAC, **config)
-        client = AccountClient(BrokerType.MOCK, real_account=real, **config)
+    if broker_type == 'arenax':
+        config['api_key'] = "testkey123"
+        client = AccountClient(BrokerType.ARENAX, **config)
+    elif broker_type == 'sinopac':
+        pass    # pass for now since it is dangerous while developing and testing.
     else:
         log.error(f"Unsupported broker type: {broker_type}")
         return
 
-    client.connect()
-    log.info(f"Connected to {broker_type} broker")
+    try:
+        client.connect()
+        log.info(f"Connected to {broker_type} broker")
+    except ConnectionError as e:
+        print(f"Cannot connect to {broker_type} broker: {e}")
+        exit(1)
 
     system = TradingSystem(client)
 
@@ -890,7 +874,7 @@ async def async_main():
         asyncio.create_task(system.generate_llm_report(), name="llm_report"),
         asyncio.create_task(system.execute_orders(), name="order_executor"),
         asyncio.create_task(system.display_time(), name="time_display"),
-        asyncio.create_task(system.trigger_order_matching(), name="order_matching"),
+        # asyncio.create_task(system.trigger_order_matching(), name="order_matching"),
     ]
 
     os.system("clear")
@@ -915,7 +899,7 @@ async def async_main():
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 """)
-    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if BACKTEST_MODE else 'LIVE'}")
+    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in ['hist', 'none'] else 'LIVE'}")
 
     try:
         while not SHUTDOWN:
@@ -923,7 +907,7 @@ async def async_main():
     except KeyboardInterrupt:
         log.info("Keyboard interrupt received")
 
-    if BACKTEST_MODE:
+    if LAUNCH_MODE == 'hist' or LAUNCH_MODE == 'none':
         system.print_backtest_summary()
 
     log.info("Shutting down tasks...")
@@ -941,15 +925,15 @@ def main_system():
     import argparse
 
     parser = argparse.ArgumentParser(description="CJTrade Trading System")
-    parser.add_argument("-B", "--broker", type=str, default="realistic",
-                        choices=["mock", "realistic", "sinopac"],
-                        help="Broker type: mock, realistic, or sinopac")
-    parser.add_argument("-b", "--backtest", type=str, default='y',
-                        choices=['y', 'n'],
-                        help="Backtest mode: y or n")
+    parser.add_argument("-B", "--broker", type=str, default="arenax",
+                        choices=["arenax", "sinopac"],
+                        help="Broker type: arenax or sinopac")
+    parser.add_argument("-m", "--mode", type=str, default='hist',
+                        choices=['hist', 'live', 'none'],
+                        help="Backtest mode: hist, live or none")
     args = parser.parse_args()
 
     os.environ['BROKER_TYPE'] = args.broker
-    os.environ['BACKTEST_MODE'] = args.backtest
+    os.environ['LAUNCH_MODE'] = args.mode
 
     asyncio.run(async_main())

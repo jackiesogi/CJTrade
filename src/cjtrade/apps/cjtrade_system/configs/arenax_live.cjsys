@@ -1,21 +1,39 @@
-# Realistic Broker - Live Mode Configuration
-# Real-time trading with conservative settings
+# ArenaX Broker - Live Paper Trading Mode Configuration
+# Uses real broker price feed, but orders are simulated (paper trading).
+# Requires a real broker account for price data.
 
-# Trading Mode
-BACKTEST_MODE=n
-PLAYBACK_SPEED=1.0
-# BACKTEST_DURATION_DAYS= (NOT AVAILABLE)
+# =========================================   General Configuration   =======================================
+CJSYS_WATCH_LIST              =
+# ===========================================================================================================
 
-# System Intervals (seconds)
-PRICE_MONITOR_INTERVAL=12
-ANALYSIS_INTERVAL=30
-LLM_REPORT_INTERVAL=300
-DISPLAY_TIME_INTERVAL=40
-CHECK_FILL_INTERVAL=30
 
-# Technical Analysis Parameters
-WINDOW_SIZE=50
-BB_MIN_WIDTH_PCT=0.01
+# =======================================   Backtest Configuration   ========================================
+# Live mode always runs at 1x speed (real time).
+CJSYS_BACKTEST_PLAYBACK_SPEED = 1.0
 
-# Risk Management
-RISK_MAX_POSITION_PCT=0.05
+# Not applicable in live mode (no exit condition based on duration).
+# CJSYS_BACKTEST_DURATION_DAYS =
+
+CJSYS_SKIP_NON_TRADING_HOURS = n
+CJSYS_STATE_FILE = live_account_state.json
+# ===========================================================================================================
+
+
+# ======================================  System Intervals (seconds)  =======================================
+CJSYS_ANALYSIS_INTERVAL       = 30
+CJSYS_CHECK_FILL_INTERVAL     = 30
+CJSYS_DISPLAY_TIME_INTERVAL   = 40
+CJSYS_LLM_REPORT_INTERVAL     = 300
+CJSYS_PRICE_MONITOR_INTERVAL  = 12
+# ===========================================================================================================
+
+
+# ====================================  Technical Analysis Parameters  ======================================
+CJSYS_BB_MIN_WIDTH_PCT        = 0.01
+CJSYS_BB_WINDOW_SIZE          = 50
+# ===========================================================================================================
+
+
+# =========================================     Risk Management    ==========================================
+CJSYS_RISK_MAX_POSITION_PCT   = 0.05
+# ===========================================================================================================

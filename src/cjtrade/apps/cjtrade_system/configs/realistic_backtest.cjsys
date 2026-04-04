@@ -1,0 +1,21 @@
+# Realistic Broker - Backtest Mode Configuration
+# Moderate speed with realistic market conditions
+
+# Trading Mode
+BACKTEST_MODE=y
+PLAYBACK_SPEED=12000.0
+BACKTEST_DURATION_DAYS=300
+
+# System Intervals (seconds)
+PRICE_MONITOR_INTERVAL=120
+ANALYSIS_INTERVAL=240
+LLM_REPORT_INTERVAL=500000
+DISPLAY_TIME_INTERVAL=60
+CHECK_FILL_INTERVAL=120
+
+# Technical Analysis Parameters
+WINDOW_SIZE=100
+BB_MIN_WIDTH_PCT=0.01
+
+# Risk Management
+RISK_MAX_POSITION_PCT=0.05

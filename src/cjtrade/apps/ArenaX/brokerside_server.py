@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 from typing import Optional
@@ -21,8 +22,8 @@ from flask import send_from_directory
 from werkzeug.serving import make_server
 # from cjtrade.apps.ArenaX.arenax_account_client import *
 
-backend_config = {}
-server_config = {}
+external_config = {}
+internal_config = {}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,11 +48,11 @@ def load_cjconf():
             'USERNAME', 'LLM_API_KEY', 'LLM_MODEL', 'GEMINI_API_KEY', 'NEWSAPI_API_KEY']
     for key in keys:
         if os.environ.get(key):
-            backend_config[key.lower()] = os.environ[key]
+            external_config[key.lower()] = os.environ[key]
 
-    backend_config['simulation'] = backend_config.get('simulation', 'y').lower() == 'y'
-    backend_config['ca_path'] = backend_config.get('ca_cert_path', "")
-    backend_config['ca_passwd'] = backend_config.get('ca_password', "")
+    external_config['simulation'] = external_config.get('simulation', 'y').lower() == 'y'
+    external_config['ca_path'] = external_config.get('ca_cert_path', "")
+    external_config['ca_passwd'] = external_config.get('ca_password', "")
 
 # CJSYS is for CJTrade System itself
 def load_cjsys(backend_str: str = "none"):
@@ -68,30 +69,34 @@ def load_cjsys(backend_str: str = "none"):
 
     load_dotenv(file_to_load, override=False)
     keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
-            'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_DATA_PRELOAD', 'AX_AUTO_TIME_PROGRESS',
-            'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL']
+            'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
+            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
             # Remove 'AX_' prefix and store with snake_case
             config_key = key[3:].lower()  # Strip 'AX_' and convert to lowercase
-            server_config[config_key] = os.environ[key]
+            internal_config[config_key] = os.environ[key]
 
     # Type conversions for specific keys
-    if 'backtest_playback_speed' in server_config:
-        server_config['playback_speed'] = float(server_config['backtest_playback_speed'])
+    if 'backtest_playback_speed' in internal_config:
+        internal_config['playback_speed'] = float(internal_config['backtest_playback_speed'])
     else:
-        server_config['playback_speed'] = float(server_config.get('playback_speed', 1.0))
+        internal_config['playback_speed'] = float(internal_config.get('playback_speed', 1.0))
 
-    if 'backtest_duration_days' in server_config:
-        server_config['backtest_duration_days'] = int(server_config['backtest_duration_days'])
+    if 'backtest_duration_days' in internal_config:
+        internal_config['backtest_duration_days'] = int(internal_config['backtest_duration_days'])
     else:
-        server_config['backtest_duration_days'] = int(server_config.get('backtest_duration_days', 365))
+        internal_config['backtest_duration_days'] = int(internal_config.get('backtest_duration_days', 365))
+
+    # When enabled, the matching loop automatically jumps over non-trading hours
+    # (after 13:30 or weekends) to accelerate backtesting.
+    internal_config["skip_non_trading_hours"] = internal_config.get('skip_non_trading_hours', 'n').lower() in ('y', 'yes', 'true', '1')
 
     # For backward compatibility
-    server_config['speed'] = server_config['playback_speed']
-    server_config['backtest_duration'] = server_config['backtest_duration_days']
-    server_config['num_days_preload'] = server_config['backtest_duration_days']
+    internal_config['speed'] = internal_config['playback_speed']
+    internal_config['backtest_duration'] = internal_config['backtest_duration_days']
+    internal_config['num_days_preload'] = internal_config['backtest_duration_days']
 
 
 # Provide an interface for apps to:
@@ -120,12 +125,12 @@ class ArenaX_BrokerSideServer:
             # TODO: Add more backend config
             if backend_str == "hist":
                 # Current default, ArenaX use sinopac backend for price feed.
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **backend_config)
-                self.backend = ArenaX_Backend_Historical(real_account=self.real, **server_config)
+                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
             elif backend_str == "live":
-                self.backend = ArenaX_Backend_PaperTrade(**server_config)
+                self.backend = ArenaX_Backend_PaperTrade(**internal_config)
             elif backend_str == "none":
-                self.backend = ArenaX_Backend_None(**server_config)
+                self.backend = ArenaX_Backend_None(**internal_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
 
@@ -140,6 +145,10 @@ class ArenaX_BrokerSideServer:
         self._valid_api_keys = set()            # Placeholder for API key management
         self._valid_api_keys.add('testkey123')  # hardcoded API key for testing
 
+        # When enabled, the matching loop automatically jumps over non-trading hours
+        # (after 13:30 or weekends) to accelerate backtesting.
+        self._skip_non_trading_hours = internal_config["skip_non_trading_hours"]
+
         prepare_price_db(price_db_path)
         self._app = self._create_app()
 
@@ -147,6 +156,15 @@ class ArenaX_BrokerSideServer:
 
     def _create_app(self) -> Flask:
         app = Flask(__name__)
+
+        # Return 503 for all trading/account/market endpoints while the backend
+        # is still initialising (login + price-DB preload not yet complete).
+        # /health and /favicon.ico are always served so callers can poll readiness.
+        @app.before_request
+        def _require_backend_ready():
+            exempt = ('/health', '/favicon.ico', '/control/start-backend')
+            if request.path not in exempt and not self._running:
+                return jsonify({"ok": False, "error": "backend initializing, please retry"}), 503
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         @app.route('/favicon.ico')
@@ -189,17 +207,20 @@ class ArenaX_BrokerSideServer:
             if not anchor_time:
                 return jsonify({"ok": False, "error": "anchor_time is required"}), 400
             parsed_time = datetime.fromisoformat(anchor_time)
-            preloaded = self.set_system_time(parsed_time)
-            return jsonify({"ok": True, "preloaded_symbols": preloaded})
+            success = self.set_system_time(parsed_time)
+            return jsonify({"ok": success})
 
         @app.get("/control/get-time")
         def control_get_time():
             t = self.backend.market.get_market_time()
+            # All datetime fields are serialised as ISO 8601 strings.
+            # They are naive datetimes representing Asia/Taipei local time;
+            # callers must NOT apply any timezone conversion.
             return jsonify({
-                "real_init_time": t["real_init_time"],
-                "real_current_time": t["real_current_time"],
-                "mock_init_time": t["mock_init_time"],
-                "mock_current_time": t["mock_current_time"],
+                "real_init_time":    t["real_init_time"].isoformat(),
+                "real_current_time": t["real_current_time"].isoformat(),
+                "mock_init_time":    t["mock_init_time"].isoformat(),
+                "mock_current_time": t["mock_current_time"].isoformat(),
                 "playback_speed": t["playback_speed"],
                 "paused": t.get("paused", False),
                 "paused_time": t["paused_time"].isoformat() if t.get("paused_time") else None,
@@ -228,8 +249,8 @@ class ArenaX_BrokerSideServer:
         @app.get("/control/get-config")
         def control_get_config():
             return jsonify({
-                "server_config": server_config,
-                "backend_config": backend_config,
+                "internal_config": internal_config,
+                "external_config": external_config,
             })
 
         @app.get("/control/get-price")
@@ -444,14 +465,19 @@ class ArenaX_BrokerSideServer:
         real_init_time: Optional[datetime] = None,
         auto_start_progress: bool = True,
         auto_preload_data: bool = True
-    ) -> list[str]:
-        if real_init_time is None:
-            real_init_time = datetime.now()
-        self.backend.market.set_historical_time_abs(real_init_time, mock_init_time)
-        if not auto_start_progress:
-            self.backend.market.pause_time_progress()
-        if auto_preload_data:
-            self._preload_data(None, None)
+    ) -> bool:
+        try:
+            if real_init_time is None:
+                real_init_time = datetime.now()
+            self.backend.market.set_historical_time_abs(real_init_time, mock_init_time)
+            if not auto_start_progress:
+                self.backend.market.pause_time_progress()
+            if auto_preload_data:
+                self._preload_data(None, None)
+            return True
+        except Exception as e:
+            print(f"Error in set_system_time: {e}")
+            return False
 
     # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
     # NOTE: What if in the future `start_backend()` will not be automatically called when `start_http()`,
@@ -503,6 +529,28 @@ class ArenaX_BrokerSideServer:
         while not self._stop_event.is_set():
             if hasattr(self.backend, "_check_if_any_order_filled"):
                 self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
+
+            # NOTE: Time skipping logic is here because high frequency of calling _matching_loop.
+            #       It might be a bit weird but just a trade-off (we don't want to create a specific
+            #       high-frequency background thread just to manage the time skipping.)
+            # Auto-skip non-trading hours (after 13:30 / weekends) for backtest acceleration.
+            # Server manages this internally; cjtrade_system does NOT need to call adjust_time().
+            if self._skip_non_trading_hours:
+                if not self.backend.market.is_market_open():
+                    mock_time = self.backend.market.get_market_time()["mock_current_time"]
+                    # Find next weekday 9:00 AM
+                    next_open = (mock_time + timedelta(days=1)).replace(
+                        hour=9, minute=0, second=0, microsecond=0
+                    )
+                    while next_open.weekday() >= 5:  # skip Saturday / Sunday
+                        next_open += timedelta(days=1)
+                    hours_to_jump = (next_open - mock_time).total_seconds() / 3600
+                    # log.info(
+                    #     f"⏭️  Market closed ({mock_time:%Y-%m-%d %H:%M}), "
+                    #     f"jumping {hours_to_jump:.1f}h → {next_open:%Y-%m-%d %H:%M}"
+                    # )
+                    self.backend.market.adjust_time(hours_to_jump)
+
             self._stop_event.wait(self._match_interval)
             # self._stop_event.wait(100)
 

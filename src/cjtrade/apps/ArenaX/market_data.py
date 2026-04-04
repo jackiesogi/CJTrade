@@ -121,8 +121,8 @@ class ArenaX_Market:
             hours: Number of hours to shift (can be negative)
         """
         self.manual_time_offset += timedelta(hours=hours)
-        print(f"Mock time adjusted by {hours:+.1f} hours")
-        print(f"Total manual offset: {self.manual_time_offset.total_seconds() / 3600:+.1f} hours")
+        # print(f"Mock time adjusted by {hours:+.1f} hours")
+        # print(f"Total manual offset: {self.manual_time_offset.total_seconds() / 3600:+.1f} hours")
 
     def get_market_time(self):
         real_current_time = datetime.now()

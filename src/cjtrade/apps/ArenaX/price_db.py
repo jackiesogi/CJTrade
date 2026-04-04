@@ -2,6 +2,7 @@
 # 藉由一次一次的 price fetching 來慢慢填滿 local database,
 # 這樣等到資料慢慢齊全後, price fetching 就會越來越快,
 # 同時也減少對 broker-api usage 的壓力
+import threading
 from datetime import datetime
 from typing import List
 from typing import Optional
@@ -21,17 +22,27 @@ from cjtrade.pkgs.models.kbar import Kbar
 class ArenaX_LocalPriceDB:
     def __init__(self, path):
         self.path = path
-        self.conn = None
+        self._local = threading.local()  # per-thread connection storage
+
+    @property
+    def conn(self):
+        """Return the sqlite3 connection for the current thread, opening one lazily if needed."""
+        if not getattr(self._local, 'conn', None):
+            self._local.conn = connect_sqlite(self.path)
+            # Ensure that the necessary tables are created (and migrated if needed)
+            prepare_arenax_local_price_db_tables(conn=self._local.conn)
+        return self._local.conn
 
     def connect(self):
-        self.conn = connect_sqlite(self.path)
-        # Ensure that the necessary tables are created (and migrated if needed)
-        prepare_arenax_local_price_db_tables(conn=self.conn)
+        """Eagerly open a connection for the current thread (optional; conn is lazy by default)."""
+        _ = self.conn  # trigger lazy init
 
     def disconnect(self):
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        """Close the connection for the current thread only."""
+        c = getattr(self._local, 'conn', None)
+        if c:
+            c.close()
+            self._local.conn = None
 
     # ------------------------------------------------------------------
     # Price data CRUD

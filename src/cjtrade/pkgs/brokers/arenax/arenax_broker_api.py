@@ -419,7 +419,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return [Trade(**o) for o in odrs]
 
     def is_market_open(self) -> bool:
-        return self.api.market.is_market_open()
+        return self.middleware.is_market_open()
 
     def get_broker_name(self) -> str:
         return "arenax"
@@ -427,19 +427,18 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def get_market_time(self) -> dict:
         return self.get_system_time()
 
+    # 所有 datetime 在 JSON 邊界都用 .isoformat() 序列化
+    # 接收方用 fromisoformat() 反序列化 任何地方不做 timezone 轉換!!
+    # 所有 datetime 都是 隱性台北時間的 naive datetime
     def get_system_time(self) -> dict:
-
-        def to_datetime(rfc1223_str):
-            return datetime.strptime(rfc1223_str, '%a, %d %b %Y %H:%M:%S %Z')
-
-        # middleware systime returns rfc1223 str, need conversion
+        # Server emits all datetime fields as ISO 8601 (naive Asia/Taipei).
+        # Parse with fromisoformat(); no timezone conversion needed.
         t = self.middleware.get_system_time()
-
         return {
-            "mock_current_time": to_datetime(t['mock_current_time']),
-            "real_current_time": to_datetime(t['real_current_time']),
-            "mock_init_time": to_datetime(t['mock_init_time']),
-            "real_init_time": to_datetime(t['real_init_time']),
+            "mock_current_time": datetime.fromisoformat(t['mock_current_time']),
+            "real_current_time": datetime.fromisoformat(t['real_current_time']),
+            "mock_init_time":    datetime.fromisoformat(t['mock_init_time']),
+            "real_init_time":    datetime.fromisoformat(t['real_init_time']),
         }
 
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:

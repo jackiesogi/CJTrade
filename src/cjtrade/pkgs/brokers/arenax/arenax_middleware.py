@@ -1,3 +1,5 @@
+from datetime import time as dt_time
+
 import requests
 from cjtrade.pkgs.models import *
 from flask import jsonify
@@ -70,6 +72,15 @@ class ArenaXMiddleWare:
             print(f"Failed to get system time: {t.get('error') if t else 'No response'}")
             return None
 
+    def is_market_open(self, **kwargs) -> bool:
+        # mock_current_time is an ISO 8601 naive datetime (Asia/Taipei).
+        # No timezone conversion — parse as-is.
+        mct = self.get_system_time()["mock_current_time"]
+        dt = datetime.fromisoformat(mct)
+        return (
+            dt.weekday() < 5 and
+            dt_time(9, 0) <= dt.time() <= dt_time(13, 30)
+        )
 
     def get_config(self, **kwargs):
         return self._get("control/get-config")
@@ -86,14 +97,15 @@ class ArenaXMiddleWare:
     def resume_time_progress(self, **kwargs):
         return self._post("control/resume-time-progress", headers=kwargs.get("headers"))
 
-    def set_system_time(self, mock_init_time: str, days_back: int = 5, preload_symbols: list | None = None, **kwargs):
+    def set_system_time(self, mock_init_time: str, real_init_time: str = None, auto_start_progress: bool = True, auto_preload_data: bool = True, **kwargs):
         data = {
             "anchor_time": mock_init_time,
-            "days_back": days_back,
+            # "real_init_time": real_init_time,
+            # "auto_start_progress": auto_start_progress,
+            # "auto_preload_data": auto_preload_data,
         }
-        if preload_symbols:
-            data["preload_symbols"] = preload_symbols
         return self._post("control/set-time", data, headers=kwargs.get("headers"))
+        # return self._post("control/set-time", data, headers=kwargs.get("headers"))
 
     def get_price_from_exchange(self, symbol: str, **kwargs):
         # server exposes GET /control/get-price?symbol=<symbol>
@@ -221,6 +233,15 @@ class ArenaXMiddleWare:
 if __name__ == "__main__":
     import time
     a = ArenaXMiddleWare()
+    # test is_market_open()
+    # 2021-10-01 09:30:00+08:00 in RFC 1123 format
+    dt = datetime(2021, 10, 1, 9, 30, tzinfo=ZoneInfo("Asia/Taipei"))
+    iso_time = dt.isoformat()
+    print(f"Testing is_market_open() with mock time {iso_time}...")
+    print(a.set_system_time(iso_time))
+    print(f"Market open status: {a.is_market_open()}")
+
+    exit(0)
     print(a.start_backend())
     print(a.check_health())
     print(a.stop_backend())
