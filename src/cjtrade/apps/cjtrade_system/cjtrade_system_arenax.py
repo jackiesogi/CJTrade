@@ -4,8 +4,8 @@ Minimal Viable Trading System PoC
 import asyncio
 import logging
 import os
-import random
 import signal
+import time
 from asyncio import Queue
 from dataclasses import dataclass
 from datetime import datetime
@@ -77,7 +77,7 @@ def load_cjsys(broker: str, mode: str):
     log.info(f"Loading config file {file_to_load}")
     load_dotenv(file_to_load, override=False)
     keys = ['CJSYS_WATCH_LIST', 'CJSYS_ANALYSIS_INTERVAL', 'CJSYS_CHECK_FILL_INTERVAL', 'CJSYS_BACKTEST_DURATION_DAYS',
-            'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL', 'CJSYS_PRICE_MONITOR_INTERVAL',
+            'CJSYS_BACKTEST_PLAYBACK_SPEED', 'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL', 'CJSYS_PRICE_MONITOR_INTERVAL',
             'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT']
     for key in keys:
         if os.environ.get(key):
@@ -900,6 +900,11 @@ async def async_main():
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 """)
     log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in ['hist', 'none'] else 'LIVE'}")
+    print("CJTrade System is about to launch", end=" ")
+    countdown = 8
+    for i in range(countdown, 0, -1):
+        print(f"...", end="", flush=True)
+        time.sleep(1)
 
     try:
         while not SHUTDOWN:

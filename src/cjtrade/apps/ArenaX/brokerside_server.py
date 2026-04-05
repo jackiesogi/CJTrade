@@ -122,9 +122,9 @@ class ArenaX_BrokerSideServer:
         if backend is not None:
             self.backend = backend
         else:
-            # TODO: Add more backend config
             if backend_str == "hist":
                 # Current default, ArenaX use sinopac backend for price feed.
+                # print(f"internal_config: {internal_config}")
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
             elif backend_str == "live":

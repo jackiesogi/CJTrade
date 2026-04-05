@@ -18,10 +18,7 @@
 
 set -e
 
-# start server
-uv run arenaxd > /dev/null 2>&1 &
-pid=$!
-trap "kill $pid" EXIT
+ARENAX_PID=""
 
 function ping_server_backend() {
     local url="http://127.0.0.1:8801/health"
@@ -39,17 +36,25 @@ function ping_server_backend() {
     check_status
 }
 
-if ! ping_server_backend > /dev/null; then
+# Only kill the server on exit if *this script* started it.
+cleanup() {
+    if [[ -n "$ARENAX_PID" ]]; then
+        kill "$ARENAX_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+if ping_server_backend > /dev/null; then
+    echo -e "${GREEN}ArenaX server is already running.${NC}"
+else
     echo "Starting ArenaX broker server..."
-    # uv run arenaxd --backend=hist > /dev/null 2>&1 &
-    uv run arenaxd > /dev/null 2>&1 &  # for simplicity
+    uv run arenaxd > /dev/null 2>&1 &
     ARENAX_PID=$!
 
-    # start the server in background
     echo -n "Waiting for server to be ready..."
     for i in {1..60}; do
         if ping_server_backend > /dev/null; then
-            echo -e " ${GREEN}Ready!${NC}"
+            echo -e " Ready!"
             sleep 2  # wait a bit to ensure server is fully up
             break
         fi
@@ -58,11 +63,9 @@ if ! ping_server_backend > /dev/null; then
     done
 
     if ! ping_server_backend > /dev/null; then
-        echo -e "\n${RED}Error: ArenaX server did not start within expected time.${NC}"
+        echo -e "\nError: ArenaX server did not start within expected time."
         exit 1
     fi
-else
-    echo -e "${GREEN}ArenaX server is already running.${NC}"
 fi
 
 

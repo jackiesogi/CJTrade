@@ -127,12 +127,17 @@ def _load_user_cjsys(broker: str, mode: str) -> dict:
 
 
 def _build_server_overrides(user_cfg: dict, mode: str) -> dict:
-    """Extract server-relevant keys from the user config dict."""
+    """Extract server-relevant keys from the user config dict.
+
+    CLI-set environment variables (os.environ) take precedence over values
+    from the .cjsys config file.
+    """
     overrides = {}
     for cjsys_key, srv_key in _SERVER_KEY_MAP.items():
-        val = user_cfg.get(cjsys_key)
-        if val is not None and val.strip():
-            overrides[srv_key] = val.strip()
+        # CLI env vars win; fall back to the .cjsys file value
+        val = os.environ.get(cjsys_key) or user_cfg.get(cjsys_key)
+        if val is not None and str(val).strip():
+            overrides[srv_key] = str(val).strip()
 
     # Type coercions
     if "backtest_duration_days" in overrides:
@@ -230,6 +235,8 @@ class ArenaXRunner:
 
         # Merge user-derived server settings into internal_config
         internal_config.update(srv_overrides)
+        # print(f"try to override internal_config with... {srv_overrides}")
+        # print(f"internal_config after override: {internal_config}")
 
         # Create server (reads internal_config / external_config at construction time)
         self._server = ArenaX_BrokerSideServer(

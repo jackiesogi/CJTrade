@@ -19,6 +19,7 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
         skip_data_preload: bool = False,
         **kwargs
     ) -> None:
+        # print(f"playback_speed: {playback_speed}, num_days_preload: {num_days_preload}, skip_data_preload: {skip_data_preload}")
         super().__init__(
             state_file=state_file,
             real_account=real_account,
