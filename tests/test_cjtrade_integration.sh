@@ -97,7 +97,7 @@ for arg in "$@"; do
 done
 
 # ============= Setup =============
-CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell.py --broker=${BROKER}"
+CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell_legacy.py --broker=${BROKER}"
 
 # Initialize log file
 if [ "$ENABLE_LOGGING" = true ]; then

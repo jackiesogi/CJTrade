@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple wrapper to run integration tests via 'uv run test'
+Simple wrapper to run integration tests via 'uv run atest'
 """
 import subprocess
 import sys

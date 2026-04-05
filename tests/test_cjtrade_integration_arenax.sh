@@ -18,6 +18,54 @@
 
 set -e
 
+# start server
+uv run arenaxd > /dev/null 2>&1 &
+pid=$!
+trap "kill $pid" EXIT
+
+function ping_server_backend() {
+    local url="http://127.0.0.1:8801/health"
+
+    function check_status() {
+        local response
+        response=$(curl -s --max-time 3 "$url" 2>/dev/null) || return 1
+        if [[ $(echo "$response" | jq -r '.running' 2>/dev/null) == "true" ]]; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
+    check_status
+}
+
+if ! ping_server_backend > /dev/null; then
+    echo "Starting ArenaX broker server..."
+    # uv run arenaxd --backend=hist > /dev/null 2>&1 &
+    uv run arenaxd > /dev/null 2>&1 &  # for simplicity
+    ARENAX_PID=$!
+
+    # start the server in background
+    echo -n "Waiting for server to be ready..."
+    for i in {1..60}; do
+        if ping_server_backend > /dev/null; then
+            echo -e " ${GREEN}Ready!${NC}"
+            sleep 2  # wait a bit to ensure server is fully up
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    if ! ping_server_backend > /dev/null; then
+        echo -e "\n${RED}Error: ArenaX server did not start within expected time.${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}ArenaX server is already running.${NC}"
+fi
+
+
 # ============= Configuration =============
 DEFAULT_BROKER="arenax"
 BROKER="${DEFAULT_BROKER}"
@@ -97,7 +145,7 @@ for arg in "$@"; do
 done
 
 # ============= Setup =============
-CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell_arenax.py --broker=${BROKER}"
+CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell.py --broker=${BROKER}"
 
 # Initialize log file
 if [ "$ENABLE_LOGGING" = true ]; then
