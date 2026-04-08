@@ -170,6 +170,30 @@ class ArenaXMiddleWare:
             print(f"Failed to get snapshot for {symbol}: {res.get('error') if res else 'No response'}")
             return None
 
+    def get_kbars(self, symbol: str, start: str, end: str,
+                  interval: str = "1m") -> list:
+        """Fetch historical kbars from the ArenaX server.
+
+        Parameters
+        ----------
+        symbol : str   e.g. '2330'
+        start  : str   ISO date or datetime string, e.g. '2024-01-02'
+        end    : str   ISO date or datetime string, e.g. '2024-06-30'
+        interval : str e.g. '1m', '5m', '1d'
+
+        Returns
+        -------
+        list[dict]  raw dicts with keys: timestamp, open, high, low, close, volume
+        """
+        res = self._get(
+            f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
+        )
+        if res and res.get("ok"):
+            return res.get("result", [])
+        err = res.get("error") if res else "No response"
+        print(f"Failed to get kbars for {symbol}: {err}")
+        return []
+
 
     def place_order(self, order: Order, **kwargs) -> OrderResult:
         # Serialize Order to JSON-serializable payload

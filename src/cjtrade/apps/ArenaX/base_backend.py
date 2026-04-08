@@ -138,7 +138,7 @@ class ArenaX_BackendBase:
         self._update_position_prices()
         return self.account_state.positions
 
-    def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
+    def kbars_yf(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
         yf_symbol = f"{symbol}.TW"
 
         try:
@@ -180,6 +180,16 @@ class ArenaX_BackendBase:
 
             return kbars
 
+        except Exception as exc:
+            print(f"Error loading kbars for {symbol}: {exc}")
+            return []
+
+    def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
+        yf_symbol = f"{symbol}.TW"
+
+        try:
+            kbars = self.real_account.get_kbars(start=start, end=end, product=Product(symbol=symbol), interval="1m")
+            return kbars
         except Exception as exc:
             print(f"Error loading kbars for {symbol}: {exc}")
             return []

@@ -461,7 +461,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
     ##### SIMPLE HIGH-LEVEL METHODS (START) #####
     # Simple API with default config
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,  # Assuming TSE for simplicity
@@ -483,7 +483,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         return self.commit_order()
 
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
