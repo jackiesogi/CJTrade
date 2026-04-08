@@ -213,6 +213,10 @@ class ArenaX_BrokerSideServer:
         @app.get("/control/get-time")
         def control_get_time():
             t = self.backend.market.get_market_time()
+
+            if self._skip_non_trading_hours:
+                self._skip_to_trading_hours()
+
             # All datetime fields are serialised as ISO 8601 strings.
             # They are naive datetimes representing Asia/Taipei local time;
             # callers must NOT apply any timezone conversion.
@@ -536,23 +540,26 @@ class ArenaX_BrokerSideServer:
             # Auto-skip non-trading hours (after 13:30 / weekends) for backtest acceleration.
             # Server manages this internally; cjtrade_system does NOT need to call adjust_time().
             if self._skip_non_trading_hours:
-                if not self.backend.market.is_market_open():
-                    mock_time = self.backend.market.get_market_time()["mock_current_time"]
-                    # Find next weekday 9:00 AM
-                    next_open = (mock_time + timedelta(days=1)).replace(
-                        hour=9, minute=0, second=0, microsecond=0
-                    )
-                    while next_open.weekday() >= 5:  # skip Saturday / Sunday
-                        next_open += timedelta(days=1)
-                    hours_to_jump = (next_open - mock_time).total_seconds() / 3600
-                    # log.info(
-                    #     f"⏭️  Market closed ({mock_time:%Y-%m-%d %H:%M}), "
-                    #     f"jumping {hours_to_jump:.1f}h → {next_open:%Y-%m-%d %H:%M}"
-                    # )
-                    self.backend.market.adjust_time(hours_to_jump)
+                self._skip_to_trading_hours()
 
             self._stop_event.wait(self._match_interval)
             # self._stop_event.wait(100)
+
+    def _skip_to_trading_hours(self):
+        if not self.backend.market.is_market_open():
+            mock_time = self.backend.market.get_market_time()["mock_current_time"]
+            # Find next weekday 9:00 AM
+            next_open = (mock_time + timedelta(days=1)).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+            while next_open.weekday() >= 5:  # skip Saturday / Sunday
+                next_open += timedelta(days=1)
+            hours_to_jump = (next_open - mock_time).total_seconds() / 3600
+            # log.info(
+            #     f"⏭️  Market closed ({mock_time:%Y-%m-%d %H:%M}), "
+            #     f"jumping {hours_to_jump:.1f}h → {next_open:%Y-%m-%d %H:%M}"
+            # )
+            self.backend.market.adjust_time(hours_to_jump)
 
 def main():
     import argparse
