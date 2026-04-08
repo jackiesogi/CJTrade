@@ -52,6 +52,7 @@ PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
 @dataclass
 class ArenaX_AccountState:
     balance: float = 0.0
+    initial_balance: float = 0.0          # set once at login; never mutated afterwards
     positions: List[object] = None
     orders_placed: List[object] = None
     orders_committed: List[object] = None
@@ -78,6 +79,7 @@ class ArenaX_BackendBase:
         playback_speed: float = 1.0,
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
+        initial_balance: float = 0.0,
     ) -> None:
         # print(f"num_days_preload: {num_days_preload}")
         self.account_state_default_file = state_file
@@ -88,6 +90,7 @@ class ArenaX_BackendBase:
         self.num_days_preload = num_days_preload
         self.skip_data_preload = skip_data_preload
         self._connected = False
+        self._initial_balance_override = initial_balance  # stored for use in login()
         self.account_state = ArenaX_AccountState()
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
@@ -99,6 +102,14 @@ class ArenaX_BackendBase:
                 self._sync_with_real_account()
             else:
                 self._sync_with_mock_account_file()
+
+            # Stamp initial_balance once per session (after state is loaded so we
+            # can fall back to the loaded balance when no explicit override is given).
+            if self._initial_balance_override > 0:
+                self.account_state.initial_balance = self._initial_balance_override
+            elif self.account_state.initial_balance == 0.0:
+                # First run: treat the starting cash as initial_balance
+                self.account_state.initial_balance = self.account_state.balance
 
             print("Simulation environment started")
             return True
@@ -241,7 +252,7 @@ class ArenaX_BackendBase:
                     daily_high = round(daily_high, 2)
                     daily_low = round(daily_low, 2)
 
-                    return Snapshot(
+                    snap = Snapshot(
                         symbol=symbol,
                         exchange="TSE",
                         timestamp=adjusted_mock_time,
@@ -257,6 +268,7 @@ class ArenaX_BackendBase:
                         sell_price=round(current_price + 0.5, 2),
                         sell_volume=int(current_volume // 10),
                     )
+                    return snap
 
         return self._create_fallback_snapshot(symbol, adjusted_mock_time)
 
@@ -672,6 +684,9 @@ class ArenaX_BackendBase:
                         "quantity": qty_signed,
                         "price": order.price,
                         "time": fill_time.isoformat(),
+                        # Propagate session_id from the order so the client can
+                        # filter fill_history by session after the backtest ends.
+                        "session_id": order.opt_field.get("session_id") if order.opt_field else None,
                     })
                     print("Order filled:", order.id)
 

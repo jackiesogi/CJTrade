@@ -57,6 +57,32 @@ class Snapshot:
     sell_volume: int
     additional_note: Optional[str] = None
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Snapshot":
+        ts = d.get("timestamp")
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts)
+        action = d.get("action")
+        if isinstance(action, str):
+            action = OrderAction(action)
+        return cls(
+            symbol=d["symbol"],
+            exchange=d["exchange"],
+            timestamp=ts,
+            open=float(d["open"]),
+            close=float(d["close"]),
+            high=float(d["high"]),
+            low=float(d["low"]),
+            volume=int(d["volume"]),
+            average_price=float(d["average_price"]),
+            action=action,
+            buy_price=float(d["buy_price"]),
+            buy_volume=int(d["buy_volume"]),
+            sell_price=float(d["sell_price"]),
+            sell_volume=int(d["sell_volume"]),
+            additional_note=d.get("additional_note"),
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "symbol": self.symbol,

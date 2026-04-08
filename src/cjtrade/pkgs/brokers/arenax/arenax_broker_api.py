@@ -111,7 +111,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         for product in products:
             snapshot = self.api.snapshot(product.symbol)
             if snapshot:
-                snapshots.append(snapshot)
+                snapshots.append(Snapshot.from_dict(snapshot) if isinstance(snapshot, dict) else snapshot)
 
         return snapshots
 
@@ -201,7 +201,8 @@ class ArenaXBrokerAPI(BrokerAPIBase):
     def get_system_time(self) -> datetime:
         return self.api.market.get_market_time()['mock_current_time']
 
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                  opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -215,7 +216,8 @@ class ArenaXBrokerAPI(BrokerAPIBase):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
-            price=price
+            price=price,
+            opt_field=opt_field or {},
         )
 
         tmp = self.place_order(order)
@@ -224,7 +226,8 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         else:
             return self.commit_order()
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                   opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -238,7 +241,8 @@ class ArenaXBrokerAPI(BrokerAPIBase):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
-            price=price
+            price=price,
+            opt_field=opt_field or {},
         )
 
         tmp = self.place_order(order)
@@ -323,7 +327,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         snapshots = []
         for product in products:
             snapshot = self.middleware.snapshot(product.symbol)
-            snapshot = Snapshot(**snapshot) if snapshot else None
+            snapshot = Snapshot.from_dict(snapshot) if snapshot else None
             if snapshot:
                 snapshots.append(snapshot)
 
@@ -441,7 +445,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             "real_init_time":    datetime.fromisoformat(t['real_init_time']),
         }
 
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                  opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -455,7 +460,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
-            price=price
+            price=price,
+            opt_field=opt_field or {},
         )
 
         tmp = self.place_order(order)
@@ -464,7 +470,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         else:
             return self.commit_order()
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                   opt_field: dict = None) -> OrderResult:
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -478,7 +485,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             order_type=OrderType.ROD,
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common,
             quantity=quantity,
-            price=price
+            price=price,
+            opt_field=opt_field or {},
         )
 
         tmp = self.place_order(order)

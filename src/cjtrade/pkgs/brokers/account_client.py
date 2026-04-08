@@ -152,8 +152,10 @@ class AccountClient:
     def current_broker_type(self) -> BrokerType:
         return self.broker_type
 
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
-        return self.broker_api.buy_stock(symbol, quantity, price, intraday_odd)
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                  opt_field: dict = None) -> OrderResult:
+        return self.broker_api.buy_stock(symbol, quantity, price, intraday_odd, opt_field=opt_field)
 
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
-        return self.broker_api.sell_stock(symbol, quantity, price, intraday_odd)
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                   opt_field: dict = None) -> OrderResult:
+        return self.broker_api.sell_stock(symbol, quantity, price, intraday_odd, opt_field=opt_field)

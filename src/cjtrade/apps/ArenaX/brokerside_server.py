@@ -293,6 +293,21 @@ class ArenaX_BrokerSideServer:
                 "orders": o if o is not None else None,
             })
 
+        # Raw backtest data for the client to build a BacktestResult locally.
+        # The backend only records; the client decides how to analyse.
+        # NOTE: equity_curve is intentionally NOT included here.  The client
+        # (cjtrade_system) records it locally during the backtest run so the
+        # server doesn't accumulate unbounded in-memory data across sessions.
+        @app.get("/account/backtest-state")
+        def backtest_state():
+            state = self.backend.account_state
+            return jsonify({
+                "ok": True,
+                "initial_balance": state.initial_balance,
+                "final_balance": state.balance,
+                "fill_history": state.fill_history,
+            })
+
 
         @app.post("/trade/place-order")
         def place_order():

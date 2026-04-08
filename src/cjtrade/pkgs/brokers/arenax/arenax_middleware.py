@@ -134,6 +134,34 @@ class ArenaXMiddleWare:
             res['orders'] = summary.get("orders", [])
             return res
 
+    def get_backtest_state(self, session_id: str = None, **kwargs) -> dict:
+        """Fetch raw backtest data from the server.
+
+        Returns a dict with keys: initial_balance, final_balance, fill_history.
+        equity_curve is NOT fetched from the server; the client (cjtrade_system)
+        records it locally during the backtest run.
+
+        Args:
+            session_id: If provided, fill_history is filtered to only include
+                        entries that match this session_id.  This allows clean
+                        isolation when the server has been running across multiple
+                        backtest sessions or manual operations.
+        """
+        res = self._get("account/backtest-state")
+        if res and res.get("ok"):
+            fill_history = res.get("fill_history", [])
+            if session_id is not None:
+                fill_history = [
+                    f for f in fill_history
+                    if f.get("session_id") == session_id
+                ]
+            return {
+                "initial_balance": res.get("initial_balance", 0.0),
+                "final_balance": res.get("final_balance", 0.0),
+                "fill_history": fill_history,
+            }
+        return None
+
     def snapshot(self, symbol: str, **kwargs) -> dict:
         res = self._get(f"market/snapshot?symbol={symbol}")
         if res and res.get("ok"):

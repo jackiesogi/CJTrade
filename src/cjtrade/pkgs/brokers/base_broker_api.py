@@ -155,9 +155,11 @@ class BrokerAPIBase(ABC):
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
     @abstractmethod
-    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                  opt_field: dict = None) -> OrderResult:
         pass
 
     @abstractmethod
-    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True) -> OrderResult:
+    def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
+                   opt_field: dict = None) -> OrderResult:
         pass

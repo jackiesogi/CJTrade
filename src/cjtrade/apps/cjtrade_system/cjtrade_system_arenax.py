@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import time
+import uuid
 from asyncio import Queue
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +16,7 @@ from typing import List
 from typing import Optional
 
 import numpy as np
+from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
@@ -24,6 +26,7 @@ from cjtrade.pkgs.llm.chatpdf import ChatPDFClient
 from cjtrade.pkgs.llm.gemini import GeminiClient
 from cjtrade.pkgs.llm.llm_pool import LLMPool
 from cjtrade.pkgs.models import Product
+from cjtrade.pkgs.models.backtest import BacktestResult
 from dotenv import load_dotenv
 
 
@@ -223,6 +226,18 @@ class TradingSystem:
         log.info(f"📊 Initial State: Balance={self.initial_balance:.2f}, Equity={self.initial_equity:.2f}")
         log.info(f"💼 Existing positions: {', '.join(self.initial_position_symbols) if self.initial_position_symbols else 'None'}")
 
+        # ── Backtest session tracking ─────────────────────────────────────────
+        # Unique ID stamped on every order placed this session.
+        # The server propagates it into fill_history so we can filter exactly
+        # this run's trades when building BacktestResult after the backtest ends.
+        self.session_id: str = str(uuid.uuid4())
+        self.session_start_time: str = datetime.now().isoformat()
+        # Client-side equity curve recorded after every snapshot() call.
+        # {"time": ISO-minute, "value": total_portfolio_float}
+        self._equity_curve: List[Dict] = []
+        self._equity_last_minute: str = ""   # dedup key: only one point per minute
+        log.info(f"🔑 Session ID: {self.session_id}")
+
         api_key_1 = os.getenv("AZURE_OPENAI_API_KEY")
         api_key_2 = os.getenv("CHATPDF_APIKEY")
         api_key_3 = os.getenv("GEMINI_API_KEY")
@@ -270,12 +285,69 @@ class TradingSystem:
         try:
             balance = self.client.get_balance()
             positions = self.client.get_positions()
-
             position_value = sum(p.market_value for p in positions) if positions else 0
             return balance + position_value
         except Exception as e:
             log.error(f"Failed to get total equity: {e}")
             return 0.0
+
+    def _record_equity_point(self, snapshot_time: datetime, snapshot_price: float, symbol: str) -> None:
+        """Append one equity sample to the local equity curve (deduped by minute).
+
+        Uses the price already fetched by monitor_prices() so no extra HTTP call
+        is made.  Balance and other positions' prices come from the last values
+        already cached on the client (get_balance / get_positions one call each,
+        not per-symbol).
+        """
+        minute_key = snapshot_time.replace(second=0, microsecond=0).isoformat()
+        if minute_key == self._equity_last_minute:
+            return  # already recorded this minute
+
+        # Mark the minute as "attempted" immediately so we never loop-retry on error
+        self._equity_last_minute = minute_key
+
+        try:
+            balance = self.client.get_balance()
+            positions = self.client.get_positions() or []
+            position_value = sum(
+                (snapshot_price if p.symbol == symbol else p.current_price) * p.quantity
+                for p in positions
+            )
+            total = round(balance + position_value, 2)
+            self._equity_curve.append({"time": minute_key, "value": total})
+            log.debug(f"📈 Equity point recorded: {minute_key} = {total:,.2f}")
+        except Exception as e:
+            log.warning(f"_record_equity_point failed ({minute_key}): {e}")
+
+    def build_backtest_result(self) -> Optional[BacktestResult]:
+        """Fetch fill_history from the server filtered by session_id and assemble
+        a BacktestResult.
+
+        Call this immediately after the backtest loop exits, before client.disconnect().
+        """
+        try:
+            middleware = self.client.broker_api.middleware
+            raw = middleware.get_backtest_state(session_id=self.session_id)
+            if raw is None:
+                log.warning("get_backtest_state() returned None – BacktestResult not built")
+                return None
+
+            result = BacktestResult(
+                initial_balance=self.initial_balance,
+                final_balance=raw["final_balance"],
+                equity_curve=list(self._equity_curve),
+                fill_history=raw["fill_history"],   # already filtered by session_id
+                session_id=self.session_id,
+                start_time=self.session_start_time,
+            )
+            log.info(
+                f"📦 BacktestResult built: {len(result.equity_curve)} equity points, "
+                f"{len(result.fill_history)} fills"
+            )
+            return result
+        except Exception as e:
+            log.error(f"Failed to build BacktestResult: {e}")
+            return None
 
     def calculate_position_size(self, price: float) -> int:
         """Calculate safe position size based on risk control"""
@@ -502,6 +574,9 @@ class TradingSystem:
                         history_len = len(self.price_history[symbol])
                         log.info(f"  {symbol}: {price:.2f} (O:{snapshot.open:.2f} H:{snapshot.high:.2f} L:{snapshot.low:.2f}) | History: {history_len} prices")
 
+                        # Record equity curve point using this fresh price (deduped by minute)
+                        self._record_equity_point(snapshot.timestamp, price, symbol)
+
             except Exception as e:
                 log.error(f"Price monitoring error: {e}")
 
@@ -699,7 +774,8 @@ class TradingSystem:
                                 symbol,
                                 quantity=quantity,
                                 price=price * 1.01,
-                                intraday_odd=True
+                                intraday_odd=True,
+                                opt_field={"session_id": self.session_id},
                             )
 
                             trade_record = {
@@ -732,7 +808,8 @@ class TradingSystem:
                                 symbol,
                                 quantity=quantity,
                                 price=price * 0.99,
-                                intraday_odd=False
+                                intraday_odd=False,
+                                opt_field={"session_id": self.session_id},
                             )
 
                             trade_record = {
@@ -914,6 +991,15 @@ async def async_main():
 
     if LAUNCH_MODE == 'hist' or LAUNCH_MODE == 'none':
         system.print_backtest_summary()
+        # Build and persist BacktestResult immediately, before disconnect,
+        # so fill_history is still queryable on the server.
+        result = system.build_backtest_result()
+        if result is not None:
+            save_path = f"backtest_{system.session_id[:8]}.pkl"
+            result.save(save_path)
+            log.info(f"💾 BacktestResult saved → {save_path}")
+            # BacktestReport(result).summary()   # print key stats to stdout
+            BacktestReport(result).full_report()
 
     log.info("Shutting down tasks...")
     for task in tasks:

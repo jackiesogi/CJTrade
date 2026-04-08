@@ -27,6 +27,7 @@ dependencies = [
     "yfinance>=0.2.66",
     "pyreadline3; platform_system == 'Windows'",
     "openai>=2.26.0",
+    "quantstats>=0.0.81",
 ]
 
 [project.scripts]
