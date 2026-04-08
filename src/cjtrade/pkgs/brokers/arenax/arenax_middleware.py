@@ -14,7 +14,7 @@ class ArenaXMiddleWare:
     def _get(self, path: str):
         url = f"{self.base_url}/{path}"
         try:
-            res = requests.get(url, timeout=10)
+            res = requests.get(url, timeout=30)
             res.raise_for_status()
             return res.json()
         except requests.exceptions.RequestException as e:

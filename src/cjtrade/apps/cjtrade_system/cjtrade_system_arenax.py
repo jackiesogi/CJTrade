@@ -935,6 +935,15 @@ async def async_main():
     try:
         client.connect()
         log.info(f"Connected to {broker_type} broker")
+        # Resume server-side time progression now that the client is fully connected.
+        # The server pauses mock time right after initialisation so that client
+        # startup lag does not silently consume backtest time at high playback speed.
+        if LAUNCH_MODE in ('hist', 'none'):
+            try:
+                client.broker_api.middleware.resume_time_progress()
+                log.info("▶ Mock time resumed (client ready)")
+            except Exception as e:
+                log.warning(f"Could not resume time progress: {e}")
     except ConnectionError as e:
         print(f"Cannot connect to {broker_type} broker: {e}")
         exit(1)
