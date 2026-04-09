@@ -114,6 +114,7 @@ _SERVER_KEY_MAP = {
     "CJSYS_BACKTEST_PLAYBACK_SPEED":  "playback_speed",
     "CJSYS_SKIP_NON_TRADING_HOURS":   "skip_non_trading_hours",
     "CJSYS_STATE_FILE":               "state_file",
+    "CJSYS_WATCH_LIST":               "watch_list",
 }
 
 
@@ -239,7 +240,7 @@ class ArenaXRunner:
         internal_config.update(srv_overrides)
         # print(f"try to override internal_config with... {srv_overrides}")
         # print(f"internal_config after override: {internal_config}")
-        print(internal_config["skip_non_trading_hours"])
+        # print(internal_config["skip_non_trading_hours"])
 
         # Create server (reads internal_config / external_config at construction time)
         self._server = ArenaX_BrokerSideServer(

@@ -1,5 +1,15 @@
 #!/bin/bash
 
+function read_arenax_mode() {
+    read -p "Enter ArenaX mode (default: hist): " input
+    if [ -z "$input" ]; then
+        echo "No mode provided, defaulting to hist"
+        export ARENAX_MODE=hist
+    else
+        export ARENAX_MODE=$input
+    fi
+}
+
 function read_watch_list() {
     read -p "Enter watch list (comma-separated, e.g., 0050,2330,2357,2317): " input
     if [ -z "$input" ]; then
@@ -34,10 +44,12 @@ if [ "$1" == "default" ]; then
     export CJSYS_WATCH_LIST=1234
     export INITIAL_FUND=500000
     export DURATION_DAYS=5
+    export ARENAX_MODE=hist
 else
     read_watch_list
     read_initial_fund
     read_duration_days
+    read_arenax_mode
 fi
 
 # Clean up
@@ -72,4 +84,4 @@ LIMIT 30;
 USERNAME=CJ \
 CJSYS_STATE_FILE=arenax_CJ.json \
 CJSYS_BACKTEST_DURATION_DAYS=$DURATION_DAYS \
-uv run system --broker=arenax --mode=hist
+uv run system --broker=arenax --mode=$ARENAX_MODE
