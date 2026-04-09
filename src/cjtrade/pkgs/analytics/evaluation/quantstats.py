@@ -164,7 +164,7 @@ class BacktestReport:
     # quantstats report wrappers
     # ------------------------------------------------------------------
 
-    def full_report(self, path: str = None, open_browser: bool = True) -> str:
+    def full_report(self, path: str = None, open_browser: bool = True, title: str = None) -> str:
         """Save a full quantstats HTML tearsheet and optionally open it in the browser.
 
         Parameters
@@ -173,6 +173,9 @@ class BacktestReport:
             Output HTML file path.  Defaults to ``backtest_<session>.html``.
         open_browser : bool
             If True (default), open the saved file in the default browser.
+        title : str, optional
+            Custom title to display at the top of the HTML report (e.g., strategy name).
+            If None, defaults to "Strategy Tearsheet".
 
         Returns
         -------
@@ -185,11 +188,17 @@ class BacktestReport:
         if path is None:
             sid = (self.result.session_id or "result")[:8]
             path = f"backtest_{sid}.html"
+
+        # Use provided title or default
+        report_title = title or "Strategy Tearsheet"
+
         qs.reports.html(
             self.returns,
             output=path,
             periods_per_year=self.result._returns_periods_per_year,
+            title=report_title,
         )
+
         abs_path = os.path.abspath(path)
         print(f"[BacktestReport] HTML saved → {abs_path}")
         if open_browser:

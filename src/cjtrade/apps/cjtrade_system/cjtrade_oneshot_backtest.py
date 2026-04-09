@@ -55,6 +55,7 @@ from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
 from cjtrade.pkgs.strategy.dca_1M import DCA_Monthly
+from cjtrade.pkgs.strategy.snr_1m import SupportResistanceStrategy
 from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
@@ -187,7 +188,8 @@ def run_oneshot(
     html_path = report_path or f"oneshot_{safe_label}_{session_id[:8]}.html"
     report = BacktestReport(result)
     report.summary()
-    report.full_report(path=html_path, open_browser=open_browser)
+    strategy_title = getattr(strategy, 'name', 'UnnamedStrategy')
+    report.full_report(path=html_path, open_browser=open_browser, title=f"Backtest Report: {strategy_title}")
 
 def run_compare_strategies(
     symbol: Union[str, List[str], None] = None,
@@ -327,10 +329,10 @@ def run_compare_strategies(
 
     for strat_name, result in multi_report._results.items():
         report = BacktestReport(result)
-        # Generate individual HTML report
+        # Generate individual HTML report with strategy name as title
         individual_html = f"fullreport_{strat_name}_{safe_label}_{uuid.uuid4().hex[:8]}.html"
         report.summary()
-        report.full_report(path=individual_html, open_browser=open_browser)
+        report.full_report(path=individual_html, open_browser=open_browser, title=f"Backtest Report: {strat_name}")
 
     print("=" * 80)
     multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=open_browser)
@@ -373,12 +375,25 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     if args.compare:
+        # run_compare_strategies(
+        #     symbol=args.symbol,
+        #     start=args.start,
+        #     duration_days=args.duration,
+        #     interval=args.interval,
+        #     initial_balance=args.balance,
+        #     open_browser=not args.no_browser,
+        # )
         run_compare_strategies(
             symbol=args.symbol,
             start=args.start,
             duration_days=args.duration,
             interval=args.interval,
             initial_balance=args.balance,
+            strategies={
+                "Support-Resistance": SupportResistanceStrategy(lookback_days=20),
+                "BollingerBands": BollingerStrategy(),
+                "DCA_Monthly": DCA_Monthly(),
+            },
             open_browser=not args.no_browser,
         )
     else:
