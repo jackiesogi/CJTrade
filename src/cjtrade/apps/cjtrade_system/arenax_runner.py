@@ -33,7 +33,8 @@ logging.basicConfig(
 # Suppress server-side noise when running via this entry point;
 # only cjtrade system logs are shown (WARNING+ from server-side is still visible).
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
-logging.getLogger("cjtrade.arenax_server").setLevel(logging.WARNING)
+logging.getLogger("cjtrade.arenax_server").setLevel(logging.DEBUG)
+# logging.getLogger("cjtrade.arenax_server").setLevel(logging.WARNING)
 logging.getLogger("cjtrade.system_arenax").setLevel(logging.DEBUG)
 
 # ---- Path constants -------------------------------------------------------
@@ -241,6 +242,8 @@ class ArenaXRunner:
         # print(f"try to override internal_config with... {srv_overrides}")
         # print(f"internal_config after override: {internal_config}")
         # print(internal_config["skip_non_trading_hours"])
+        # print(internal_config)
+        # time.sleep(30)
 
         # Create server (reads internal_config / external_config at construction time)
         self._server = ArenaX_BrokerSideServer(

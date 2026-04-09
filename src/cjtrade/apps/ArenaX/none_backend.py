@@ -47,3 +47,8 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 			print("Not able to fetch historical data within max_attempts. Please try again")
 			return
 		self.market.set_historical_time(datetime.now(), days_back=days_back)
+		print(self.market.get_market_time())
+        # Pause immediately so client initialisation lag does not consume mock time.
+        # Client must call POST /control/resume-time-progress once ready.
+		self.market.pause_time_progress()
+		print("[ArenaX] Market time paused – waiting for client to call resume.")

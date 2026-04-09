@@ -124,7 +124,9 @@ class BacktestReport:
                 qs = self._require_qs()
                 p = self.result._returns_periods_per_year
                 sharpe = qs.stats.sharpe(self.returns, periods=p)
-                cagr   = qs.stats.cagr(self.returns, periods_per_year=p)
+                # quantstats.stats.cagr() accepts 'periods' for annualisation in some versions
+                # prefer 'periods' to remain compatible across quantstats versions
+                cagr   = qs.stats.cagr(self.returns, periods=p)
                 mdd    = qs.stats.max_drawdown(self.returns)
                 label  = "minute" if p > 252 else "daily"
                 print(f"  Sharpe ratio : {sharpe:.4f}  ({label} resolution, annualised)")
@@ -152,7 +154,7 @@ class BacktestReport:
                 qs = self._require_qs()
                 p = r._returns_periods_per_year
                 base["sharpe"]       = round(float(qs.stats.sharpe(self.returns, periods=p)), 4)
-                base["cagr"]         = round(float(qs.stats.cagr(self.returns, periods_per_year=p)), 4)
+                base["cagr"]         = round(float(qs.stats.cagr(self.returns, periods=p)), 4)
                 base["max_drawdown"] = round(float(qs.stats.max_drawdown(self.returns)), 4)
             except ImportError:
                 pass

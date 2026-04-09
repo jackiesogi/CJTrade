@@ -122,6 +122,9 @@ class ArenaX_BrokerSideServer:
         if backend is not None:
             self.backend = backend
         else:
+            print(internal_config)
+            print(external_config)
+            # time.sleep(30)
             if backend_str == "hist":
                 # Current default, ArenaX use sinopac backend for price feed.
                 # print(f"internal_config: {internal_config}")
@@ -398,6 +401,8 @@ class ArenaX_BrokerSideServer:
             interval = request.args.get("interval", "1m")
             try:
                 kbars = self.backend.kbars(symbol, start, end, interval)
+                print(f"length of kbars: {len(kbars)}")
+                print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
                 return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500

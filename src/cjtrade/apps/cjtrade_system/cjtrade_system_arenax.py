@@ -98,7 +98,7 @@ def load_cjsys(broker: str, mode: str):
     config['llm_report_interval'] = float(config.get('cjsys_llm_report_interval', 300))
     config['price_monitor_interval'] = float(config.get('cjsys_price_monitor_interval', 60))
     config['bb_min_width_pct'] = float(config.get('cjsys_bb_min_width_pct', 0.01))
-    config['bb_window_size'] = int(config.get('cjsys_bb_window_size', 10))
+    config['bb_window_size'] = int(config.get('cjsys_bb_window_size', 20))
     config['risk_max_position_pct'] = float(config.get('cjsys_risk_max_position_pct', 0.05))
 
 
@@ -712,6 +712,22 @@ class TradingSystem:
             except Exception as e:
                 log.error(f"LLM report error: {e}")
 
+            # TODO: Currently this is just a workaround
+            # Resume server-side time progression now that the client is fully connected.
+            # The server pauses mock time right after initialisation so that client
+            # startup lag does not silently consume backtest time at high playback speed.
+            # Ensure we operate on the module-level flag so the change persists.
+            global RESUME_TIME_AFTER_CLIENT_READY
+            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('hist', 'none'):
+                try:
+                    self.client.broker_api.middleware.resume_time_progress()
+                    log.info("▶ Mock time resumed (client ready)")
+                except Exception as e:
+                    log.warning(f"Could not resume time progress: {e}")
+                # mark resumed so we don't attempt again
+                RESUME_TIME_AFTER_CLIENT_READY = True  # flag to trigger time resume in monitor_prices()
+
+
             await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
 
     async def execute_orders(self):
@@ -879,6 +895,10 @@ async def async_main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # TODO: Currently this is just a workaround
+    global RESUME_TIME_AFTER_CLIENT_READY
+    RESUME_TIME_AFTER_CLIENT_READY = False
+
     # Get broker type (default: mock)
     broker_type = os.environ.get('BROKER_TYPE', 'arenax').lower()
 
@@ -936,15 +956,6 @@ async def async_main():
     try:
         client.connect()
         log.info(f"Connected to {broker_type} broker")
-        # Resume server-side time progression now that the client is fully connected.
-        # The server pauses mock time right after initialisation so that client
-        # startup lag does not silently consume backtest time at high playback speed.
-        if LAUNCH_MODE in ('hist', 'none'):
-            try:
-                client.broker_api.middleware.resume_time_progress()
-                log.info("▶ Mock time resumed (client ready)")
-            except Exception as e:
-                log.warning(f"Could not resume time progress: {e}")
     except ConnectionError as e:
         print(f"Cannot connect to {broker_type} broker: {e}")
         exit(1)

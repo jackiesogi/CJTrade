@@ -1,46 +1,129 @@
 #!/bin/bash
+set -e
 
-function read_watch_list() {
-    read -p "Enter watch list (comma-separated, e.g., 0050,2330,2357,2317): " input
-    if [ -z "$input" ]; then
-        echo "No watch list provided, defaulting to 1234"
-        export CJSYS_WATCH_LIST=1234
-    else
-        export CJSYS_WATCH_LIST=$input
-    fi
-}
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-function read_initial_fund() {
-    read -p "Enter initial fund (default: 500000): " input
-    if [ -z "$input" ]; then
-        echo "No initial fund provided, defaulting to 500000"
-        export INITIAL_FUND=500000
-    else
-        export INITIAL_FUND=$input
-    fi
-}
+CONFIG_DIR="$HOME/.config/cjsys"
+mkdir -p "$CONFIG_DIR"
 
-function read_duration_days() {
-    read -p "Enter duration in days (default: 5): " input
-    if [ -z "$input" ]; then
-        echo "No duration provided, defaulting to 5 days"
-        export DURATION_DAYS=5
-    else
-        export DURATION_DAYS=$input
-    fi
-}
+LAST_FILE="$CONFIG_DIR/last_watch_list"
 
-if [ "$1" == "default" ]; then
-    export CJSYS_WATCH_LIST=1234
-    export INITIAL_FUND=500000
-    export DURATION_DAYS=5
-else
-    read_watch_list
-    read_initial_fund
-    read_duration_days
+DEFAULT_WATCH_LIST="1234"
+DEFAULT_FUND=500000
+DEFAULT_DAYS=5
+DEFAULT_MODE="hist"
+
+# ------------------------
+# Load last used
+# ------------------------
+if [ -f "$LAST_FILE" ]; then
+    LAST_USED=$(cat "$LAST_FILE")
 fi
 
-# Define cleanup function
+# ------------------------
+# Parse CLI args
+# ------------------------
+WATCH_LIST=""
+INITIAL_FUND=""
+DURATION_DAYS=""
+ARENAX_MODE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --watch-list)
+            WATCH_LIST="$2"
+            shift 2
+            ;;
+        --fund)
+            INITIAL_FUND="$2"
+            shift 2
+            ;;
+        --days)
+            DURATION_DAYS="$2"
+            shift 2
+            ;;
+        --mode)
+            ARENAX_MODE="$2"
+            shift 2
+            ;;
+        --default)
+            WATCH_LIST="$LAST_USED"
+            INITIAL_FUND=$DEFAULT_FUND
+            DURATION_DAYS=$DEFAULT_DAYS
+            ARENAX_MODE=$DEFAULT_MODE
+            shift
+            ;;
+        --compare)
+            COMPARE_MODE=1
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# ------------------------
+# Interactive fallback
+# ------------------------
+if [ -z "$WATCH_LIST" ]; then
+    read -p "Enter watch list (comma-separated): " input
+    if [ -n "$input" ]; then
+        WATCH_LIST="$input"
+    elif [ -n "$LAST_USED" ]; then
+        echo "Using last used: $LAST_USED"
+        WATCH_LIST="$LAST_USED"
+    else
+        echo "Using default: $DEFAULT_WATCH_LIST"
+        WATCH_LIST="$DEFAULT_WATCH_LIST"
+    fi
+fi
+
+if [ -z "$INITIAL_FUND" ]; then
+    read -p "Enter initial fund (default: $DEFAULT_FUND): " input
+    INITIAL_FUND=${input:-$DEFAULT_FUND}
+fi
+
+if [ -z "$DURATION_DAYS" ]; then
+    read -p "Enter duration days (default: $DEFAULT_DAYS): " input
+    DURATION_DAYS=${input:-$DEFAULT_DAYS}
+fi
+
+if [ -z "$ARENAX_MODE" ]; then
+    read -p "Enter mode (default: $DEFAULT_MODE): " input
+    ARENAX_MODE=${input:-$DEFAULT_MODE}
+fi
+
+if [ -z "$COMPARE_MODE" ]; then
+    read -p "Run in compare mode? (y/N): " input
+    if [[ "$input" =~ ^[Yy]$ ]]; then
+        COMPARE_MODE=1
+    else
+        COMPARE_MODE=0
+    fi
+fi
+
+# ------------------------
+# Persist last used
+# ------------------------
+echo "$WATCH_LIST" > "$LAST_FILE"
+
+# ------------------------
+# Export env
+# ------------------------
+export CJSYS_WATCH_LIST="$WATCH_LIST"
+export INITIAL_FUND
+export DURATION_DAYS
+export ARENAX_MODE
+export COMPARE_MODE
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
 function cleanup() {
     if [ -n "$ARENAX_PID" ]; then
         echo -e "\n${YELLOW}Stopping ArenaX broker server (PID: $ARENAX_PID)...${NC}"
@@ -50,32 +133,25 @@ function cleanup() {
 
 function ping_server_backend() {
     local url="http://127.0.0.1:8801/health"
-
-    function check_status() {
-        local response
-        response=$(curl -s --max-time 3 "$url" 2>/dev/null) || return 1
-        if [[ $(echo "$response" | jq -r '.running' 2>/dev/null) == "true" ]]; then
-            return 0
-        else
-            return 1
-        fi
-    }
-
-    check_status
+    local response
+    response=$(curl -s --max-time 3 "$url" 2>/dev/null) || return 1
+    if [[ $(echo "$response" | jq -r '.running' 2>/dev/null) == "true" ]]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 if ! ping_server_backend > /dev/null; then
     echo "Starting ArenaX broker server..."
-    # uv run arenaxd --backend=hist > /dev/null 2>&1 &
-    uv run arenaxd > /dev/null 2>&1 &  # for simplicity
+    uv run arenaxd --backend=$ARENAX_MODE > /dev/null 2>&1 &
     ARENAX_PID=$!
 
-    # start the server in background
     echo -n "Waiting for server to be ready..."
     for i in {1..60}; do
         if ping_server_backend > /dev/null; then
             echo -e " ${GREEN}Ready!${NC}"
-            sleep 2  # wait a bit to ensure server is fully up
+            sleep 2
             break
         fi
         echo -n "."
@@ -92,7 +168,20 @@ fi
 
 trap cleanup EXIT SIGINT SIGTERM
 
-uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+sleep 5
+CMD="uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
   --symbol $CJSYS_WATCH_LIST \
   --interval 1m \
-  --balance $INITIAL_FUND
+  --balance $INITIAL_FUND \
+  --duration $DURATION_DAYS"
+
+if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "true" || "$COMPARE_MODE" == "y" ]]; then
+  CMD="$CMD --compare"
+fi
+
+if [ -n "$START_DATE" ]; then
+    CMD="$CMD --start $START_DATE"
+fi
+
+echo -e "${GREEN}Executing OneShot Backtest...${NC}"
+eval $CMD

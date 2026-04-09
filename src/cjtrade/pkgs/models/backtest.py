@@ -102,7 +102,9 @@ class BacktestResult:
 
     def annual_return(self) -> float:
         import quantstats as qs
-        return qs.stats.cagr(self.to_returns(), periods_per_year=self._returns_periods_per_year)
+        # quantstats.stats.cagr() accepts 'periods' for annualisation in some versions
+        # prefer 'periods' to remain compatible across quantstats versions
+        return qs.stats.cagr(self.to_returns(), periods=self._returns_periods_per_year)
 
     def max_drawdown(self) -> float:
         import quantstats as qs

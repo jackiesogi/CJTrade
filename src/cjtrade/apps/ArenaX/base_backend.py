@@ -187,14 +187,118 @@ class ArenaX_BackendBase:
             return []
 
     def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
-        yf_symbol = f"{symbol}.TW"
+        """Fetch kbars: first try price_db, then fill gaps from broker.
 
+        This hybrid approach reduces broker API calls by leveraging cached local data,
+        while ensuring we have the complete requested range by fetching missing pieces.
+        """
+        from datetime import datetime as dt
+        from cjtrade.pkgs.db.db_api import compute_missing_ranges
+
+        # Parse date range
         try:
-            kbars = self.real_account.get_kbars(start=start, end=end, product=Product(symbol=symbol), interval="1m")
-            return kbars
-        except Exception as exc:
-            print(f"Error loading kbars for {symbol}: {exc}")
+            start_dt = dt.strptime(start, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+            end_dt = dt.strptime(end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        except Exception as e:
+            print(f"Error parsing date range: {e}")
             return []
+
+        # Try to get cached data from price_db if available
+        cached_kbars = []
+        if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
+            try:
+                cached_kbars = self.market.price_db.get_price(
+                    symbol=symbol,
+                    timeframe=interval,
+                    start_ts=start_dt,
+                    end_ts=end_dt
+                )
+                print(f"[kbars] Found {len(cached_kbars)} cached kbars for {symbol} [{start} to {end}]")
+            except Exception as e:
+                print(f"[kbars] Error retrieving from price_db: {e}")
+
+        # Check what ranges are missing
+        missing_ranges = []
+        if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
+            try:
+                s_epoch = int(start_dt.timestamp())
+                e_epoch = int(end_dt.timestamp())
+                missing_ranges = compute_missing_ranges(
+                    self.market.price_db.conn,
+                    symbol,
+                    interval,
+                    s_epoch,
+                    e_epoch
+                )
+                print(f"[kbars] Missing ranges for {symbol}: {len(missing_ranges)} gaps")
+            except Exception as e:
+                print(f"[kbars] Error computing missing ranges: {e}")
+                # If we can't check coverage, fetch all from broker as fallback
+                missing_ranges = [(int(start_dt.timestamp()), int(end_dt.timestamp()))]
+        else:
+            # No price_db available, fetch all from broker
+            missing_ranges = [(int(start_dt.timestamp()), int(end_dt.timestamp()))]
+
+        # Fetch missing ranges from broker
+        broker_kbars = []
+        if missing_ranges and self.real_account:
+            try:
+                for start_epoch, end_epoch in missing_ranges:
+                    range_start = dt.fromtimestamp(start_epoch).strftime("%Y-%m-%d")
+                    range_end = dt.fromtimestamp(end_epoch).strftime("%Y-%m-%d")
+                    print(f"[kbars] Fetching from broker: {symbol} [{range_start} to {range_end}]")
+
+                    fetched = self.real_account.get_kbars(
+                        start=range_start,
+                        end=range_end,
+                        product=Product(symbol=symbol),
+                        interval=interval
+                    )
+
+                    broker_kbars.extend(fetched)
+
+                    # Cache the fetched data
+                    if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
+                        try:
+                            self.market.price_db.insert_prices_batch(
+                                symbol=symbol,
+                                kbars=fetched,
+                                timeframe=interval,
+                                source="broker_api",
+                                overwrite=False
+                            )
+                            self.market.price_db.record_coverage(
+                                symbol=symbol,
+                                timeframe=interval,
+                                start_ts=dt.strptime(range_start, "%Y-%m-%d"),
+                                end_ts=dt.strptime(range_end, "%Y-%m-%d"),
+                                source="broker_api"
+                            )
+                        except Exception as e:
+                            print(f"[kbars] Error caching fetched data: {e}")
+
+            except Exception as exc:
+                print(f"[kbars] Error fetching from broker for {symbol}: {exc}")
+                # Fallback: return cached data even if incomplete
+                if cached_kbars:
+                    return cached_kbars
+                return []
+
+        # Merge cached + broker data, sorted by timestamp
+        all_kbars = cached_kbars + broker_kbars
+        all_kbars.sort(key=lambda k: k.timestamp)
+
+        # Remove duplicates (keep first occurrence)
+        seen_timestamps = set()
+        unique_kbars = []
+        for kb in all_kbars:
+            ts = kb.timestamp
+            if ts not in seen_timestamps:
+                unique_kbars.append(kb)
+                seen_timestamps.add(ts)
+
+        print(f"[kbars] Returning {len(unique_kbars)} total kbars for {symbol}")
+        return unique_kbars
 
     def _calculate_kbar_index(self, symbol: str, mock_time: datetime) -> int:
         """Return the row-index of the latest kbar whose timestamp <= mock_time.

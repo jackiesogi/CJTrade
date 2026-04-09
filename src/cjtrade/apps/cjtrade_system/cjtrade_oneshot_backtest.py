@@ -49,9 +49,12 @@ from typing import Optional
 from typing import Union
 
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
+from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
+from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
+from cjtrade.pkgs.strategy.dca_1M import DCA_Monthly
 from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
@@ -89,160 +92,57 @@ def _load_config() -> dict:
 
     return cfg
 
-
-# ---------------------------------------------------------------------------
-# Built-in default strategy: Bollinger Bands (mirrors cjtrade_system_arenax)
-# ---------------------------------------------------------------------------
-
-class _BollingerStrategy(BaseStrategy):
-    """Simple Bollinger-band mean-reversion strategy.
-
-    Buys when price touches lower band, sells when it touches upper band.
-    Keeps at most one position (no pyramiding).
-    """
-    name = "BollingerBands"
-
-    def on_start(self, ctx):
-        p = ctx.params
-        self._window   = int(p.get("bb_window_size",      20))
-        self._min_bw   = float(p.get("bb_min_width_pct",  0.01))
-        self._max_pct  = float(p.get("risk_max_position_pct", 0.05))
-        log.info(f"[{self.name}] window={self._window} min_bw={self._min_bw*100:.2f}%")
-
-    def on_bar(self, bar, ctx):
-        prices = ctx.prices(bar.symbol)
-        if len(prices) < self._window:
-            return []
-
-        import numpy as np
-        arr    = np.array(prices[-self._window:], dtype=float)
-        middle = arr.mean()
-        std    = arr.std(ddof=1)
-        upper  = middle + 2 * std
-        lower  = middle - 2 * std
-        bw     = (upper - lower) / middle if middle > 0 else 0
-
-        if bw < self._min_bw:
-            return []
-
-        price = bar.close
-        if price <= lower and not ctx.has_position(bar.symbol):
-            qty = ctx.calc_qty(price, self._max_pct)
-            if qty > 0:
-                return [type("Signal", (), {
-                    "action": "BUY", "symbol": bar.symbol,
-                    "quantity": qty, "price": price,
-                    "reason": f"BB lower touch (bw={bw*100:.2f}%)",
-                    "meta": {},
-                })]
-
-        elif price >= upper and ctx.has_position(bar.symbol):
-            qty = ctx.position_qty(bar.symbol)
-            return [type("Signal", (), {
-                "action": "SELL", "symbol": bar.symbol,
-                "quantity": qty, "price": price,
-                "reason": f"BB upper touch (bw={bw*100:.2f}%)",
-                "meta": {},
-            })]
-
-        return []
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def run_oneshot(
     symbol: Union[str, List[str], None] = None,
-    # start: Optional[str]    = None,
-    # end: Optional[str]      = None,
-    interval: str           = "1m",
-    initial_balance: float  = 1_000_000.0,
+    start: Optional[str] = None,
+    duration_days: int = 5,
+    interval: str = "1m",
+    initial_balance: float = 1_000_000.0,
     strategy: Optional[BaseStrategy] = None,
-    params: Optional[dict]  = None,
+    params: Optional[dict] = None,
     report_path: Optional[str] = None,
-    open_browser: bool      = True,
+    open_browser: bool = True,
 ) -> None:
-    """Fetch kbars, run strategy, save HTML report.
-
-    Parameters
-    ----------
-    symbol : str | list[str] | None
-        Single ticker ('2330'), comma-separated string ('2330,0050,2317'),
-        or a list (['2330', '0050']).
-        Defaults to CJSYS_WATCH_LIST env / config value.
-    start / end : str
-        Date range, e.g. '2023-01-01'.  Defaults to last 1 year.
-    interval : str
-        Kbar interval ('1m', '5m', '1d', …).  Default '1m'.
-    initial_balance : float
-        Starting cash in TWD (shared across all symbols).
-    strategy : BaseStrategy, optional
-        Defaults to the built-in Bollinger strategy.
-    params : dict, optional
-        Forwarded to strategy as ctx.params.  Overrides config values.
-    report_path : str, optional
-        Where to save the HTML report.  Auto-named if omitted.
-    open_browser : bool
-        Open the report in the default browser after saving.
-    """
     cfg = _load_config()
 
-    # ------------------------------------------------------------------
-    # Resolve symbol list
-    # ------------------------------------------------------------------
     if symbol is None:
         watch = cfg.get("cjsys_watch_list", "")
         symbol = watch if watch else None
     if not symbol:
         raise ValueError("No symbol provided. Set CJSYS_WATCH_LIST or pass symbol=...")
 
-    # Normalise to list[str]
     if isinstance(symbol, str):
         symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
     else:
         symbols = [s.strip() for s in symbol if s.strip()]
-
-    if not symbols:
-        raise ValueError("symbol list is empty after parsing.")
-
-    # ------------------------------------------------------------------
-    # Resolve date range
-    # ------------------------------------------------------------------
     today = datetime.now().date()
 
-    # if end is None:
-    #     end = cfg.get("cjsys_oneshot_end", today.isoformat())
-
-    # CJSYS_ONESHOT_START takes priority; otherwise derive from duration
-    start = None
-    explicit_start = start or cfg.get("cjsys_oneshot_start", "")
-    if explicit_start:
-        start = explicit_start
+    if start:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
     else:
-        # Duration-based random start:
-        #   pick end – (random window) as start, where window ≥ 1.5 × duration
-        #   so indicator warm-up data is always available.
-        duration_days = int(cfg.get("cjsys_oneshot_duration_days", 5))
-        duration_days = int(cfg.get("cjsys_backtest_duration_days", 5))
-        # calendar days = trading days × ~1.4 (weekends/holidays); add 50% buffer
-        min_calendar = int(duration_days * 1.4 * 1.5)
-        # Allow going back up to ~5 years (1825 days) so we have enough history
-        max_calendar = max(min_calendar + 30, 365 * 5)
-        days_back = random.randint(min_calendar, max_calendar)
-        # end_dt = datetime.strptime(end, "%Y-%m-%d").date()
-        start = (today - timedelta(days=days_back)).isoformat()
-        end = (datetime.fromisoformat(start) + timedelta(days=duration_days)).date().isoformat()
-        log.info(
-            f"[OneShot] duration={duration_days} trading days → "
-            f"random window={days_back} calendar days → start={start}"
-        )
+        min_days_ago = duration_days + 7
+        max_days_ago = 365 * 5  # Allow up to 5 years of historical data
 
-    # Resolve initial balance
+        if max_days_ago <= min_days_ago:
+            max_days_ago = min_days_ago + 30
+
+        random_offset = random.randint(min_days_ago, max_days_ago)
+        start_dt = today - timedelta(days=random_offset)
+
+    end_dt = start_dt + timedelta(days=duration_days)
+
+    start_str = start_dt.isoformat()
+    end_str = end_dt.isoformat()
+
+    log.info(f"[OneShot] Time Range: {start_str} to {end_str} ({duration_days} days)")
+
     if initial_balance == 1_000_000.0:
         initial_balance = float(cfg.get("cjsys_oneshot_initial_balance", 1_000_000.0))
 
-    # Resolve strategy params
     merged_params = {
         "bb_window_size":        int(cfg.get("cjsys_bb_window_size", 20)),
         "bb_min_width_pct":      float(cfg.get("cjsys_bb_min_width_pct", 0.01)),
@@ -251,69 +151,189 @@ def run_oneshot(
     if params:
         merged_params.update(params)
 
-    strategy = strategy or _BollingerStrategy()
-
+    strategy = strategy or BollingerStrategy()
     sym_label = ",".join(symbols)
-    log.info(f"[OneShot] symbols=[{sym_label}]  {start} → {end}  interval={interval}")
-    log.info(f"[OneShot] initial_balance={initial_balance:,.0f}  strategy={strategy.name}")
 
-    # ------------------------------------------------------------------
-    # 1. Fetch kbars from ArenaX server (one request per symbol)
-    # ------------------------------------------------------------------
+    # 4. Fetch kbars
     mw = ArenaXMiddleWare()
     all_kbars = []
 
     for sym in symbols:
-        raw_bars = mw.get_kbars(sym, start, end, interval)
+        raw_bars = mw.get_kbars(sym, start_str, end_str, interval)
         if not raw_bars:
-            log.warning(f"[OneShot] No kbars for {sym} [{start} – {end}], skipping.")
+            log.warning(f"[OneShot] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
-        sym_kbars = [
-            _make_tagged_kbar(b, sym)
-            for b in raw_bars
-        ]
-        log.info(
-            f"[OneShot] {sym}: {len(sym_kbars)} bars  "
-            f"({sym_kbars[0].timestamp.date()} – {sym_kbars[-1].timestamp.date()})"
-        )
+        sym_kbars = [_make_tagged_kbar(b, sym) for b in raw_bars]
         all_kbars.extend(sym_kbars)
 
     if not all_kbars:
-        raise RuntimeError(
-            f"No kbars returned for any symbol [{sym_label}] [{start} – {end}]. "
-            "Is the ArenaX server running?"
-        )
+        raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
 
-    # Sort merged list by timestamp (engine also sorts, but be explicit)
     all_kbars.sort(key=lambda k: k.timestamp)
 
-    # ------------------------------------------------------------------
-    # 2. Run engine
-    # ------------------------------------------------------------------
     session_id = str(uuid.uuid4())
     engine = BacktestEngine(
         kbars=all_kbars,
-        symbol=None,          # already tagged with .symbol per bar
+        symbol=None,
         initial_balance=initial_balance,
         params=merged_params,
         session_id=session_id,
     )
     result = engine.run(strategy)
 
-    # ------------------------------------------------------------------
-    # 3. Save result + open report
-    # ------------------------------------------------------------------
+    # 6. Report
     safe_label = sym_label.replace(",", "_")
-    pkl_path = f"oneshot_{safe_label}_{session_id[:8]}.pkl"
-    result.save(pkl_path)
-    log.info(f"[OneShot] BacktestResult saved → {pkl_path}")
-
+    html_path = report_path or f"oneshot_{safe_label}_{session_id[:8]}.html"
     report = BacktestReport(result)
     report.summary()
-
-    html_path = report_path or f"oneshot_{safe_label}_{session_id[:8]}.html"
     report.full_report(path=html_path, open_browser=open_browser)
+
+def run_compare_strategies(
+    symbol: Union[str, List[str], None] = None,
+    start: Optional[str] = None,
+    duration_days: int = 5,
+    interval: str = "1m",
+    initial_balance: float = 1_000_000.0,
+    strategies: Optional[dict] = None,
+    params: Optional[dict] = None,
+    report_path: Optional[str] = None,
+    open_browser: bool = True,
+) -> None:
+    """Run multiple strategies on the same kbars and generate comparison report.
+
+    Parameters
+    ----------
+    symbol : str | list[str]
+        Ticker(s), e.g. "2330" or ["2330", "0050"]
+    start : str, optional
+        Start date YYYY-MM-DD (default: random based on duration)
+    duration_days : int
+        Number of trading days to backtest
+    interval : str
+        Kbar interval, e.g. "1m" or "1d" (default: "1m")
+    initial_balance : float
+        Starting cash for each strategy (default: 1,000,000)
+    strategies : dict
+        Map of strategy_name → strategy_instance, e.g.
+        {"DCA_Monthly": DCA_Monthly(), "BollingerBands": BollingerStrategy()}
+    params : dict
+        Shared parameters passed to all strategies
+    report_path : str, optional
+        Output HTML file path
+    open_browser : bool
+        Open result in default browser (default: True)
+    """
+    cfg = _load_config()
+
+    if symbol is None:
+        watch = cfg.get("cjsys_watch_list", "")
+        symbol = watch if watch else None
+    if not symbol:
+        raise ValueError("No symbol provided. Set CJSYS_WATCH_LIST or pass symbol=...")
+
+    if isinstance(symbol, str):
+        symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
+    else:
+        symbols = [s.strip() for s in symbol if s.strip()]
+
+    today = datetime.now().date()
+
+    if start:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+    else:
+        min_days_ago = duration_days + 7
+        max_days_ago = 365 * 5  # Allow up to 5 years of historical data
+
+        if max_days_ago <= min_days_ago:
+            max_days_ago = min_days_ago + 30
+
+        random_offset = random.randint(min_days_ago, max_days_ago)
+        start_dt = today - timedelta(days=random_offset)
+
+    end_dt = start_dt + timedelta(days=duration_days)
+
+    start_str = start_dt.isoformat()
+    end_str = end_dt.isoformat()
+
+    log.info(f"[CompareStrategies] Time Range: {start_str} to {end_str} ({duration_days} days)")
+
+    if initial_balance == 1_000_000.0:
+        initial_balance = float(cfg.get("cjsys_oneshot_initial_balance", 1_000_000.0))
+
+    merged_params = {
+        "bb_window_size":        int(cfg.get("cjsys_bb_window_size", 20)),
+        "bb_min_width_pct":      float(cfg.get("cjsys_bb_min_width_pct", 0.01)),
+        "risk_max_position_pct": float(cfg.get("cjsys_risk_max_position_pct", 0.05)),
+    }
+    if params:
+        merged_params.update(params)
+
+    if not strategies:
+        strategies = {
+            "DCA_Monthly": DCA_Monthly(),
+            "BollingerBands": BollingerStrategy(),
+        }
+
+    sym_label = ",".join(symbols)
+
+    # Fetch kbars
+    mw = ArenaXMiddleWare()
+    all_kbars = []
+
+    for sym in symbols:
+        raw_bars = mw.get_kbars(sym, start_str, end_str, interval)
+        if not raw_bars:
+            log.warning(f"[CompareStrategies] No kbars for {sym} [{start_str} - {end_str}], skipping.")
+            continue
+
+        sym_kbars = [_make_tagged_kbar(b, sym) for b in raw_bars]
+        all_kbars.extend(sym_kbars)
+
+    if not all_kbars:
+        raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
+
+    all_kbars.sort(key=lambda k: k.timestamp)
+
+    # Run comparison
+    multi_report = MultiStrategyBacktestReport(
+        kbars=all_kbars,
+        initial_balance=initial_balance,
+        params=merged_params,
+    )
+
+    for strat_name, strat_instance in strategies.items():
+        multi_report.add_strategy(strat_name, strat_instance)
+
+    multi_report.run()
+    multi_report.compare_summary()
+
+    # Save comparison HTML
+    safe_label = sym_label.replace(",", "_")
+    html_path = report_path or f"comparison_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+    multi_report.save_comparison_html(path=html_path, open_browser=False)
+
+    # Save overlay charts (returns + equity)
+    returns_overlay_path = f"compare_returns_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+    equity_overlay_path = f"compare_equity_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+
+    multi_report.compare_returns_overlay(path=returns_overlay_path, open_browser=False)
+    multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=False)
+
+    # Generate individual quantstats full_report for each strategy
+    print("\n" + "=" * 80)
+    print("  Generating individual quantstats reports for each strategy...")
+    print("=" * 80)
+
+    for strat_name, result in multi_report._results.items():
+        report = BacktestReport(result)
+        # Generate individual HTML report
+        individual_html = f"fullreport_{strat_name}_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+        report.summary()
+        report.full_report(path=individual_html, open_browser=open_browser)
+
+    print("=" * 80)
+    multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=open_browser)
 
 
 def _make_tagged_kbar(raw: dict, symbol: str):
@@ -334,48 +354,39 @@ def _make_tagged_kbar(raw: dict, symbol: str):
     )
     return _TaggedKbar(kb, symbol)
 
-
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import argparse
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] %(levelname)-7s : %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)-7s : %(message)s")
 
     ap = argparse.ArgumentParser(description="CJTrade one-shot backtest")
-    ap.add_argument("--symbol",   default=None, help="Ticker(s), e.g. 2330  or  2330,0050,2317")
-    # ap.add_argument("--start",    default=None, help="Start date YYYY-MM-DD")
-    ap.add_argument("--duration", type=int, default=5, help="Duration in days")
+    ap.add_argument("--symbol",   default=None, help="Ticker(s), e.g. 2330 or 2330,0050")
+    ap.add_argument("--start",    default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
+    ap.add_argument("--duration", type=int,     default=5, help="Duration in days (default: 5)")
     ap.add_argument("--interval", default="1m", help="Kbar interval (default: 1m)")
-    ap.add_argument("--balance",  type=float, default=1_000_000.0, help="Initial balance")
+    ap.add_argument("--balance",  type=float,   default=1_000_000.0, help="Initial balance")
+    ap.add_argument("--compare",  action="store_true", help="Compare DCA_Monthly vs BollingerBands")
     ap.add_argument("--no-browser", action="store_true", help="Don't open browser")
     args = ap.parse_args()
 
-    # if start is not provided, choose a random day between((today - duration * 1.5), (today - duration * 1.5) + duration)
-    # if args.start is None:
-    #     today = datetime.now().date()
-    #     min_calendar = int(args.duration * 1.4 * 1.5)
-    #     max_calendar = max(min_calendar + 30, 365 * 5)
-    #     days_back = random.randint(min_calendar, max_calendar)
-    #     end_dt = today
-    #     start = (end_dt - timedelta(days=days_back)).isoformat()
-    #     log.info(
-    #         f"[OneShot] duration={args.duration} trading days → "
-    #         f"random window={days_back} calendar days → start={start}"
-    #     )
-    #     args.start = start
-
-    run_oneshot(
-        symbol=args.symbol,
-        # start=args.start,
-        # end=args.end,
-        interval=args.interval,
-        initial_balance=args.balance,
-        open_browser=not args.no_browser,
-    )
+    if args.compare:
+        run_compare_strategies(
+            symbol=args.symbol,
+            start=args.start,
+            duration_days=args.duration,
+            interval=args.interval,
+            initial_balance=args.balance,
+            open_browser=not args.no_browser,
+        )
+    else:
+        run_oneshot(
+            symbol=args.symbol,
+            start=args.start,
+            duration_days=args.duration,
+            interval=args.interval,
+            initial_balance=args.balance,
+            open_browser=not args.no_browser,
+        )

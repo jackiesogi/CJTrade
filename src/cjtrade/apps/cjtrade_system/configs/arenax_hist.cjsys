@@ -10,11 +10,11 @@ CJSYS_WATCH_LIST              =
 # ======================================  System Intervals (seconds)  =======================================
 # This section control how often the system performs certain actions during backtesting.
 # Adjusting these intervals can help balance between realism and speed of backtesting.
-CJSYS_ANALYSIS_INTERVAL       = 240      # seconds in virtual environment
+CJSYS_ANALYSIS_INTERVAL       = 60      # seconds in virtual environment
 CJSYS_CHECK_FILL_INTERVAL     = 120      # seconds in virtual environment
-CJSYS_DISPLAY_TIME_INTERVAL   = 240      # seconds in virtual environment
+CJSYS_DISPLAY_TIME_INTERVAL   = 60      # seconds in virtual environment
 CJSYS_LLM_REPORT_INTERVAL     = 1000000  # seconds in virtual environment
-CJSYS_PRICE_MONITOR_INTERVAL  = 120      # seconds in virtual environment
+CJSYS_PRICE_MONITOR_INTERVAL  = 60       # seconds in virtual environment
 # ===========================================================================================================
 
 

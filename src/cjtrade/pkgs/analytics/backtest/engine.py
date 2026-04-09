@@ -44,6 +44,8 @@ from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
 log = logging.getLogger(__name__)
+# Ensure engine emits INFO-level logs by default so runs are visible
+log.setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
 # _TaggedKbar – Kbar + symbol (Kbar model has no symbol field)
@@ -68,16 +70,17 @@ _TRANSACTION_TAX   = 0.003      # 0.3% on sell only
 _MIN_COMMISSION    = 20.0       # TWD minimum commission
 
 
+# qty unit is SHARE
 def _calc_buy_cost(price: float, qty: int) -> float:
-    """Total cash needed to buy qty lots at price (including commission)."""
-    value = price * qty * 1000          # 1 lot = 1000 shares
+    """Total cash needed to buy qty shares at price (including commission)."""
+    value = price * qty
     commission = max(value * _COMMISSION_RATE, _MIN_COMMISSION)
     return round(value + commission, 0)
 
 
 def _calc_sell_proceeds(price: float, qty: int) -> float:
-    """Net cash received from selling qty lots at price (after tax + commission)."""
-    value = price * qty * 1000
+    """Net cash received from selling qty shares at price (after tax + commission)."""
+    value = price * qty
     commission = max(value * _COMMISSION_RATE, _MIN_COMMISSION)
     tax = value * _TRANSACTION_TAX
     return round(value - commission - tax, 0)
@@ -107,20 +110,21 @@ class _SimAccount:
             if pos["quantity"] <= 0:
                 continue
             price = price_map.get(sym, pos["avg_cost"])
-            market_value = price * pos["quantity"] * 1000
+            # quantity is stored as SHARES (not lots)
+            market_value = price * pos["quantity"]
             result.append({
                 "symbol":        sym,
                 "quantity":      pos["quantity"],
                 "avg_cost":      pos["avg_cost"],
                 "current_price": price,
                 "market_value":  round(market_value, 2),
-                "unrealized_pnl": round((price - pos["avg_cost"]) * pos["quantity"] * 1000, 2),
+                "unrealized_pnl": round((price - pos["avg_cost"]) * pos["quantity"], 2),
             })
         return result
 
     def equity(self, price_map: Dict[str, float]) -> float:
         pos_value = sum(
-            price_map.get(sym, p["avg_cost"]) * p["quantity"] * 1000
+            price_map.get(sym, p["avg_cost"]) * p["quantity"]
             for sym, p in self._positions.items()
             if p["quantity"] > 0
         )
@@ -132,6 +136,7 @@ class _SimAccount:
 
     def buy(self, symbol: str, qty: int, price: float,
             timestamp: datetime, reason: str = "") -> Optional[Fill]:
+        # print(f"Attempting to BUY {qty} shares of {symbol} at {price} TWD/share")
         if qty <= 0:
             return None
         cost = _calc_buy_cost(price, qty)
@@ -140,16 +145,19 @@ class _SimAccount:
                       f"({self.balance:,.0f} < {cost:,.0f})")
             return None
 
+        # print("SIM account receive BUY order")
         self.balance -= cost
         pos = self._positions.setdefault(symbol, {"quantity": 0, "avg_cost": 0.0})
-        total_shares = (pos["quantity"] + qty) * 1000
-        total_cost   = pos["quantity"] * pos["avg_cost"] * 1000 + qty * price * 1000
+        # quantity is stored as SHARES
+        total_shares = pos["quantity"] + qty
+        total_cost = pos["quantity"] * pos["avg_cost"] + qty * price
         pos["quantity"] += qty
-        pos["avg_cost"]  = round(total_cost / total_shares, 2)
+        pos["avg_cost"] = round(total_cost / total_shares, 2) if total_shares > 0 else 0.0
 
+        commission = round(max(price * qty * _COMMISSION_RATE, _MIN_COMMISSION), 2)
         fill = Fill(symbol=symbol, action="BUY", quantity=qty,
                     price=price, timestamp=timestamp, reason=reason,
-                    commission=round(max(price*qty*1000*_COMMISSION_RATE, _MIN_COMMISSION), 2))
+                    commission=commission)
         self._record_fill(fill)
         return fill
 
@@ -159,16 +167,17 @@ class _SimAccount:
         if not pos or pos["quantity"] < qty or qty <= 0:
             log.debug(f"[Engine] SELL rejected – no / insufficient position in {symbol}")
             return None
-
         proceeds = _calc_sell_proceeds(price, qty)
         self.balance += proceeds
         pos["quantity"] -= qty
         if pos["quantity"] == 0:
             pos["avg_cost"] = 0.0
 
+        commission = round(max(price * qty * _COMMISSION_RATE, _MIN_COMMISSION), 2)
         fill = Fill(symbol=symbol, action="SELL", quantity=qty,
                     price=price, timestamp=timestamp, reason=reason,
-                    commission=round(max(price*qty*1000*_COMMISSION_RATE, _MIN_COMMISSION), 2))
+                    commission=commission)
+        # print("SIM account receive SELL order")
         self._record_fill(fill)
         return fill
 
@@ -223,6 +232,9 @@ class BacktestEngine:
             # Caller must have passed TaggedKbar or objects that already have .symbol
             pass
         self.kbars = sorted(kbars, key=lambda k: k.timestamp)
+        # import time
+        # print([t.timestamp for t in self.kbars[:200]])
+        # time.sleep(50)
         self.symbol = symbol
         self.initial_balance = initial_balance
         self.params = params or {}
@@ -237,6 +249,9 @@ class BacktestEngine:
         """Run the strategy over all bars and return a BacktestResult."""
         if not self.kbars:
             raise ValueError("kbars list is empty – nothing to backtest.")
+
+        # Informational startup log to make engine activity visible
+        log.info(f"[BacktestEngine] Starting run – {len(self.kbars)} bars, session_id={self.session_id}")
 
         account    = self._account
         price_map: Dict[str, float] = {}   # latest price per symbol
@@ -263,12 +278,15 @@ class BacktestEngine:
             price_hist.setdefault(sym, []).append(bar.close)
 
             # Build context
+            # Avoid copying entire price_hist every bar (O(n²) complexity)
+            # Create a shallow reference to price_hist; each list is still mutable,
+            # so strategy sees live prices, but we don't deep-copy every iteration
             ctx = StrategyContext(
                 timestamp=bar.timestamp,
                 balance=account.balance,
                 equity=account.equity(price_map),
                 positions=account.positions_list(price_map),
-                price_history={s: list(v) for s, v in price_hist.items()},
+                price_history=price_hist,  # Direct reference, not a deep copy
                 bar_index=idx,
                 params=self.params,
             )
@@ -279,11 +297,13 @@ class BacktestEngine:
             # Execute signals
             for sig in signals:
                 if sig.action == "BUY":
+                    # print("Engine receive BUY signal")
                     fill = account.buy(sig.symbol, sig.quantity, sig.price,
                                        bar.timestamp, reason=sig.reason)
                     if fill:
                         strategy.on_fill(fill, ctx)
                 elif sig.action == "SELL":
+                    # print("Engine receive SELL signal")
                     fill = account.sell(sig.symbol, sig.quantity, sig.price,
                                         bar.timestamp, reason=sig.reason)
                     if fill:
@@ -303,7 +323,7 @@ class BacktestEngine:
             balance=account.balance,
             equity=account.equity(price_map),
             positions=account.positions_list(price_map),
-            price_history={s: list(v) for s, v in price_hist.items()},
+            price_history=price_hist,  # Direct reference, not a deep copy
             bar_index=len(self.kbars) - 1,
             params=self.params,
         )
