@@ -99,8 +99,10 @@ class ArenaX_BackendBase:
             self._connected = True
 
             if self.real_account and not os.path.exists(self.account_state_default_file):
+                print('sync with real account')
                 self._sync_with_real_account()
             else:
+                print('sync with mock account file')
                 self._sync_with_mock_account_file()
 
             # Stamp initial_balance once per session (after state is loaded so we

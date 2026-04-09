@@ -155,7 +155,9 @@ def _build_server_overrides(user_cfg: dict, mode: str) -> dict:
     if mode == "live":
         overrides.setdefault("playback_speed", 1.0)
         overrides.setdefault("speed",          1.0)
-        overrides["skip_non_trading_hours"] = "n"
+        overrides["skip_non_trading_hours"] = False   # At this point, backend has already
+                                                      # parse 'n'/'y' to False/True, so we
+                                                      # need to set it to a boolean value.
 
     return overrides
 
@@ -237,6 +239,7 @@ class ArenaXRunner:
         internal_config.update(srv_overrides)
         # print(f"try to override internal_config with... {srv_overrides}")
         # print(f"internal_config after override: {internal_config}")
+        print(internal_config["skip_non_trading_hours"])
 
         # Create server (reads internal_config / external_config at construction time)
         self._server = ArenaX_BrokerSideServer(

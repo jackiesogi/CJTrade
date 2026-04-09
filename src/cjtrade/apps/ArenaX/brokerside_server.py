@@ -50,7 +50,7 @@ def load_cjconf():
         if os.environ.get(key):
             external_config[key.lower()] = os.environ[key]
 
-    external_config['simulation'] = external_config.get('simulation', 'y').lower() == 'y'
+    external_config['simulation'] = external_config.get('simulation', 'n').lower() == 'y'
     external_config['ca_path'] = external_config.get('ca_cert_path', "")
     external_config['ca_passwd'] = external_config.get('ca_password', "")
 
@@ -128,7 +128,8 @@ class ArenaX_BrokerSideServer:
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
             elif backend_str == "live":
-                self.backend = ArenaX_Backend_PaperTrade(**internal_config)
+                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **internal_config)
             elif backend_str == "none":
                 self.backend = ArenaX_Backend_None(**internal_config)
             else:

@@ -69,9 +69,10 @@ def load_cjsys(broker: str, mode: str):
     file_to_load = config_dir / f"{broker}_{mode}.cjsys"
 
     if mode == 'live' and broker == 'arenax':
-        log.error("Using LIVE mode for arenax broker does not make sense!"
-                  " If you want to use live mode, please switch to the 'realistic'!")
-        exit(1)
+        pass
+        # log.error("Using LIVE mode for arenax broker does not make sense!"
+        #           " If you want to use live mode, please switch to the 'realistic'!")
+        # exit(1)
 
     if not file_to_load.exists():
         log.warning(f"Config file {file_to_load} not found, create one based on the template in configs/ dir")
