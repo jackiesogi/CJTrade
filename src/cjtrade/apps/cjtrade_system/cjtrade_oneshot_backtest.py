@@ -53,6 +53,7 @@ from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrateg
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
+from cjtrade.pkgs.strategy.baseline_0050 import BaselineStrategy
 from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
 from cjtrade.pkgs.strategy.dca_1M import DCA_Monthly
 from cjtrade.pkgs.strategy.snr_1m import SupportResistanceStrategy
@@ -277,25 +278,59 @@ def run_compare_strategies(
             "BollingerBands": BollingerStrategy(),
         }
 
-    sym_label = ",".join(symbols)
+    # Separate baseline strategy from other strategies
+    baseline_symbol = "0050"
+    baseline_strategy = None
+    test_strategies = {}
 
-    # Fetch kbars
+    for strat_name, strat_instance in strategies.items():
+        if "Baseline" in strat_name or "baseline" in strat_name:
+            baseline_strategy = strat_instance
+            log.info(f"[CompareStrategies] Identified baseline strategy: {strat_name}")
+        else:
+            test_strategies[strat_name] = strat_instance
+
+    # Fetch kbars for test symbols
+    test_symbols = symbols.copy()  # Keep original symbols for test strategies
     mw = ArenaXMiddleWare()
-    all_kbars = []
+    test_kbars = []
 
-    for sym in symbols:
+    for sym in test_symbols:
         raw_bars = mw.get_kbars(sym, start_str, end_str, interval)
         if not raw_bars:
             log.warning(f"[CompareStrategies] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
         sym_kbars = [_make_tagged_kbar(b, sym) for b in raw_bars]
-        all_kbars.extend(sym_kbars)
+        test_kbars.extend(sym_kbars)
+
+    # Fetch kbars for baseline symbol if baseline strategy exists
+    baseline_kbars = []
+    if baseline_strategy:
+        raw_bars = mw.get_kbars(baseline_symbol, start_str, end_str, interval)
+        if raw_bars:
+            baseline_kbars = [_make_tagged_kbar(b, baseline_symbol) for b in raw_bars]
+            log.info(f"[CompareStrategies] Fetched {len(baseline_kbars)} kbars for baseline symbol {baseline_symbol}")
+        else:
+            log.warning(f"[CompareStrategies] No kbars for baseline {baseline_symbol}, skipping baseline strategy")
+            baseline_strategy = None
+
+    # Merge all kbars
+    all_kbars = test_kbars + baseline_kbars
 
     if not all_kbars:
-        raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
+        raise RuntimeError(f"No kbars found for {','.join(test_symbols)} in range {start_str} - {end_str}")
 
     all_kbars.sort(key=lambda k: k.timestamp)
+
+    # Prepare final strategies dict
+    final_strategies = test_strategies.copy()
+    if baseline_strategy:
+        final_strategies["Baseline_0050"] = baseline_strategy
+
+    sym_label = ",".join(test_symbols)
+    if baseline_strategy:
+        sym_label += f",{baseline_symbol}(baseline)"
 
     # Run comparison
     multi_report = MultiStrategyBacktestReport(
@@ -304,7 +339,7 @@ def run_compare_strategies(
         params=merged_params,
     )
 
-    for strat_name, strat_instance in strategies.items():
+    for strat_name, strat_instance in final_strategies.items():
         multi_report.add_strategy(strat_name, strat_instance)
 
     multi_report.run()
@@ -393,6 +428,7 @@ if __name__ == "__main__":
                 "Support-Resistance": SupportResistanceStrategy(lookback_days=20),
                 "BollingerBands": BollingerStrategy(),
                 "DCA_Monthly": DCA_Monthly(),
+                "Baseline_0050": BaselineStrategy(),
             },
             open_browser=not args.no_browser,
         )
