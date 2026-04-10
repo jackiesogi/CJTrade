@@ -98,7 +98,8 @@ def run_oneshot(
         start_dt = datetime.strptime(start, "%Y-%m-%d").date()
     else:
         min_days_ago = duration_days + 7
-        max_days_ago = 365 * 5  # Allow up to 5 years of historical data
+        # max_days_ago = 365 * 6  # Allow up to 6 years of historical data
+        max_days_ago = 365 * 10   # since we support yf as fallback
 
         if max_days_ago <= min_days_ago:
             max_days_ago = min_days_ago + 30
@@ -215,8 +216,8 @@ def run_compare_strategies(
         start_dt = datetime.strptime(start, "%Y-%m-%d").date()
     else:
         min_days_ago = duration_days + 7
-        max_days_ago = 365 * 6  # Allow up to 6 years of historical data
-        # max_days_ago = 365 * 25   # since we support yf as fallback
+        # max_days_ago = 365 * 6  # Allow up to 6 years of historical data
+        max_days_ago = 365 * 10   # since we support yf as fallback
 
         if max_days_ago <= min_days_ago:
             max_days_ago = min_days_ago + 30

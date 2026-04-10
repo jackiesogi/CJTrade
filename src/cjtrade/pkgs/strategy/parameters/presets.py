@@ -27,18 +27,18 @@ INTERVAL_PRESETS = {
         "dca__buy_frequency_days": 1,
         "dca__max_position_pct": 0.03,
 
-        # Donchian Breakout (shorter period for 1m intraday)
-        "donchian__period": 10,
+        # Donchian Breakout
+        "donchian__period": 80,
         "donchian__breakout_mode": "close",
-        "donchian__trailing_stop_pct": 0.02,
+        "donchian__trailing_stop_pct": 0.015,
 
         # ADX Adaptive (aggressive for 1m: lower thresholds)
-        "adx__period": 14,
-        "adx__strong_threshold": 35.0,
-        "adx__weak_threshold": 18.0,
-        "adx__donchian_period": 15,
-        "adx__snr_lookback_days": 5,
-        "adx__snr_threshold_pct": 0.005,
+        "adx__period": 25,
+        "adx__strong_threshold": 30.0,
+        "adx__weak_threshold": 15.0,
+        "adx__donchian_period": 80,
+        "adx__snr_lookback_days": 3,
+        "adx__snr_threshold_pct": 0.008,
 
         # Risk Management
         "risk__max_position_pct": 0.03,
