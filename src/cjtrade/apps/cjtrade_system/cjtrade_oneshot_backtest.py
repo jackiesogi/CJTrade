@@ -55,12 +55,14 @@ from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrateg
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
+from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.baseline_0050 import BaselineStrategy
-from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
-from cjtrade.pkgs.strategy.dca_1M import DCA_Monthly
+from cjtrade.pkgs.strategy.bb import BollingerStrategy
+from cjtrade.pkgs.strategy.dca import DCA_Monthly
+from cjtrade.pkgs.strategy.donchian import DonchianBreakoutStrategy
 from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
-from cjtrade.pkgs.strategy.snr_1m import SupportResistanceStrategy
+from cjtrade.pkgs.strategy.snr import SupportResistanceStrategy
 from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
@@ -401,6 +403,8 @@ def main():
             strategies={
                 "Support-Resistance": SupportResistanceStrategy(lookback_days=20),
                 "BollingerBands": BollingerStrategy(),
+                "Donchian": DonchianBreakoutStrategy(),
+                "ADX_Adaptive": ADXAdaptiveStrategy(),
                 "DCA_Monthly": DCA_Monthly(),
                 "Baseline_0050": BaselineStrategy(),
             },

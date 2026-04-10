@@ -31,6 +31,10 @@ KNOWN_STRATEGIES = {
     "Support-Resistance",  # Alias
     "DCA_Monthly",
     "DCA",  # Alias
+    "DonchianBreakoutStrategy",
+    "Donchian",  # Alias
+    "ADXAdaptiveStrategy",
+    "ADX_Adaptive",  # Alias
     "BaselineStrategy",
     "Baseline_0050",  # Alias
 }
@@ -175,10 +179,21 @@ class ParameterManager:
                 key = key.strip()
                 val = val.strip()
 
-                # Try to parse as int, float, bool, or keep as str
+                # Get expected type from schema
+                expected_type = None
+                if key in PARAM_SCHEMA:
+                    expected_type = PARAM_SCHEMA[key].get("type")
+
+                # Try to parse based on expected type or smart detection
                 if val.lower() in ("true", "false"):
                     result[key] = val.lower() == "true"
+                elif expected_type == "float":
+                    # Always parse as float if that's the expected type
+                    result[key] = float(val)
+                elif expected_type == "int":
+                    result[key] = int(val)
                 else:
+                    # Smart detection: try int first, then float
                     for converter in [int, float]:
                         try:
                             result[key] = converter(val)

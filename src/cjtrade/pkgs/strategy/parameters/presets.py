@@ -27,6 +27,19 @@ INTERVAL_PRESETS = {
         "dca__buy_frequency_days": 1,
         "dca__max_position_pct": 0.03,
 
+        # Donchian Breakout (shorter period for 1m intraday)
+        "donchian__period": 10,
+        "donchian__breakout_mode": "close",
+        "donchian__trailing_stop_pct": 0.02,
+
+        # ADX Adaptive (aggressive for 1m: lower thresholds)
+        "adx__period": 14,
+        "adx__strong_threshold": 35.0,
+        "adx__weak_threshold": 18.0,
+        "adx__donchian_period": 15,
+        "adx__snr_lookback_days": 5,
+        "adx__snr_threshold_pct": 0.005,
+
         # Risk Management
         "risk__max_position_pct": 0.03,
     },
@@ -44,6 +57,19 @@ INTERVAL_PRESETS = {
         "dca__buy_frequency_days": 3,
         "dca__max_position_pct": 0.03,
 
+        # Donchian Breakout (short term)
+        "donchian__period": 12,
+        "donchian__breakout_mode": "close",
+        "donchian__trailing_stop_pct": 0.02,
+
+        # ADX Adaptive
+        "adx__period": 14,
+        "adx__strong_threshold": 38.0,
+        "adx__weak_threshold": 19.0,
+        "adx__donchian_period": 18,
+        "adx__snr_lookback_days": 8,
+        "adx__snr_threshold_pct": 0.007,
+
         "risk__max_position_pct": 0.04,
     },
     "1h": {
@@ -60,6 +86,19 @@ INTERVAL_PRESETS = {
         "dca__buy_frequency_days": 7,
         "dca__max_position_pct": 0.04,
 
+        # Donchian Breakout (intermediate term)
+        "donchian__period": 18,
+        "donchian__breakout_mode": "close",
+        "donchian__trailing_stop_pct": 0.03,
+
+        # ADX Adaptive
+        "adx__period": 14,
+        "adx__strong_threshold": 40.0,
+        "adx__weak_threshold": 20.0,
+        "adx__donchian_period": 20,
+        "adx__snr_lookback_days": 15,
+        "adx__snr_threshold_pct": 0.01,
+
         "risk__max_position_pct": 0.05,
     },
     "1d": {
@@ -75,6 +114,19 @@ INTERVAL_PRESETS = {
 
         "dca__buy_frequency_days": 30,
         "dca__max_position_pct": 0.05,
+
+        # Donchian Breakout (standard for daily)
+        "donchian__period": 20,
+        "donchian__breakout_mode": "close",
+        "donchian__trailing_stop_pct": 0.05,
+
+        # ADX Adaptive (standard for daily)
+        "adx__period": 14,
+        "adx__strong_threshold": 40.0,
+        "adx__weak_threshold": 20.0,
+        "adx__donchian_period": 20,
+        "adx__snr_lookback_days": 20,
+        "adx__snr_threshold_pct": 0.01,
 
         "risk__max_position_pct": 0.05,
     },
