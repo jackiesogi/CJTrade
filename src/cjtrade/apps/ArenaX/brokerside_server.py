@@ -41,6 +41,11 @@ def regular_sort_price_db(price_db_path: Optional[str]):
     # Placeholder for scheduled maintenance
     return
 
+BROKER_KBAR_DATA_AVAILABILITY = {
+    "sinopac": { "start": "2020-03-20", "end": "3000-12-31" },
+    "yuanta":  { "start": "2000-01-01", "end": "3000-12-31" },  # need verification
+}
+
 # CJCONF is for the brokers / services configuration (e.g. API keys, certs, etc.)
 def load_cjconf():
     load_supported_config_files()
@@ -393,6 +398,67 @@ class ArenaX_BrokerSideServer:
             # print(type(price.to_dict()))  # dict
             return jsonify({"ok": True, "symbol": symbol, "price": price.to_dict() if price else None})
 
+        @app.get("/market/data_availability")
+        def market_data_availability():
+            def parse_date(date_str: str):
+                DATE_FORMAT = "%Y-%m-%d"
+                try:
+                    return datetime.strptime(date_str, DATE_FORMAT)
+                except ValueError:
+                    return None
+            broker = self.backend.real_account.get_broker_name()
+            availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker)
+
+            if not availability:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Unknown broker: {broker}"
+                }), 400
+
+            available_start = parse_date(availability["start"])
+            available_end = parse_date(availability["end"])
+
+            start = request.args.get("start")
+            end = request.args.get("end")
+
+            if not start or not end:
+                return jsonify({
+                    "ok": True,
+                    "available": True,
+                    "broker": broker,
+                    "available_start": availability["start"],
+                    "available_end": availability["end"],
+                }), 200
+
+            requested_start = parse_date(start)
+            requested_end = parse_date(end)
+
+            if not requested_start or not requested_end:
+                return jsonify({
+                    "ok": False,
+                    "error": "Invalid date format. Use YYYY-MM-DD"
+                }), 400
+
+            if requested_start > requested_end:
+                return jsonify({
+                    "ok": False,
+                    "error": "start must be <= end"
+                }), 400
+
+            is_available = (
+                requested_start >= available_start and
+                requested_end <= available_end
+            )
+
+            return jsonify({
+                "ok": True,
+                "available": is_available,
+                "broker": broker,
+                "available_start": availability["start"],
+                "available_end": availability["end"],
+            }), 200
+
+
         @app.get("/market/kbars")
         def market_kbars():
             symbol = request.args.get("symbol")
@@ -401,6 +467,20 @@ class ArenaX_BrokerSideServer:
             interval = request.args.get("interval", "1m")
             try:
                 kbars = self.backend.kbars(symbol, start, end, interval)
+                print(f"length of kbars: {len(kbars)}")
+                print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
+                return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
+
+        @app.get("/market/kbars_yfinance")
+        def market_kbars_yfinance():
+            symbol = request.args.get("symbol")
+            start = request.args.get("start")
+            end = request.args.get("end")
+            interval = request.args.get("interval", "1m")
+            try:
+                kbars = self.backend.kbars_yf(symbol, start, end, interval)
                 print(f"length of kbars: {len(kbars)}")
                 print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
                 return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200

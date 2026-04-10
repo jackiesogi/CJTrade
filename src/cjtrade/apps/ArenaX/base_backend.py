@@ -140,6 +140,7 @@ class ArenaX_BackendBase:
         self._update_position_prices()
         return self.account_state.positions
 
+    # TODO: Also store to local 1d kbar price cache
     def kbars_yf(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
         yf_symbol = f"{symbol}.TW"
 

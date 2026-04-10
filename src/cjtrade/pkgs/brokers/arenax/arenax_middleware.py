@@ -171,7 +171,7 @@ class ArenaXMiddleWare:
             return None
 
     def get_kbars(self, symbol: str, start: str, end: str,
-                  interval: str = "1m") -> list:
+                  interval: str = "1m", fallback: bool = False) -> list:
         """Fetch historical kbars from the ArenaX server.
 
         Parameters
@@ -185,14 +185,27 @@ class ArenaXMiddleWare:
         -------
         list[dict]  raw dicts with keys: timestamp, open, high, low, close, volume
         """
-        res = self._get(
-            f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
-        )
+        if not fallback:
+            res = self._get(
+                f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
+            )
+        else:
+            res = self._get(
+                f"market/kbars_yfinance?symbol={symbol}&start={start}&end={end}&interval=1d"
+            )
+
         if res and res.get("ok"):
             return res.get("result", [])
         err = res.get("error") if res else "No response"
         print(f"Failed to get kbars for {symbol}: {err}")
         return []
+
+    def is_kbar_data_available(self, start: str, end: str) -> bool:
+        res = self._get(f"market/data_availability?start={start}&end={end}")
+        if res and res.get("ok"):
+            return res.get("available", False)
+        err = res.get("error") if res else "No response"
+        print(f"Failed to check data availability: {err}")
 
 
     def place_order(self, order: Order, **kwargs) -> OrderResult:

@@ -62,38 +62,6 @@ from dotenv import load_dotenv
 log = logging.getLogger(__name__)
 load_dotenv()
 
-
-# ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
-
-def _env(key: str, default: str = "") -> str:
-    return os.environ.get(key, default).strip()
-
-
-def _load_config() -> dict:
-    # Try to read .cjsys file (same convention as the main system)
-    cjsys_file = Path(__file__).parent / "configs" / "arenax_hist.cjsys"
-    cfg: dict = {}
-    if cjsys_file.exists():
-        for line in cjsys_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                cfg[k.strip().lower()] = v.strip()
-
-    # Environment variables override the file
-    for key in ["cjsys_watch_list", "cjsys_oneshot_start", "cjsys_oneshot_end",
-                "cjsys_oneshot_interval", "cjsys_oneshot_initial_balance",
-                "cjsys_oneshot_duration_days",
-                "cjsys_bb_window_size", "cjsys_bb_min_width_pct",
-                "cjsys_risk_max_position_pct"]:
-        val = os.environ.get(key.upper(), "")
-        if val:
-            cfg[key] = val
-
-    return cfg
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -109,7 +77,7 @@ def run_oneshot(
     report_path: Optional[str] = None,
     open_browser: bool = True,
 ) -> None:
-    cfg = _load_config()
+    # cfg = _load_config()
 
     if symbol is None:
         watch = cfg.get("cjsys_watch_list", "")
@@ -227,13 +195,10 @@ def run_compare_strategies(
     open_browser : bool
         Open result in default browser (default: True)
     """
-    cfg = _load_config()
+    # cfg = _load_config()
 
     if symbol is None:
-        watch = cfg.get("cjsys_watch_list", "")
-        symbol = watch if watch else None
-    if not symbol:
-        raise ValueError("No symbol provided. Set CJSYS_WATCH_LIST or pass symbol=...")
+        raise ValueError("No symbol provided. Pass symbol=...")
 
     if isinstance(symbol, str):
         symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
@@ -246,7 +211,8 @@ def run_compare_strategies(
         start_dt = datetime.strptime(start, "%Y-%m-%d").date()
     else:
         min_days_ago = duration_days + 7
-        max_days_ago = 365 * 5  # Allow up to 5 years of historical data
+        max_days_ago = 365 * 6  # Allow up to 6 years of historical data
+        # max_days_ago = 365 * 25   # since we support yf as fallback
 
         if max_days_ago <= min_days_ago:
             max_days_ago = min_days_ago + 30
@@ -261,17 +227,6 @@ def run_compare_strategies(
 
     log.info(f"[CompareStrategies] Time Range: {start_str} to {end_str} ({duration_days} days)")
 
-    if initial_balance == 1_000_000.0:
-        initial_balance = float(cfg.get("cjsys_oneshot_initial_balance", 1_000_000.0))
-
-    merged_params = {
-        "bb_window_size":        int(cfg.get("cjsys_bb_window_size", 20)),
-        "bb_min_width_pct":      float(cfg.get("cjsys_bb_min_width_pct", 0.01)),
-        "risk_max_position_pct": float(cfg.get("cjsys_risk_max_position_pct", 0.05)),
-    }
-    if params:
-        merged_params.update(params)
-
     if not strategies:
         strategies = {
             "DCA_Monthly": DCA_Monthly(),
@@ -283,8 +238,9 @@ def run_compare_strategies(
     baseline_strategy = None
     test_strategies = {}
 
+    # Automatically identify baseline strategy by name (e.g. "Baseline_0050")
     for strat_name, strat_instance in strategies.items():
-        if "Baseline" in strat_name or "baseline" in strat_name:
+        if "baseline" in strat_name.lower():
             baseline_strategy = strat_instance
             log.info(f"[CompareStrategies] Identified baseline strategy: {strat_name}")
         else:
@@ -336,7 +292,7 @@ def run_compare_strategies(
     multi_report = MultiStrategyBacktestReport(
         kbars=all_kbars,
         initial_balance=initial_balance,
-        params=merged_params,
+        # params=merged_params,
     )
 
     for strat_name, strat_instance in final_strategies.items():
@@ -404,6 +360,7 @@ if __name__ == "__main__":
     ap.add_argument("--start",    default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
     ap.add_argument("--duration", type=int,     default=5, help="Duration in days (default: 5)")
     ap.add_argument("--interval", default="1m", help="Kbar interval (default: 1m)")
+    # ap.add_argument("--interval", default="1d", help="Kbar interval (default: 1m)")
     ap.add_argument("--balance",  type=float,   default=1_000_000.0, help="Initial balance")
     ap.add_argument("--compare",  action="store_true", help="Compare DCA_Monthly vs BollingerBands")
     ap.add_argument("--no-browser", action="store_true", help="Don't open browser")

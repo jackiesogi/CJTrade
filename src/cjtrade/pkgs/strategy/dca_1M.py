@@ -39,7 +39,8 @@ class DCA_Monthly(BaseStrategy):
     - max_position_pct: fraction of equity to allocate on each buy (passed to ctx.calc_qty)
     """
 
-    name = "DCA_Monthly"
+    name = "DCA"
+    long_name = "DCA_Monthly"
 
     def __init__(self, max_position_pct: float = 0.03) -> None:
         self._max_position_pct = max_position_pct

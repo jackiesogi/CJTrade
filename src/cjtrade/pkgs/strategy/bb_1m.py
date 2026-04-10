@@ -32,14 +32,14 @@ class BollingerStrategy(BaseStrategy):
     Buys when price touches lower band, sells when it touches upper band.
     Keeps at most one position (no pyramiding).
     """
-    name = "BollingerBands"
+    name = "BB"
+    long_name = "BollingerBands"
 
     def on_start(self, ctx):
         p = ctx.params
         # Read from config (same as arenax.py)
-        self._window   = int(p.get("bb_window_size",      100))
-        # self._min_bw   = float(p.get("bb_min_width_pct",  0.01))
-        self._min_bw   = float(p.get("bb_min_width_pct",  0.02))
+        self._window   = int(p.get("bb_window_size",      20))
+        self._min_bw   = float(p.get("bb_min_width_pct",  0.01))
         self._max_pct  = float(p.get("risk_max_position_pct", 0.05))
         log.info(f"[{self.name}] window={self._window} min_bw={self._min_bw*100:.2f}%")
 

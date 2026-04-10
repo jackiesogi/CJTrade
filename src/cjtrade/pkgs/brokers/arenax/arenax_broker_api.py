@@ -338,7 +338,30 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to simulation environment")
 
-        return None  # TODO: Finish it!
+        # Stub response from backend real broker API
+        # TODO: also need to ask server via HTTP req or middleware
+        def get_supported_intervals():
+            return ["1m", "5m", "1h", "1d"]   # relatively stable
+
+        # TODO: Implement logic to get available start and end times from backend
+        def data_available(symbol: str, start: str, end: str):
+            return self.middleware.is_kbar_data_available(start, end)
+
+        if interval not in get_supported_intervals():
+            print(f"Interval '{interval}' not supported by backend broker API, using '1m'")
+            interval = "1m"
+
+        if not data_available(product.symbol, start, end):
+            print(f"[{product.symbol}] {start} to {end} data not available")
+            print("Falling back to use yfinance data")
+            interval = "1d"
+            kbars_raw = self.middleware.get_kbars(product.symbol, start, end, interval, fallback=True)
+        else:
+            kbars_raw = self.middleware.get_kbars(product.symbol, start, end, interval, fallback=False)
+
+        kbars = [Kbar(**kr) for kr in kbars_raw] if kbars_raw else []
+
+        return kbars
         # # yfinance directly supported intervals
         # yf_supported = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
 

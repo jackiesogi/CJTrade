@@ -50,7 +50,8 @@ class SupportResistanceStrategy(BaseStrategy):
     - max_position_pct: Max position size as fraction of equity
     """
 
-    name = "SupportResistance"
+    name = "SNR"
+    long_name = "SupportResistance"
 
     def __init__(
         self,
