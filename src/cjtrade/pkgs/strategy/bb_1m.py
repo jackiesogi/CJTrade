@@ -38,7 +38,8 @@ class BollingerStrategy(BaseStrategy):
         p = ctx.params
         # Read from config (same as arenax.py)
         self._window   = int(p.get("bb_window_size",      100))
-        self._min_bw   = float(p.get("bb_min_width_pct",  0.01))
+        # self._min_bw   = float(p.get("bb_min_width_pct",  0.01))
+        self._min_bw   = float(p.get("bb_min_width_pct",  0.02))
         self._max_pct  = float(p.get("risk_max_position_pct", 0.05))
         log.info(f"[{self.name}] window={self._window} min_bw={self._min_bw*100:.2f}%")
 
@@ -48,8 +49,10 @@ class BollingerStrategy(BaseStrategy):
         if len(prices) < self._window:
             return []
 
-        # Use TA-Lib to calculate BB (matches arenax.py exactly)
-        prices_array = np.array(prices, dtype=float)
+        # Only slice the last _window prices — TA-Lib only needs exactly this
+        # many points to compute the latest BB values. Avoids O(n) numpy
+        # allocation that grows with the entire price history.
+        prices_array = np.array(prices[-self._window:], dtype=float)
         upper_bands, middle_bands, lower_bands = ta.bb(
             prices_array,
             timeperiod=self._window,

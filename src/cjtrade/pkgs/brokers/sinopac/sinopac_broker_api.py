@@ -194,9 +194,12 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         sinopac_product = _to_sinopac_product(self.api, product)
 
-        # Always fetch 1-minute data from Shioaji (only supported interval)
-        kbars_1m = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
-        base_kbars = _from_sinopac_kbar(kbars_1m)
+        try:
+            # Always fetch 1-minute data from Shioaji (only supported interval)
+            kbars_1m = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
+            base_kbars = _from_sinopac_kbar(kbars_1m)
+        except Exception as e:
+            print(f"Error fetchin sinopac kbars: {e}")
 
         # If requesting 1m data, return as-is
         if interval == "1m":

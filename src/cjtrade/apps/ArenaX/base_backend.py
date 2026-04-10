@@ -248,6 +248,7 @@ class ArenaX_BackendBase:
                     range_end = dt.fromtimestamp(end_epoch).strftime("%Y-%m-%d")
                     print(f"[kbars] Fetching from broker: {symbol} [{range_start} to {range_end}]")
 
+                    # TODO: check if the backend real broker api support specified interval
                     fetched = self.real_account.get_kbars(
                         start=range_start,
                         end=range_end,

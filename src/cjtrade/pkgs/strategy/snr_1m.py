@@ -25,7 +25,7 @@ from datetime import timedelta
 from typing import Dict
 from typing import List
 
-import numpy as np
+import numpy
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
@@ -110,8 +110,9 @@ class SupportResistanceStrategy(BaseStrategy):
         recent_prices = prices[-min_bars_needed:]
 
         # Calculate support (lowest low) and resistance (highest high)
-        support = float(np.min(recent_prices))
-        resistance = float(np.max(recent_prices))
+        # Use pure Python min/max instead of numpy for efficiency
+        support = float(min(recent_prices))
+        resistance = float(max(recent_prices))
 
         price = bar.close
         ts_str = bar.timestamp.strftime("%Y-%m-%d %H:%M:%S")

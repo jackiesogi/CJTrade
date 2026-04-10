@@ -46,7 +46,7 @@ from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 log = logging.getLogger(__name__)
 
 BASELINE_SYMBOL = "0050"  # Taiwan Top 50 ETF
-BASELINE_MONTHLY_AMOUNT = 10000  # NT$10,000 per month
+BASELINE_MONTHLY_AMOUNT = 100000  # NT$10,000 per month
 
 
 class BaselineStrategy(BaseStrategy):
