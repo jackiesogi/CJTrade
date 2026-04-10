@@ -13,7 +13,8 @@ LAST_FILE="$CONFIG_DIR/last_watch_list"
 
 DEFAULT_WATCH_LIST="1234"
 DEFAULT_FUND=500000
-DEFAULT_DAYS=5
+DEFAULT_DAYS=365
+DEFAULT_INTERVAL="1d"
 DEFAULT_MODE="hist"
 
 # ------------------------
@@ -29,7 +30,10 @@ fi
 WATCH_LIST=""
 INITIAL_FUND=""
 DURATION_DAYS=""
+INTERVAL=""
+PARAMS=""
 ARENAX_MODE=""
+SHOW_PARAMS=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -45,6 +49,18 @@ while [[ $# -gt 0 ]]; do
             DURATION_DAYS="$2"
             shift 2
             ;;
+        --interval)
+            INTERVAL="$2"
+            shift 2
+            ;;
+        --params)
+            PARAMS="$2"
+            shift 2
+            ;;
+        --show-params)
+            SHOW_PARAMS=1
+            shift
+            ;;
         --mode)
             ARENAX_MODE="$2"
             shift 2
@@ -53,6 +69,7 @@ while [[ $# -gt 0 ]]; do
             WATCH_LIST="$LAST_USED"
             INITIAL_FUND=$DEFAULT_FUND
             DURATION_DAYS=$DEFAULT_DAYS
+            INTERVAL=$DEFAULT_INTERVAL
             ARENAX_MODE=$DEFAULT_MODE
             shift
             ;;
@@ -93,6 +110,11 @@ if [ -z "$DURATION_DAYS" ]; then
     DURATION_DAYS=${input:-$DEFAULT_DAYS}
 fi
 
+if [ -z "$INTERVAL" ]; then
+    read -p "Enter interval (1m/5m/1h/1d, default: $DEFAULT_INTERVAL): " input
+    INTERVAL=${input:-$DEFAULT_INTERVAL}
+fi
+
 if [ -z "$ARENAX_MODE" ]; then
     read -p "Enter mode (default: $DEFAULT_MODE): " input
     ARENAX_MODE=${input:-$DEFAULT_MODE}
@@ -118,6 +140,8 @@ echo "$WATCH_LIST" > "$LAST_FILE"
 export CJSYS_WATCH_LIST="$WATCH_LIST"
 export INITIAL_FUND
 export DURATION_DAYS
+export INTERVAL
+export PARAMS
 export ARENAX_MODE
 export COMPARE_MODE
 
@@ -168,12 +192,24 @@ fi
 
 trap cleanup EXIT SIGINT SIGTERM
 
+# Handle --show-params
+if [ "$SHOW_PARAMS" = "1" ]; then
+    uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+      --interval "$INTERVAL" \
+      --show-params
+    exit 0
+fi
+
 sleep 5
 CMD="uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
   --symbol $CJSYS_WATCH_LIST \
-  --interval 1m \
+  --interval $INTERVAL \
   --balance $INITIAL_FUND \
   --duration $DURATION_DAYS"
+
+if [ -n "$PARAMS" ]; then
+    CMD="$CMD --params \"$PARAMS\""
+fi
 
 if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "true" || "$COMPARE_MODE" == "y" ]]; then
   CMD="$CMD --compare"

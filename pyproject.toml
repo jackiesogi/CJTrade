@@ -40,6 +40,7 @@ arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
 aresh = "cjtrade.apps.ArenaX.brokerside_server_admin_shell:main"
 system = "cjtrade.apps.cjtrade_system.arenax_runner:main"
 osystem = "cjtrade.apps.cjtrade_system.cjtrade_system:main_system"
+backtest = "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest:main"
 _system_direct = "cjtrade.apps.cjtrade_system.cjtrade_system_arenax:main_system"
 
 

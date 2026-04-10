@@ -393,7 +393,7 @@ class MultiStrategyBacktestReport:
             raise ValueError("No results to compare. Call run() first.")
 
         fig = go.Figure()
-        colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+        colors = ["#1f77b4", "#ffe100", "#00d500", "#d40000", "#956bbc", "#8c564b"]
 
         for idx, (name, result) in enumerate(self._results.items()):
             eq_series = result.to_equity_series()

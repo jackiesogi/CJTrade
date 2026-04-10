@@ -49,9 +49,10 @@ class DCA_Monthly(BaseStrategy):
 
     def on_start(self, ctx: StrategyContext) -> None:
         p = ctx.params
-        self._max_position_pct = float(p.get("dca_max_position_pct", self._max_position_pct))
+        # Support both old and new param names for backward compatibility
+        self._max_position_pct = float(p.get("dca__max_position_pct", p.get("dca_max_position_pct", self._max_position_pct)))
         # allow externally provided last_buy_time (ISO string) if desired
-        maybe = p.get("dca_last_buy_time")
+        maybe = p.get("dca__last_buy_time", p.get("dca_last_buy_time"))
         if isinstance(maybe, dict):
             # map of symbol -> ISO timestamp
             for sym, iso in maybe.items():

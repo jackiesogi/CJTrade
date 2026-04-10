@@ -44,6 +44,8 @@ import uuid
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
+from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Union
@@ -51,11 +53,13 @@ from typing import Union
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
 from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
+from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.baseline_0050 import BaselineStrategy
 from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
 from cjtrade.pkgs.strategy.dca_1M import DCA_Monthly
+from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
 from cjtrade.pkgs.strategy.snr_1m import SupportResistanceStrategy
 from dotenv import load_dotenv
 
@@ -69,21 +73,18 @@ load_dotenv()
 def run_oneshot(
     symbol: Union[str, List[str], None] = None,
     start: Optional[str] = None,
-    duration_days: int = 5,
-    interval: str = "1m",
+    duration_days: int = 365,
+    interval: str = "1d",
     initial_balance: float = 1_000_000.0,
     strategy: Optional[BaseStrategy] = None,
-    params: Optional[dict] = None,
+    params: Optional[Dict[str, Any]] = None,
     report_path: Optional[str] = None,
     open_browser: bool = True,
 ) -> None:
     # cfg = _load_config()
 
     if symbol is None:
-        watch = cfg.get("cjsys_watch_list", "")
-        symbol = watch if watch else None
-    if not symbol:
-        raise ValueError("No symbol provided. Set CJSYS_WATCH_LIST or pass symbol=...")
+        raise ValueError("No symbol provided. Pass symbol=...")
 
     if isinstance(symbol, str):
         symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
@@ -110,18 +111,19 @@ def run_oneshot(
 
     log.info(f"[OneShot] Time Range: {start_str} to {end_str} ({duration_days} days)")
 
-    if initial_balance == 1_000_000.0:
-        initial_balance = float(cfg.get("cjsys_oneshot_initial_balance", 1_000_000.0))
-
-    merged_params = {
-        "bb_window_size":        int(cfg.get("cjsys_bb_window_size", 20)),
-        "bb_min_width_pct":      float(cfg.get("cjsys_bb_min_width_pct", 0.01)),
-        "risk_max_position_pct": float(cfg.get("cjsys_risk_max_position_pct", 0.05)),
-    }
-    if params:
-        merged_params.update(params)
-
+    # Load parameters using ParameterManager
     strategy = strategy or BollingerStrategy()
+    strategy_name = getattr(strategy, 'long_name', getattr(strategy, 'name', 'Unknown'))
+
+    param_config = ParameterManager.load_params(
+        interval=interval,
+        strategy_name=strategy_name,
+        user_overrides=params
+    )
+
+    log.info(f"[OneShot] Parameters: {param_config.params_hash} (interval={interval}, strategy={strategy_name})")
+    merged_params = param_config.params
+
     sym_label = ",".join(symbols)
 
     # 4. Fetch kbars
@@ -163,11 +165,11 @@ def run_oneshot(
 def run_compare_strategies(
     symbol: Union[str, List[str], None] = None,
     start: Optional[str] = None,
-    duration_days: int = 5,
-    interval: str = "1m",
+    duration_days: int = 365,
+    interval: str = "1d",
     initial_balance: float = 1_000_000.0,
     strategies: Optional[dict] = None,
-    params: Optional[dict] = None,
+    params: Optional[Dict[str, Any]] = None,
     report_path: Optional[str] = None,
     open_browser: bool = True,
 ) -> None:
@@ -288,11 +290,22 @@ def run_compare_strategies(
     if baseline_strategy:
         sym_label += f",{baseline_symbol}(baseline)"
 
+    # Load parameters using ParameterManager
+    strategy_name = list(final_strategies.keys())[0] if final_strategies else "Unknown"
+    param_config = ParameterManager.load_params(
+        interval=interval,
+        strategy_name=strategy_name,
+        user_overrides=params
+    )
+
+    log.info(f"[CompareStrategies] Parameters: {param_config.params_hash} (interval={interval})")
+    final_params = param_config.params
+
     # Run comparison
     multi_report = MultiStrategyBacktestReport(
         kbars=all_kbars,
         initial_balance=initial_balance,
-        # params=merged_params,
+        params=final_params,
     )
 
     for strat_name, strat_instance in final_strategies.items():
@@ -350,37 +363,41 @@ def _make_tagged_kbar(raw: dict, symbol: str):
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
+def main():
     import argparse
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)-7s : %(message)s")
 
     ap = argparse.ArgumentParser(description="CJTrade one-shot backtest")
-    ap.add_argument("--symbol",   default=None, help="Ticker(s), e.g. 2330 or 2330,0050")
-    ap.add_argument("--start",    default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
-    ap.add_argument("--duration", type=int,     default=5, help="Duration in days (default: 5)")
-    ap.add_argument("--interval", default="1m", help="Kbar interval (default: 1m)")
-    # ap.add_argument("--interval", default="1d", help="Kbar interval (default: 1m)")
-    ap.add_argument("--balance",  type=float,   default=1_000_000.0, help="Initial balance")
-    ap.add_argument("--compare",  action="store_true", help="Compare DCA_Monthly vs BollingerBands")
-    ap.add_argument("--no-browser", action="store_true", help="Don't open browser")
+    ap.add_argument("--symbol",       default=None, help="Ticker(s), e.g. 2330 or 2330,0050")
+    ap.add_argument("--start",        default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
+    ap.add_argument("--duration",     type=int, default=365, help="Duration in days (default: 365)")
+    ap.add_argument("--interval",     choices=["1m", "5m", "1h", "1d"], default="1d",
+                    help="Kbar interval (default: 1d)")
+    ap.add_argument("--balance",      type=float, default=1_000_000.0, help="Initial balance (default: 1,000,000)")
+    ap.add_argument("--params",       default=None,
+                    help="Parameter overrides (format: 'key1:val1,key2:val2', e.g. 'bb__window_size:30,risk__max_position_pct:0.1')")
+    ap.add_argument("--show-params",  action="store_true", help="Show parameter configuration and exit")
+    ap.add_argument("--compare",      action="store_true", help="Compare multiple strategies")
+    ap.add_argument("--no-browser",   action="store_true", help="Don't open browser")
     args = ap.parse_args()
 
+    # Handle --show-params
+    if args.show_params:
+        print(ParameterManager.show_params(
+            interval=args.interval,
+            strategy_name="BollingerBands",  # Default, can be overridden
+            user_overrides=args.params
+        ))
+        exit(0)
+
     if args.compare:
-        # run_compare_strategies(
-        #     symbol=args.symbol,
-        #     start=args.start,
-        #     duration_days=args.duration,
-        #     interval=args.interval,
-        #     initial_balance=args.balance,
-        #     open_browser=not args.no_browser,
-        # )
         run_compare_strategies(
             symbol=args.symbol,
             start=args.start,
             duration_days=args.duration,
             interval=args.interval,
             initial_balance=args.balance,
+            params=args.params,
             strategies={
                 "Support-Resistance": SupportResistanceStrategy(lookback_days=20),
                 "BollingerBands": BollingerStrategy(),
@@ -396,5 +413,9 @@ if __name__ == "__main__":
             duration_days=args.duration,
             interval=args.interval,
             initial_balance=args.balance,
+            params=args.params,
             open_browser=not args.no_browser,
         )
+
+if __name__ == "__main__":
+    main()

@@ -74,19 +74,22 @@ class SupportResistanceStrategy(BaseStrategy):
 
     def on_start(self, ctx: StrategyContext) -> None:
         p = ctx.params
-        self._lookback_days = int(p.get("sr_lookback_days", self._lookback_days))
-        self._support_threshold_pct = float(p.get("sr_support_threshold_pct", self._support_threshold_pct))
-        self._resistance_threshold_pct = float(p.get("sr_resistance_threshold_pct", self._resistance_threshold_pct))
-        self._breakout_mode = p.get("sr_breakout_mode", self._breakout_mode)
-        self._max_position_pct = float(p.get("risk_max_position_pct", self._max_position_pct))
+        # Support both old and new param names for backward compatibility
+        self._lookback_days = int(p.get("sr__lookback_days", p.get("sr_lookback_days", self._lookback_days)))
+        self._support_threshold_pct = float(p.get("sr__support_threshold_pct", p.get("sr_support_threshold_pct", self._support_threshold_pct)))
+        self._resistance_threshold_pct = float(p.get("sr__resistance_threshold_pct", p.get("sr_resistance_threshold_pct", self._resistance_threshold_pct)))
+        self._breakout_mode = p.get("sr__breakout_mode", p.get("sr_breakout_mode", self._breakout_mode))
+        self._max_position_pct = float(p.get("risk__max_position_pct", p.get("risk_max_position_pct", self._max_position_pct)))
 
         # Auto-detect bars per day based on kbar interval
         # This allows strategy to work with both 1m and 1d (or any interval)
-        interval_hint = p.get("sr_interval", "1m")  # can be overridden
+        interval_hint = p.get("sr__interval", p.get("sr_interval", "1m"))
         if interval_hint.lower() == "1d":
             self._bars_per_day = 1  # 1d kbar = 1 bar per day
         elif interval_hint.lower() == "1h":
             self._bars_per_day = 7  # rough estimate for trading hours
+        elif interval_hint.lower() == "5m":
+            self._bars_per_day = 54  # ~54 bars per day for 5m interval
         else:  # default 1m
             self._bars_per_day = 270  # ~270 minutes per trading day
 
