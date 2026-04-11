@@ -105,8 +105,17 @@ class BacktestReport:
     def summary(self) -> None:
         """Print key performance metrics to stdout (no external deps)."""
         r = self.result
-        pnl = r.final_balance - r.initial_balance
+        # PnL now includes both realized (balance change) and unrealized (position value)
+        final_equity = r.final_equity if r.final_equity is not None else r.final_balance
+        pnl = final_equity - r.initial_balance
         pnl_pct = pnl / r.initial_balance * 100 if r.initial_balance else 0.0
+
+        # uPnL = unrealized PnL = position value
+        unrealized_pnl = final_equity - r.final_balance
+        unrealized_pnl_pct = unrealized_pnl / r.initial_balance * 100 if r.initial_balance else 0.0
+
+        # rPnL = realized PnL = balance change only
+        realized_pnl = r.final_balance - r.initial_balance
 
         print("=" * 50)
         print("  Backtest Summary")
@@ -115,7 +124,10 @@ class BacktestReport:
         print(f"  Start time   : {r.start_time or 'N/A'}")
         print(f"  Init balance : {r.initial_balance:>15,.2f}")
         print(f"  Final balance: {r.final_balance:>15,.2f}")
-        print(f"  PnL          : {pnl:>+15,.2f}  ({pnl_pct:+.2f}%)")
+        print(f"  Final equity : {final_equity:>15,.2f}")
+        print(f"  PnL (Total)  : {pnl:>+15,.2f}  ({pnl_pct:+.2f}%)")
+        print(f"  rPnL         : {realized_pnl:>+15,.2f}")
+        print(f"  uPnL         : {unrealized_pnl:>+15,.2f}  ({unrealized_pnl_pct:+.2f}%)")
         print(f"  Total fills  : {len(r.fill_history)}")
         print(f"  Equity pts   : {len(r.equity_curve)}")
 
@@ -139,13 +151,20 @@ class BacktestReport:
     def metrics(self) -> dict:
         """Return key metrics as a plain dict (suitable for logging/JSON)."""
         r = self.result
-        pnl = r.final_balance - r.initial_balance
+        final_equity = r.final_equity if r.final_equity is not None else r.final_balance
+        pnl = final_equity - r.initial_balance
+        unrealized_pnl = final_equity - r.final_balance
+        realized_pnl = r.final_balance - r.initial_balance
+
         base = {
             "session_id":      r.session_id,
             "initial_balance": r.initial_balance,
             "final_balance":   r.final_balance,
+            "final_equity":    round(final_equity, 2),
             "pnl":             round(pnl, 2),
             "pnl_pct":         round(pnl / r.initial_balance * 100, 4) if r.initial_balance else 0.0,
+            "realized_pnl":    round(realized_pnl, 2),
+            "unrealized_pnl":  round(unrealized_pnl, 2),
             "n_fills":         len(r.fill_history),
             "n_equity_pts":    len(r.equity_curve),
         }

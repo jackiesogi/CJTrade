@@ -329,10 +329,11 @@ class BacktestEngine:
         )
         strategy.on_end(final_ctx)
 
+        final_equity = account.equity(price_map)
         log.info(
             f"[BacktestEngine] Finished – {len(self.kbars)} bars, "
             f"{len(account.fill_history)} fills, "
-            f"equity {account.initial_balance:,.0f} → {account.equity(price_map):,.0f}"
+            f"equity {account.initial_balance:,.0f} → {final_equity:,.0f}"
         )
 
         return BacktestResult(
@@ -342,4 +343,5 @@ class BacktestEngine:
             fill_history=account.fill_history,
             session_id=self.session_id,
             start_time=self.kbars[0].timestamp.isoformat() if self.kbars else None,
+            final_equity=final_equity,
         )

@@ -31,6 +31,9 @@ class BacktestResult:
         Used to isolate this run's fills from the server's global fill_history.
     start_time : str, optional
         ISO timestamp of when the client started this backtest session.
+    final_equity : float, optional
+        Final portfolio equity (cash + position values) at session end.
+        Used to calculate true PnL including unrealised gains/losses.
     """
 
     initial_balance: float
@@ -39,6 +42,7 @@ class BacktestResult:
     fill_history: List[Dict]
     session_id: Optional[str] = None
     start_time: Optional[str] = None
+    final_equity: Optional[float] = None
 
     # ------------------------------------------------------------------
     # Core conversion

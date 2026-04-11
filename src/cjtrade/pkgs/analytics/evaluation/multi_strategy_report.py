@@ -101,7 +101,8 @@ class MultiStrategyBacktestReport:
             result = engine.run(strategy)
             self._results[name] = result
             self._returns_series[name] = result.to_returns()
-            pnl = result.final_balance - result.initial_balance
+            final_equity = result.final_equity if result.final_equity is not None else result.final_balance
+            pnl = final_equity - result.initial_balance
             log.info(
                 f"  ✓ {name} completed – {len(result.fill_history)} fills, "
                 f"PnL={pnl:+.2f}"
@@ -133,7 +134,8 @@ class MultiStrategyBacktestReport:
         print("-" * 130)
 
         for name, result in self._results.items():
-            pnl = result.final_balance - result.initial_balance
+            final_equity = result.final_equity if result.final_equity is not None else result.final_balance
+            pnl = final_equity - result.initial_balance
             pnl_pct = pnl / result.initial_balance * 100 if result.initial_balance else 0.0
             returns = self._returns_series[name]
 

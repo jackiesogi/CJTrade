@@ -46,7 +46,7 @@ from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 log = logging.getLogger(__name__)
 
 BASELINE_SYMBOL = "0050"  # Taiwan Top 50 ETF
-BASELINE_MONTHLY_AMOUNT = 2500000  # NT$50,000 per month
+BASELINE_MONTHLY_AMOUNT = 4888888  # NT$50,000 per month
 
 
 class BaselineStrategy(BaseStrategy):
@@ -101,7 +101,7 @@ class BaselineStrategy(BaseStrategy):
 
         # Check if we've bought this symbol before
         last = self._last_buy_time.get(sym)
-        if last is not None and (now - last) < timedelta(days=1001):
+        if last is not None and (now - last) < timedelta(days=2001):
             # Not 30 days yet since last buy
             return []
 
