@@ -13,7 +13,7 @@ CJSYS_WATCH_LIST              =
 CJSYS_ANALYSIS_INTERVAL       = 60      # seconds in virtual environment
 CJSYS_CHECK_FILL_INTERVAL     = 120      # seconds in virtual environment
 CJSYS_DISPLAY_TIME_INTERVAL   = 60      # seconds in virtual environment
-CJSYS_LLM_REPORT_INTERVAL     = 1000000  # seconds in virtual environment
+CJSYS_LLM_REPORT_INTERVAL     = 999999999  # seconds in virtual environment
 CJSYS_PRICE_MONITOR_INTERVAL  = 60       # seconds in virtual environment
 # ===========================================================================================================
 

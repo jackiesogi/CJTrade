@@ -261,6 +261,79 @@ class TradingSystem:
         """Return sleep time scaled by playback speed"""
         return seconds / self.playback_speed
 
+    def _format_trade_log_line_summary(self, trade: Dict, index: int) -> str:
+        """
+        Format trade for SUMMARY display (with color emoji, compact).
+        Used in the final 【Trade History】 section.
+
+        Output format:
+          {index:2d}. [{mock_time}] {emoji} {action:4s} {quantity:>4d} shares {symbol:6s} @ ${price:>7.2f}
+
+        Example:
+          1. [2023-11-27 11:31] 🟢 BUY   154 shares 3443   @ $1615.00
+        """
+        action = trade['action']
+        action_icon = "🟢" if action == 'BUY' else "🔴"
+
+        # Use mock_time if available (backtest mode), otherwise use timestamp
+        if 'mock_time' in trade:
+            time_obj = trade['mock_time']
+        else:
+            time_obj = trade['timestamp']
+
+        # Format time as YYYY-MM-DD HH:MM
+        if isinstance(time_obj, str):
+            ts_str = time_obj  # Already formatted
+        else:
+            ts_str = time_obj.strftime('%Y-%m-%d %H:%M')
+
+        return (f"  {index:2d}. [{ts_str}] {action_icon} {action:4s} {trade['quantity']:>4d} shares "
+                f"{trade['symbol']:6s} @ ${trade['price']:>7.2f}")
+
+    def _format_trade_log_line_log(self, trade: Dict) -> str:
+        """
+        Format trade for LOG output (matches oneshot backtest.log format).
+        Used in the INFO-level logging during execution.
+
+        Output format (matches bb_1m.py strategy logging):
+          ts: YYYY-MM-DD HH:MM:SS | ACTION symbol @ price * qty shares (reason)
+
+        Example:
+          ts: 2023-11-27 11:31:00 | BUY 3443 @ 1635.00 * 91 shares (BB lower=1639.34)
+        """
+        action = trade['action']
+
+        # Use mock_time if available, otherwise use timestamp
+        if 'mock_time' in trade:
+            time_obj = trade['mock_time']
+        else:
+            time_obj = trade['timestamp']
+
+        # Format time as YYYY-MM-DD HH:MM:SS (full ISO format)
+        if isinstance(time_obj, str):
+            ts_str = time_obj
+        else:
+            ts_str = time_obj.strftime('%Y-%m-%d %H:%M:%S')
+
+        reason = trade.get('reason', 'N/A')
+        return (f"ts: {ts_str} | {action} {trade['symbol']} @ {trade['price']:.2f} * "
+                f"{trade['quantity']} shares ({reason})")
+
+    def print_trade_history_as_logs(self) -> None:
+        """
+        Print trade history in oneshot backtest.log format (for debugging/comparison).
+        This allows easy comparison between full_sim and oneshot backtest logs.
+
+        Output: Each trade on a separate line in INFO format.
+        """
+        if not self.trade_log:
+            log.info("No trades executed")
+            return
+
+        log.info(f"【Trade History (oneshot format)】({len(self.trade_log)} trades)")
+        for trade in self.trade_log:
+            log.info(self._format_trade_log_line_log(trade))
+
     def get_watch_symbols(self) -> List[str]:
         """Get list of symbols to monitor from watch_list config + current positions"""
         symbols = []
@@ -518,9 +591,7 @@ class TradingSystem:
         print(f"\n【Trade History】({len(self.trade_log)} trades)")
         if self.trade_log:
             for i, trade in enumerate(self.trade_log, 1):
-                action_icon = "🟢" if trade['action'] == 'BUY' else "🔴"
-                ts = trade['timestamp'].strftime('%m-%d %H:%M')
-                print(f"  {i:2d}. [{ts}] {action_icon} {trade['action']:4s} {trade['quantity']:>4d} shares {trade['symbol']:6s} @ ${trade['price']:>7.2f}")
+                print(self._format_trade_log_line_summary(trade, i))
         else:
             print("  No trades executed.")
 
@@ -533,6 +604,13 @@ class TradingSystem:
         else:
             print(f"⚪ Strategy Performance: Break-even")
         print("="*80 + "\n")
+
+        # --- BONUS: Print trade history in oneshot backtest.log format ---
+        # This allows easy comparison between full_sim and oneshot backtest logs
+        log.info("")
+        log.info("="*80)
+        self.print_trade_history_as_logs()
+        log.info("="*80)
 
     async def monitor_prices(self):
         log.info("Price monitoring started")
@@ -670,8 +748,13 @@ class TradingSystem:
         context += f"\n📝 RECENT TRADES ({len(recent_trades)} trades)\n"
         if recent_trades:
             for i, trade in enumerate(recent_trades, 1):
+                # Use mock_time if available, otherwise timestamp
+                if 'mock_time' in trade:
+                    time_obj = trade['mock_time']
+                else:
+                    time_obj = trade['timestamp']
+                ts = time_obj.strftime('%m-%d %H:%M')
                 action_icon = "🟢" if trade['action'] == 'BUY' else "🔴"
-                ts = trade['timestamp'].strftime('%m-%d %H:%M')
                 context += f"  {i:2d}. [{ts}] {action_icon} {trade['action']:4s} {trade['quantity']:>3d}x {trade['symbol']:6s} @ ${trade['price']:>7.2f} | {trade['reason']}\n"
         else:
             context += "  (No trades yet)\n"
@@ -795,13 +878,20 @@ class TradingSystem:
                                 opt_field={"session_id": self.session_id},
                             )
 
+                            # Get mock_current_time for backtest alignment
+                            try:
+                                mock_time = self.client.broker_api.get_system_time()['mock_current_time']
+                            except:
+                                mock_time = datetime.now()
+
                             trade_record = {
                                 'action': 'BUY',
                                 'symbol': symbol,
                                 'quantity': quantity,
                                 'price': price,
                                 'reason': reason,
-                                'timestamp': datetime.now()
+                                'timestamp': datetime.now(),
+                                'mock_time': mock_time
                             }
                             self.trade_log.append(trade_record)
                             print(f"📝 BUY {quantity} shares of {symbol} at {price:.2f} ({reason})")
@@ -829,13 +919,20 @@ class TradingSystem:
                                 opt_field={"session_id": self.session_id},
                             )
 
+                            # Get mock_current_time for backtest alignment
+                            try:
+                                mock_time = self.client.broker_api.get_system_time()['mock_current_time']
+                            except:
+                                mock_time = datetime.now()
+
                             trade_record = {
                                 'action': 'SELL',
                                 'symbol': symbol,
                                 'quantity': quantity,
                                 'price': price,
                                 'reason': reason,
-                                'timestamp': datetime.now()
+                                'timestamp': datetime.now(),
+                                'mock_time': mock_time
                             }
                             self.trade_log.append(trade_record)
                             print(f"📝 SELL {quantity} shares of {symbol} at {price:.2f} ({reason})")

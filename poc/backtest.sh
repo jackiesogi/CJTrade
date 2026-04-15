@@ -33,6 +33,7 @@ DURATION_DAYS=""
 INTERVAL=""
 PARAMS=""
 ARENAX_MODE=""
+START_DATE=""
 SHOW_PARAMS=0
 
 while [[ $# -gt 0 ]]; do
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fund)
             INITIAL_FUND="$2"
+            shift 2
+            ;;
+        --start)
+            START_DATE="$2"
             shift 2
             ;;
         --days)
@@ -103,6 +108,11 @@ fi
 if [ -z "$INITIAL_FUND" ]; then
     read -p "Enter initial fund (default: $DEFAULT_FUND): " input
     INITIAL_FUND=${input:-$DEFAULT_FUND}
+fi
+
+if [ -z "$START_DATE" ]; then
+    read -p "Enter start date (YYYY-MM-DD, default: today): " input
+    START_DATE=${input:-$(date +%Y-%m-%d)}
 fi
 
 if [ -z "$DURATION_DAYS" ]; then
@@ -209,6 +219,10 @@ CMD="uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
 
 if [ -n "$PARAMS" ]; then
     CMD="$CMD --params \"$PARAMS\""
+fi
+
+if [ -n "$START_DATE" ]; then
+    CMD="$CMD --start $START_DATE"
 fi
 
 if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "true" || "$COMPARE_MODE" == "y" ]]; then
