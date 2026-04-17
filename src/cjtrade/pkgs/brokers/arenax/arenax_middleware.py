@@ -193,6 +193,7 @@ class ArenaXMiddleWare:
             res = self._get(
                 f"market/kbars_yfinance?symbol={symbol}&start={start}&end={end}&interval=1d"
             )
+        print(res)
 
         if res and res.get("ok"):
             return res.get("result", [])

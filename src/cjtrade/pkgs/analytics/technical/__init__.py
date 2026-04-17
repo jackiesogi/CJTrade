@@ -12,7 +12,7 @@ __all__ = ['ta', 'TALibWrapper']
 #   - usr: code that should be exposed to users (like Pine Script style API)
 if __name__ == "__main__":
     import numpy as np
-    from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
+    from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
     from cjtrade.pkgs.models.product import Product
     # closes = np.array([1, 2, 3, 4, 5], dtype=float)
 

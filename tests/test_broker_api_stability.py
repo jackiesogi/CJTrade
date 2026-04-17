@@ -67,7 +67,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Available brokers:
-  mock     - Mock broker (default, safe for testing)
+  arenax   - Simulation broker (default, safe for testing)
   sinopac  - 永豐金證券
   yuanta   - 元大證券
   cathay   - 國泰證券

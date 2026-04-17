@@ -10,7 +10,7 @@ The `cjtrade` project provides a unified programming interface for developers to
 
 ### Currently Available
 - **Sinopac** (永豐金證券) - Full implementation with real-time data and trading
-- **Mock** (模擬環境) - Paper trading (模擬交易) environment for strategy testing
+- **ArenaX** (模擬環境) - Paper trading (模擬交易) environment for strategy testing
 
 ### Coming Soon
 - **Cathay** (國泰證券)

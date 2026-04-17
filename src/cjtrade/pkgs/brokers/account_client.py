@@ -56,7 +56,7 @@ class AccountClient:
             from cjtrade.pkgs.brokers.cathay.cathay import CathayBrokerAPI
             return CathayBrokerAPI(**config)
         elif broker_type == BrokerType.MOCK:
-            from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
+            from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
             return MockBrokerAPI(**config)
         elif broker_type == BrokerType.ARENAX:
             # User can set their `real_account` backend (for price feed) via tweaking

@@ -9,7 +9,7 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
 from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
-from cjtrade.pkgs.brokers.arenax.mock_broker_api import MockBrokerAPI
+from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient, KbarChartType
 # from cjtrade.pkgs.analytics.technical.indicators.sma import SimpleMovingAverage as SMA
 from datetime import datetime, timedelta

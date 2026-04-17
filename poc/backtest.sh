@@ -111,8 +111,7 @@ if [ -z "$INITIAL_FUND" ]; then
 fi
 
 if [ -z "$START_DATE" ]; then
-    read -p "Enter start date (YYYY-MM-DD, default: today): " input
-    START_DATE=${input:-$(date +%Y-%m-%d)}
+    read -p "Enter start date (YYYY-MM-DD, default: random): " input
 fi
 
 if [ -z "$DURATION_DAYS" ]; then

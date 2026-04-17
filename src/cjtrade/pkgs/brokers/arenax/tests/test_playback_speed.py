@@ -1,5 +1,5 @@
-from cjtrade.apps.ArenaX.legacy._mock_broker_backend import *
-from cjtrade.pkgs.brokers.arenax.mock_broker_api import *
+from cjtrade.pkgs.brokers.arenax.legacy._mock_broker_backend import *
+from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import *
 
 def test_playback_speed():
 

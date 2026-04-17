@@ -6,7 +6,7 @@ set "TEMPLATE=%~1"
 
 if "%TEMPLATE%"=="" (
     echo Usage: %~nx0 ^<template^>
-    echo Supported templates: [mock, sinopac]
+    echo Supported templates: [mock, sinopac, arenax]
     exit /b 1
 )
 
@@ -45,6 +45,22 @@ if "%~1"=="" (
 )
 exit /b 0
 :: ---------------------------------
+
+:generate_arenax_config
+call :write_line "# Broker-specific configuration"
+call :write_line "API_KEY = testkey123"
+call :write_line "SECRET_KEY = "
+call :write_line "CA_CERT_PATH = "
+call :write_line "CA_PASSWORD = "
+call :write_line ""
+
+call :write_line "# LLM-specific configuration"
+call :write_line "LLM_MODEL = gemini-3-flash"
+call :write_line "LLM_API_KEY = "
+call :write_line "GEMINI_API_KEY = "
+
+echo ArenaX configuration generated at %OUTPUT_PATH%
+exit /b 0
 
 :generate_mock_config
 call :write_line "# Broker-specific configuration"
@@ -109,6 +125,8 @@ if /I "%TEMPLATE%"=="mock" (
     call :generate_mock_config
 ) else if /I "%TEMPLATE%"=="sinopac" (
     call :generate_sinopac_config
+) else if /I "%TEMPLATE%"=="arenax" (
+    call :generate_arenax_config
 ) else (
     echo Unsupported template: %TEMPLATE%
     exit /b 1

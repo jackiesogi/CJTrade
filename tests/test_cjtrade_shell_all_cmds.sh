@@ -1,9 +1,7 @@
 #!/bin/bash
 set -e
 
-# CMD="uv run python src/cjtrade/core/cjtrade_shell.py --broker=sinopac"
-CMD="uv run python src/cjtrade/core/cjtrade_shell.py --broker=mock"
-# CMD="uv run python src/cjtrade/core/cjtrade_shell.py --broker=realistic"
+CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell.py --broker=arenax"
 
 LOG_FILE="LAST_CJTRADE_INTEGRATION_TEST.log"
 

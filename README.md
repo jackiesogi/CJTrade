@@ -83,25 +83,26 @@ source .venv/bin/activate # For Linux / macOS
 mkdir data
 ```
 
-### Play around using mock broker
-
-:warning: Note that please paste line by line to avoid issue.
+### Play around using ArenaX broker (Built-in simulation environment)
 
 ```sh
 # For those who don't have a securities account but still want to try it out,
 # try adding --broker=mock to use the mock environment (no login required):
 
-# generate mock environment config template (Linux)
-bash scripts/gen_config.sh mock
+# generate simulation environment config template (Linux)
+bash scripts/gen_config.sh arenax
 
-# generate mock environment config template (Windows)
-.\scripts\gen_config.bat mock
+# generate simulation environment config template (Windows)
+.\scripts\gen_config.bat arenax
 
-# connect to mock broker
-uv run cjtrade --broker=mock
+# start the simulation backend ArenaX
+uv run arenaxd > /dev/null 2>&1 &
+
+# then, connect to ArenaX broker
+uv run cjtrade --broker=arenax
 
 # For testing all the features in cjtrade shell (Linux)
-bash tests/test_cjtrade_shell_all_cmds.sh
+uv run atest  # stands for 'A'renax 'TEST'
 ```
 
 ### Sinopac users
@@ -119,7 +120,7 @@ echo "CA_PASSWORD=${YOUR_SINOPAC_CA_PASSWORD}" >> sinopac_system.cjconf
 uv run cjtrade --broker=sinopac
 
 # For testing all the features in cjtrade shell
-bash tests/test_cjtrade_shell_all_cmds.sh
+uv run test --broker=sinopac
 ```
 
 ## Run CJTrade System
@@ -133,9 +134,39 @@ If you want to test it out, please follow the installation guide in the previous
 ```sh
 # Note that choosing `sinopac` as broker will place real order when strategy condition is met,
 # unless you expliclitly export an environment variable `export SIMULATION=y` before running this.
-export WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
-uv run system --broker=mock --backtest=y         # or realistic / sinopac
+export CJSYS_WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
+uv run system --broker=arenax --mode=none
 ```
+
+## Backtesting
+We currently provide two ways for backtest your trading strategy: `oneshot` and `full_sim`.
+
+- `full_sim`: It is basically CJTrade System (in the previous section), it will replay historical price data in high speed (e.g. 30,000x), and do real time price monitoring and analyzing.
+
+- `oneshot`: It will also fetch historical data, and test your strategy by doing bar-by-bar analysis (逐根K線分析) at once, and will typically generate the result in seconds.
+
+For testing oneshot:
+:warning: there is an existing bug here, normally it would failed to fetch kbar data. We'll fix this in next minor version
+```sh
+# Root cause:
+# `cjtrade_oneshot_backtest.py` directly calls `ArenaX_MiddleWare` rather than `ArenaXBrokerAPI_v2`,
+# get_kbars() from ArenaXBrokerAPI_v2 will auto try yfinance data provider as fallback when real_broker's
+# data not available at that time range, or simply because user does not set up a real account (e.g. --mode=none)
+# However, get_kbars() from ArenaX_MiddleWare, user need to explicitly pass `fallback=True` in order to
+# have fallback mechanism, currently poc/backtest.sh does not pass this parameter.
+bash poc/backtest.sh \
+  --watch-list 2317,2357,2454,2890,3443 \
+  --fund 5000000 \
+  --start 2024-12-16 \
+  --days 60 \
+  --interval 1d \
+  --mode none
+```
+After the backtest is finish, it will generate a insightful report for evaluating your strategy. (CAGR, Sharpe ratio, Win rate...)
+
+:warning: Note that the strategies under testing are currently still hardcoded inside the code, we will separate the user-code (strategy) and engine in the future.
+
+![backtest-result](./img/quantstats.png)
 
 ## Test
 1. Run basic tests: all command in cjtrade shell
@@ -145,11 +176,11 @@ uv run test --broker=sinopac --group=all
 
 2. Run full tests: test hotpaths (normal input / edge cases / stress tests)
 ```sh
-# Note that this will execute stress tests
-# Add --delay=n to wait n sec after each test case done to avoid running out of API quota
-./tests/test_broker_api_stability.py --broker=mock --delay=8
+bash tests/run_broker_stability_tests.sh --broker=arenax
 ```
 
 ## Start develop your trading strategy using CJTrade API
+
+:warning: The API is not stable now!
 
 See [API refernce](https://github.com/jackiesogi/CJTrade/tree/master/doc)

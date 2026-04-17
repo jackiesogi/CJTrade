@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# current supported templates: mock, sinopac
+# current supported templates: mock, sinopac, arenax
 TEMPLATE=$1
 OUTPUT_PATH="${TEMPLATE}_system.cjconf"
 
@@ -21,6 +21,28 @@ function create_file() {
 
 function write_line() {
     echo "$1" >> "$OUTPUT_PATH"
+}
+
+function generate_arenax_config() {
+    write_line "# Broker-specific configuration"
+    write_line "API_KEY = testkey123"
+    write_line "SECRET_KEY = "
+    write_line "CA_CERT_PATH = "
+    write_line "CA_PASSWORD = "
+    write_line ""
+
+    write_line "# LLM-specific configuration"
+    write_line "LLM_MODEL = gemini-3-flash"
+    write_line "LLM_API_KEY = "
+    write_line "GEMINI_API_KEY = "
+
+    echo "---- Note start ----"
+    echo "Get your Gemini API key at https://aistudio.google.com/app/api-keys"
+    echo "Most of the features do not require a LLM backend,"
+    echo "so you can skip this right now and fill it in later"
+    echo "----  Note end  ----"
+
+    echo "ArenaX configuration generated at $OUTPUT_PATH"
 }
 
 function generate_mock_config() {
@@ -91,6 +113,8 @@ function main() {
         generate_mock_config
     elif [ "$TEMPLATE" == "sinopac" ]; then
         generate_sinopac_config
+    elif [ "$TEMPLATE" == "arenax" ]; then
+        generate_arenax_config
     else
         echo "Unsupported template: $TEMPLATE"
         exit 1

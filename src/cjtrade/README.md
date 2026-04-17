@@ -1,4 +1,8 @@
-# Source code
+# Source code in `apps`
+
+To be editted.
+
+# Source code in `pkgs`
 
 ## `analytics/`
 
@@ -13,7 +17,7 @@ Provide commonly-used analytics methods.
 
 Provide **integration with different brokers' API**, for example sinopac (永豐證券), cathay (國泰證券), to allow user to port their trading-related apps to different broker platforms.
 
-See [here](./brokers/README.md) for more info.
+See [here](./pkgs/brokers/README.md) for more info.
 
 
 ## `chart/`
@@ -21,11 +25,6 @@ See [here](./brokers/README.md) for more info.
 (Probably will renamed to `ui` in the future)
 
 Provide method to draw, render, save kbar (K線) chart.
-
-
-## `core/`
-
-Core service, class, application logic.
 
 
 ## `db/`

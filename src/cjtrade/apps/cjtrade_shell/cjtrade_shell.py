@@ -572,7 +572,8 @@ class CalendarCommand(CommandBase):
                 return
 
         # Get timestamp from broker or system
-        if client.get_broker_name() == "arenax":
+        bkr_name = client.get_broker_name()
+        if bkr_name == 'arenax' or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
             suffix = " (mock time)"
             ts = client.broker_api.get_system_time()['mock_current_time']
         else:
@@ -917,9 +918,22 @@ def main():
         config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
-        raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
+        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
+            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
+        else:
+            config["speed"] = 120.0  # 120x speed for mock broker
+            config["state_file"] = f"./mock_{config['username']}.json"
+            config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
+            client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
-        raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead.")
+        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
+            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
+        else:
+            config["speed"] = 60.0  # 60x speed for mock broker
+            config["state_file"] = f"./realistic_{config['username']}.json"
+            config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
+            real = AccountClient(BrokerType.SINOPAC, **config)
+            client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker == 'arenax_legacy':
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
