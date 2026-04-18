@@ -92,12 +92,20 @@ class SinopacBrokerAPI(BrokerAPIBase):
     def disconnect(self) -> None:
         if self._connected:
             try:
+                # NOTE: shioaji's C++ layer may raise pybind11::error_already_set
+                # during logout when its internal event thread tries to call a
+                # dict-like contract object as a function.  Swallow at Python
+                # level; the C++ terminate() is unavoidable from user-side code
+                # but at least we can keep the Python stack clean.
                 self.api.logout()
                 print("Sinopac broker disconnected")
+            except Exception as e:
+                print(f"Warning during shioaji logout (known shioaji pybind11 issue): {e}")
+            try:
                 self.db.close()
                 print("Local mirror DB disconnected")
             except Exception as e:
-                print(f"Error disconnecting Sinopac broker: {e}")
+                print(f"Error closing local DB: {e}")
             finally:
                 self._connected = False
 
