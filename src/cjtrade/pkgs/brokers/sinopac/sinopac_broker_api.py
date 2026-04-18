@@ -328,10 +328,10 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 linked_order=""
             )
 
-    # Better version of commit_order()
-    # Commit all staged(placed) order and return each of
-    # the OrderResult as a List
-    def commit_order(self) -> List[OrderResult]:
+    # Replaces the old commit_order(): sinopac has no staging area, so place_order()
+    # submits immediately.  This method just calls sj.update_status() to refresh the
+    # local order map – hence the more accurate name sync_state().
+    def sync_state(self) -> List[OrderResult]:
         if not self._connected:
             raise ConnectionError("Not connected to broker")
         try:
@@ -483,7 +483,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         )
 
         temp = self.place_order(order)
-        return self.commit_order()
+        return self.sync_state()
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
@@ -503,7 +503,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common
         )
         temp = self.place_order(order)
-        return self.commit_order()
+        return self.sync_state()
     ##### SIMPLE HIGH-LEVEL METHODS (END) #####
 
     ##### INTERNAL METHODS (START) #####
@@ -758,7 +758,7 @@ if __name__ == "__main__":
 
     if result.status == OrderStatus.PLACED:
         print(f"\n📤 Submitting Order")
-        commit_results = client.commit_order()
+        commit_results = client.sync_state()
         for res in commit_results:
             print(f"  Submission Result: {res.status.value}")
 

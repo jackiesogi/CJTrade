@@ -180,13 +180,13 @@ class ArenaXBrokerAPI(BrokerAPIBase):
 
         return res
 
-    def commit_order(self) -> List[OrderResult]:
+    def sync_state(self) -> List[OrderResult]:
         res = []
         # Use list() to avoid mutation during iteration
         for otw_odr in list(self.api.account_state.orders_placed):
             update_at = self.api.market.get_market_time()["mock_current_time"]
             update_order_status_to_db(conn=self.db, oid=otw_odr.id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
-            res.append(self.api.commit_order(otw_odr.id))
+            res.append(self.api.sync_state(otw_odr.id))
         return res
 
     def list_orders(self) -> List[Trade]:
@@ -224,7 +224,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
-            return self.commit_order()
+            return self.sync_state()
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                    opt_field: dict = None) -> OrderResult:
@@ -249,7 +249,7 @@ class ArenaXBrokerAPI(BrokerAPIBase):
         if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
-            return self.commit_order()
+            return self.sync_state()
 
 
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import *
@@ -423,7 +423,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
         return res
 
-    def commit_order(self) -> List[OrderResult]:
+    def sync_state(self) -> List[OrderResult]:
         res = []
         # Use middleware account_summary to find placed orders
         summary = self.middleware.account_summary()
@@ -435,10 +435,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             try:
                 update_at = self.get_system_time()["mock_current_time"]
                 update_order_status_to_db(conn=self.db, oid=order_id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
-                commit_res = self.middleware.commit_order(order_id)
+                commit_res = self.middleware.sync_state(order_id)
                 res.append(commit_res)
             except Exception as e:
-                print(f"Error committing order {order_id}: {e}")
+                print(f"Error syncing order {order_id}: {e}")
         return res
 
     def list_orders(self) -> List[Trade]:
@@ -491,7 +491,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
-            return self.commit_order()
+            return self.sync_state()
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                    opt_field: dict = None) -> OrderResult:
@@ -516,4 +516,4 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if tmp.status != OrderStatus.PLACED:
             return [tmp]  # Make sure return in List[OrderResult] format
         else:
-            return self.commit_order()
+            return self.sync_state()

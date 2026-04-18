@@ -376,14 +376,14 @@ class ArenaX_BrokerSideServer:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.post("/trade/commit-order")
-        def commit_order():
+        @app.post("/trade/sync-state")
+        def sync_state():
             payload = request.get_json(silent=True) or {}
             order_id = payload.get("order_id")
             if not order_id:
                 return jsonify({"ok": False, "error": "order_id is required"}), 400
             try:
-                result = self.backend.commit_order(order_id)
+                result = self.backend.sync_state(order_id)
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500

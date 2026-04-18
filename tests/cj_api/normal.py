@@ -52,7 +52,7 @@ class TestNormalOperations(BaseBrokerTest):
         self.assertEqual(place_result.status, OrderStatus.PLACED)
 
         # Commit the order
-        commit_results = self.client.commit_order()
+        commit_results = self.client.sync_state()
         self.assertIsInstance(commit_results, list)
         self.assertGreater(len(commit_results), 0)
 
@@ -73,7 +73,7 @@ class TestNormalOperations(BaseBrokerTest):
         # Place and commit order
         order = self._create_test_order(test_case="03", price=unlikely_fill_buy_price(self.client, '0050'))
         self.client.place_order(order)
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Cancel the order
         cancel_result = self.client.cancel_order(order.id)
@@ -97,7 +97,7 @@ class TestNormalOperations(BaseBrokerTest):
             order_ids.append(order.id)
 
         # Commit all orders
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Verify all orders in DB
         db_orders = self._get_all_orders_from_db()

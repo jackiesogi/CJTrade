@@ -330,7 +330,7 @@ class TestArenaXBackendBasic(unittest.TestCase):
         self.assertEqual(order.status, OrderStatus.PLACED)
         self.assertEqual(len(backend.account_state.orders_placed), 1)
 
-        commit_res = backend.commit_order("odr_1")
+        commit_res = backend.sync_state("odr_1")
         self.assertEqual(commit_res.status, OrderStatus.COMMITTED_WAIT_MATCHING)
         self.assertEqual(len(backend.account_state.orders_committed), 1)
 

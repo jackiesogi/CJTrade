@@ -28,7 +28,7 @@ class TestIntegrationFlows(BaseBrokerTest):
         self.assertTrue(self._verify_order_consistency(order.id, 'PLACED'))
 
         # Commit
-        commit_result = self.client.commit_order()
+        commit_result = self.client.sync_state()
         self.assertIsInstance(commit_result, list)
         # Status depends on market hours
         self.assertTrue(self._verify_order_consistency(
@@ -57,7 +57,7 @@ class TestIntegrationFlows(BaseBrokerTest):
         self.client.place_order(order3)
 
         # Commit all
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Cancel one
         self.client.cancel_order(order2.id)

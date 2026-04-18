@@ -130,8 +130,8 @@ class AccountClient:
     def place_order(self, order: Order) -> OrderResult:
         return self.broker_api.place_order(order)
 
-    def commit_order(self) -> List[OrderResult]:
-        return self.broker_api.commit_order()
+    def sync_state(self) -> List[OrderResult]:
+        return self.broker_api.sync_state()
 
     def cancel_order(self, order_id: str) -> OrderResult:
         return self.broker_api.cancel_order(order_id)

@@ -445,7 +445,7 @@ class ArenaX_BackendBase:
         self.account_state.all_order_status[order.id] = OrderStatus.PLACED
         return PLACED_ORDER_STANDARD(order, metadata=order.opt_field)
 
-    def commit_order(self, order_id: str) -> OrderResult:
+    def sync_state(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)

@@ -25,7 +25,7 @@ def test_sinopac_buy_0050():
     client.connect()
     order_result = client.buy_stock("0050", quantity=2, price=62.6, intraday_odd=True)
     print(f"--- order_result: {order_result}")
-    # commit_result = client.commit_order(order_result.linked_order)
+    # commit_result = client.sync_state(order_result.linked_order)
     # print(f"--- commit_result: {commit_result}")
     client.disconnect()
 
@@ -86,7 +86,7 @@ def test_sinopac_buy_0050_intraday_odd_real():
     print(f"Order Result: ID={order_result.id}, Status={order_result.status}, Message={order_result.message}")
 
     print("Committing order...")
-    commit_result = client.commit_order()
+    commit_result = client.sync_state()
     print(f"Commit Result: ID={commit_result.id}, Status={commit_result.status}, Message={commit_result.message}")
 
     client.disconnect()

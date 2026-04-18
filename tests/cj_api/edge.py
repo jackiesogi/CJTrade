@@ -42,7 +42,7 @@ class TestEdgeCases(BaseBrokerTest):
 
         order = self._create_test_order(test_case="11", price=unlikely_fill_buy_price(self.client, "0050"))
         self.client.place_order(order)
-        self.client.commit_order()
+        self.client.sync_state()
 
         # First cancellation
         result1 = self.client.cancel_order(order.id)
@@ -64,10 +64,10 @@ class TestEdgeCases(BaseBrokerTest):
         # A very high buy price that definitely will be filled immediately.
         order = self._create_test_order(price=potential_fill_price + potential_fill_price * 0.08, test_case="12")
         self.client.place_order(order)
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Wait for potential fill
-        time.sleep(2)  # NOTE: currently `commit_order` will call `_check_if_any_order_filled`
+        time.sleep(2)  # NOTE: currently `sync_state` will call `_check_if_any_order_filled`
 
         # Try to cancel
         result = self.client.cancel_order(order.id)
@@ -124,7 +124,7 @@ class TestEdgeCases(BaseBrokerTest):
         if log_buffer:
             log_buffer.write("\n[TEST] Commit without pending orders\n")
 
-        result = self.client.commit_order()
+        result = self.client.sync_state()
 
         # Should return empty list or handle gracefully
         # Note: Sinopac may return previously committed orders

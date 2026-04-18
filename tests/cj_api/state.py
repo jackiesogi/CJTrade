@@ -52,7 +52,7 @@ class TestStateConsistency(BaseBrokerTest):
         initial_status = db_order1['status']
 
         # Commit
-        self.client.commit_order()
+        self.client.sync_state()
         db_order2 = self._get_order_from_db(order.id)
         committed_status = db_order2['status']
 
@@ -82,7 +82,7 @@ class TestStateConsistency(BaseBrokerTest):
         self.assertIsNone(db_order1['updated_at'])
 
         # Update order
-        self.client.commit_order()
+        self.client.sync_state()
         db_order2 = self._get_order_from_db(order.id)
         self.assertIsNotNone(db_order2['updated_at'])
         self.client.cancel_order(order.id)  # Cleanup after test
@@ -142,7 +142,7 @@ class TestStateConsistency(BaseBrokerTest):
             self.client.place_order(order)
             orders.append(order)
 
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Check each order
         for order in orders:
@@ -164,7 +164,7 @@ class TestStateConsistency(BaseBrokerTest):
             self.client.place_order(order)
             placed_orders.append(order.id)
 
-        self.client.commit_order()
+        self.client.sync_state()
 
         # Get orders from broker
         broker_trades = self.client.list_orders()

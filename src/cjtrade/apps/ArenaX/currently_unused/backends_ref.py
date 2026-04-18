@@ -55,7 +55,7 @@ class MockBackend_AccountState:
         self.balance: float = 0.0
         self.last_sync_time: str = ""           # Currently NOT used in any context
         self.orders_placed: List[Order] = []    # After `place_order()`
-        self.orders_committed: List[Order] = [] # After `commit_order()`
+        self.orders_committed: List[Order] = [] # After `sync_state()`
         self.orders_filled: List[Order] = []        # Orders already filled
         self.orders_cancelled: List[Order] = []     # Orders already cancelled
         self.all_order_status: Dict[str, OrderStatus] = {}
@@ -405,7 +405,7 @@ class MockBrokerBackend_Historical:
         return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
-    def commit_order(self, order_id: str) -> OrderResult:
+    def sync_state(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
@@ -1312,7 +1312,7 @@ class MockBrokerBackend_PaperTrade:
         return PLACED_ORDER_STANDARD(order)
 
     # Note: Commit one order at a time (which differs from Sinopac's all-at-once commit)
-    def commit_order(self, order_id: str) -> OrderResult:
+    def sync_state(self, order_id: str) -> OrderResult:
         order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)

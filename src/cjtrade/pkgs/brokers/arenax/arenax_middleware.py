@@ -274,9 +274,9 @@ class ArenaXMiddleWare:
         )
         return order_result
 
-    def commit_order(self, order_id: str, **kwargs) -> List[OrderResult]:
+    def sync_state(self, order_id: str, **kwargs) -> List[OrderResult]:
         data = {"order_id": order_id}
-        res = self._post("trade/commit-order", data, headers=kwargs.get("headers"))
+        res = self._post("trade/sync-state", data, headers=kwargs.get("headers"))
         if res is None:
             return None
         if not res.get("ok", False):

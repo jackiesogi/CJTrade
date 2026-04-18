@@ -122,15 +122,14 @@ class BrokerAPIBase(ABC):
         pass
 
     @abstractmethod
-    # TODO: To be removed
-    def commit_order(self) -> OrderResult:
-        pass
-
-    # @abstractmethod
-    def sync_state(self) -> None:
+    def sync_state(self) -> List[OrderResult]:
         """
-        This appears to replace `commit_order()` because `commit_order()` does not really
-        have a staging area in sinopac, instead `commit_order()` only sync account state.
+        Synchronise the local order state with the broker's backend.
+
+        Replaces the old `commit_order()` whose name was misleading: sinopac has
+        no staging area, so `place_order()` submits the order immediately.  What
+        the old method really did was call `sj.update_status()` to refresh the
+        in-process order map.  `sync_state()` makes that intent explicit.
         """
         pass
 
