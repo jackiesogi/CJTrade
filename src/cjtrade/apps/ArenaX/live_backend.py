@@ -33,7 +33,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if real_account:
 			self.market = ArenaX_RealMarket(real_account=real_account)
 		else:
-			self.market = ArenaX_Market(real_account=real_account)
+			self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)
 			if hasattr(self.market, "set_playback_speed"):
 				self.market.set_playback_speed(playback_speed)
 		if self.real_account and not self.real_account.is_connected():

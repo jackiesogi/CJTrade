@@ -26,7 +26,7 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 			num_days_preload=num_days_preload,
 			skip_data_preload=skip_data_preload,
 		)
-		self.market = ArenaX_Market(real_account=None)
+		self.market = ArenaX_Market(real_account=None, price_db_path=self.price_db_path)
 		if hasattr(self.market, "set_playback_speed"):
 			self.market.set_playback_speed(playback_speed)
 		self._initialize_market_time()

@@ -80,6 +80,7 @@ class ArenaX_BackendBase:
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
         initial_balance: float = 0.0,
+        price_db_path: str = "data/arenax_price.db",
     ) -> None:
         # print(f"num_days_preload: {num_days_preload}")
         self.account_state_default_file = state_file
@@ -92,6 +93,7 @@ class ArenaX_BackendBase:
         self._connected = False
         self._initial_balance_override = initial_balance  # stored for use in login()
         self.account_state = ArenaX_AccountState()
+        self.price_db_path = price_db_path
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
     def login(self) -> bool:

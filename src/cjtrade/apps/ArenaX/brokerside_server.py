@@ -1,3 +1,4 @@
+import enum
 import logging
 import os
 import threading
@@ -7,6 +8,14 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 from typing import Optional
+
+
+class DataReadiness(enum.Enum):
+    """Server-level flag indicating kbar prefetch progress."""
+    NONE        = "none"          # No data loaded at all
+    PREFETCHING = "prefetching"   # Currently fetching / loading data
+    ALL_SET     = "all_set"       # All symbols prefetched and ready
+    RESERVED    = "reserved"      # Reserved for future use
 
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.hist_backend import ArenaX_Backend_Historical
@@ -153,6 +162,7 @@ class ArenaX_BrokerSideServer:
         self._running = False
         self._valid_api_keys = set()            # Placeholder for API key management
         self._valid_api_keys.add('testkey123')  # hardcoded API key for testing
+        self._data_readiness = DataReadiness.NONE
 
         # When enabled, the matching loop automatically jumps over non-trading hours
         # (after 13:30 or weekends) to accelerate backtesting.
@@ -190,6 +200,7 @@ class ArenaX_BrokerSideServer:
                 "ok": True,
                 "running": self._running,
                 "backend_connected": self.backend.is_connected() if hasattr(self.backend, "is_connected") else False,
+                "data_readiness": self._data_readiness.value,
             })
 
         @app.post("/control/start-backend")
@@ -396,7 +407,10 @@ class ArenaX_BrokerSideServer:
             price = self.backend.snapshot(symbol)
             # print(type(price))  # Snapshot
             # print(type(price.to_dict()))  # dict
-            return jsonify({"ok": True, "symbol": symbol, "price": price.to_dict() if price else None})
+            resp = {"ok": True, "symbol": symbol, "price": price.to_dict() if price else None}
+            if self._data_readiness != DataReadiness.ALL_SET:
+                resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"
+            return jsonify(resp)
 
         @app.get("/market/data_availability")
         def market_data_availability():
@@ -469,7 +483,10 @@ class ArenaX_BrokerSideServer:
                 kbars = self.backend.kbars(symbol, start, end, interval)
                 print(f"length of kbars: {len(kbars)}")
                 print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
-                return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200
+                resp = {"ok": True, "result": [kb.__dict__ for kb in kbars]}
+                if self._data_readiness != DataReadiness.ALL_SET:
+                    resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"
+                return jsonify(resp), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -577,8 +594,15 @@ class ArenaX_BrokerSideServer:
             self.backend.market.set_historical_time_abs(real_init_time, mock_init_time)
             if not auto_start_progress:
                 self.backend.market.pause_time_progress()
+
             if auto_preload_data:
+                # Clear previously loaded in-memory data so create_historical_market()
+                # re-fetches for the new time window instead of early-returning.
+                if hasattr(self.backend, "market") and hasattr(self.backend.market, "historical_data"):
+                    self.backend.market.historical_data.clear()
+                self._data_readiness = DataReadiness.PREFETCHING
                 self._preload_data(None, None)
+                self._data_readiness = DataReadiness.ALL_SET
             return True
         except Exception as e:
             print(f"Error in set_system_time: {e}")
