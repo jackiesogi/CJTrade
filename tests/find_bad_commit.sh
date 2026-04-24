@@ -4,7 +4,7 @@
 # --bad
 # --script
 
-GOOG_COMMIT=""
+GOOD_COMMIT=""
 BAD_COMMIT=""
 TEST_SCRIPT=""
 
@@ -46,4 +46,4 @@ fi
 git bisect start
 git bisect bad $BAD_COMMIT
 git bisect good $GOOD_COMMIT
-git bisect run $TEST_SCRIPT
+git bisect run bash -c "$TEST_SCRIPT"
