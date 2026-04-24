@@ -1109,15 +1109,19 @@ async def async_main():
 
     if LAUNCH_MODE == 'hist' or LAUNCH_MODE == 'none':
         system.print_backtest_summary()
-        # Build and persist BacktestResult immediately, before disconnect,
-        # so fill_history is still queryable on the server.
-        result = system.build_backtest_result()
-        if result is not None:
-            save_path = f"backtest_{system.session_id[:8]}.pkl"
-            result.save(save_path)
-            log.info(f"💾 BacktestResult saved → {save_path}")
-            # BacktestReport(result).summary()   # print key stats to stdout
-            BacktestReport(result).full_report()
+        prefix = "backtest"
+    else:
+        system.print_backtest_summary()
+        prefix = "live"
+
+    # Build and persist result immediately, before disconnect,
+    # so fill_history is still queryable on the server.
+    result = system.build_backtest_result()
+    if result is not None:
+        save_path = f"{prefix}_{system.session_id[:8]}.pkl"
+        result.save(save_path)
+        log.info(f"💾 Result saved → {save_path}")
+        BacktestReport(result).full_report()
 
     log.info("Shutting down tasks...")
     for task in tasks:
