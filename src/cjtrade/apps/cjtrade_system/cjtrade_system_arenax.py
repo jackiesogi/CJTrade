@@ -702,6 +702,11 @@ class TradingSystem:
 
             await asyncio.sleep(self.mock_env_sleep(ANALYSIS_INTERVAL))
 
+    # TODO: If account state file is synced with real account, this format would not
+    #       consume 'initial_sync' fill order (a mechanism for syncing current price)
+    #       and only having default current price (which is around 100), so most of
+    #       the stock performance will be very very low, and does not reflect the truth.
+    #       hint: `Position().unrealized_pnl`
     def format_trading_context(self) -> str:
         """Format recent trading activity and market state for LLM analysis"""
         positions = self.client.get_positions()
@@ -716,7 +721,7 @@ class TradingSystem:
         context += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         context += f"Balance:   ${balance:>12,.2f}\n"
         context += f"Equity:    ${equity:>12,.2f}\n"
-        context += f"Positions: {len(positions) if positions else 0}\n\n"
+        context += f"Positions: {len(positions) if positions else 0}\n\n"  # <----- HERE!!!
 
         # Current positions
         context += f"📈 CURRENT POSITIONS\n"
