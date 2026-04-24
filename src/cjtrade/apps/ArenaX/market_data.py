@@ -22,7 +22,7 @@ from cjtrade.pkgs.models.quote import Snapshot
 
 # Price source: yfinance
 class ArenaX_Market:
-    def __init__(self, real_account: AccountClient = None):
+    def __init__(self, real_account: AccountClient = None, price_db_path: str = "data/arenax_price.db"):
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
         self.real_init_time = 0       # real_current_time - real_init_time = time_offset
@@ -34,8 +34,8 @@ class ArenaX_Market:
         self.paused: bool = False
         self.paused_time: datetime | None = None
 
-        self.price_db = ArenaX_LocalPriceDB(path="data/arenax_price.db")
-        self.price_db.connect()  # TODO: currently no corresponding disconnect, need to add it in the right place (maybe in ArenaX_Backend?)
+        self.price_db = ArenaX_LocalPriceDB(path=price_db_path)
+        self.price_db.connect()
 
     def set_playback_speed(self, speed: float):
         """
@@ -287,16 +287,26 @@ class ArenaX_Market:
 
         # ── 2. Fetch & cache each gap ────────────────────────────────────────
         if missing:
-            print(f"[{symbol}] {len(missing)} gap(s) to fill: " +
-                  ", ".join(f"[{s},{e}]" for s, e in missing))
+            total = int((end_date - self.start_date).total_seconds())
+            missing_secs = sum(e - s for s, e in missing)
+            gap_summaries = ", ".join(
+                f"{datetime.fromtimestamp(s).strftime('%m/%d')}-{datetime.fromtimestamp(e).strftime('%m/%d')}"
+                for s, e in missing
+            )
+            if missing_secs >= total * 0.95:
+                print(f"[{symbol}] No cached data in requested range ({self.start_date.date()} – {end_date.date()}), fetching now...")
+            else:
+                print(f"[{symbol}] Partially missing data in requested range, {len(missing)} gap(s) to fetch: {gap_summaries}")
             for gap_start_epoch, gap_end_epoch in missing:
                 gap_start = datetime.fromtimestamp(gap_start_epoch)
                 gap_end   = datetime.fromtimestamp(gap_end_epoch)
                 self._fetch_and_cache_range(symbol, gap_start, gap_end)
+        else:
+            print(f"[{symbol}] Cache fully hit for requested range ({self.start_date.date()} – {end_date.date()})")
 
         # ── 3. Load full requested range from local DB ───────────────────────
         if self.price_db:
-            self._load_from_price_db(symbol, end_date)
+            self._load_from_price_db(symbol, end_date, had_missing=bool(missing))
 
         # Fallback: if DB load produced nothing (e.g. no price_db at all)
         if not self.historical_data.get(symbol) or self.historical_data[symbol]['data'].empty:
@@ -340,7 +350,7 @@ class ArenaX_Market:
             saved = self.price_db.insert_prices_batch(
                 symbol, kbars, timeframe="1m", source=source, overwrite=False
             )
-            print(f"[{symbol}] Cached {saved}/{len(kbars)} bars "
+            print(f"[{symbol}] Fetched and cached {saved}/{len(kbars)} bars "
                   f"({gap_start.date()} – {gap_end.date()}, source={source})")
 
             # Record the covered range even if some bars already existed
@@ -390,9 +400,8 @@ class ArenaX_Market:
             print(f"[{symbol}] yfinance fetch failed ({start}–{end}): {exc}")
             return []
 
-    def _load_from_price_db(self, symbol: str, end_date: datetime):
+    def _load_from_price_db(self, symbol: str, end_date: datetime, had_missing: bool = False):
         """Load historical data from the local price database into self.historical_data."""
-        print(f"[{symbol}] Loading from local price cache ({self.start_date.date()} – {end_date.date()})…")
         try:
             ks = self.price_db.get_price(
                 symbol=symbol, timeframe="1m",
@@ -411,9 +420,12 @@ class ArenaX_Market:
                     'data': df,
                     'timestamps': df.index.to_numpy(),
                 }
-                print(f"[{symbol}] Loaded {len(df)} bar(s) from local price cache")
+                if had_missing:
+                    print(f"[{symbol}] All gaps filled — loaded {len(df)} bar(s) from cache ({self.start_date.date()} – {end_date.date()})")
+                else:
+                    print(f"[{symbol}] Loaded {len(df)} bar(s) from cache ({self.start_date.date()} – {end_date.date()})")
             else:
-                print(f"[{symbol}] Local price cache empty for requested range")
+                print(f"[{symbol}] Local price cache returned empty for requested range")
 
         except Exception as exc:
             print(f"[{symbol}] Error loading from local price cache: {exc}")
