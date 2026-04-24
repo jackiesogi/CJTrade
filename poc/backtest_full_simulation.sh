@@ -75,7 +75,7 @@ if [ -z "$WATCH_LIST" ]; then
     fi
 fi
 
-if [ -z "$INITIAL_FUND" ]; then
+if [ -z "$INITIAL_FUND" ] && [ "$ARENAX_MODE" != "live" ]; then
     read -p "Enter initial fund (default: $DEFAULT_FUND): " input
     INITIAL_FUND=${input:-$DEFAULT_FUND}
 fi
@@ -117,8 +117,13 @@ gnome-terminal() {
 # ------------------------
 # Init account
 # ------------------------
-USERNAME=CJ bash scripts/gen_init_account.sh arenax "$INITIAL_FUND"
-cat arenax_CJ.json
+if [ "$ARENAX_MODE" = "live" ]; then
+    echo "Live mode: account state will be synced from real broker, skipping init account generation."
+    rm -f "arenax_CJ.json"   # ensure no stale file triggers mock-file path
+else
+    USERNAME=CJ bash scripts/gen_init_account.sh arenax "$INITIAL_FUND"
+    cat arenax_CJ.json
+fi
 
 sleep 3
 
