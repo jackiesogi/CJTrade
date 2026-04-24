@@ -46,7 +46,7 @@ function ping_server_backend() {
 #       has a consistent init account state every time doing tests.
 function prepare_init_account() {
 cat <<EOF > hist_account_state.json
-{ "balance": 99999999,
+{ "balance": 999999,
   "positions": [
     {
         "symbol": "0050",
@@ -66,7 +66,7 @@ cat <<EOF > hist_account_state.json
 }
 EOF
 cat <<EOF > none_account_state.json
-{ "balance": 99999999,
+{ "balance": 999999,
   "positions": [
     {
         "symbol": "0050",
