@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import signal
+import sys
 import time
 import uuid
 from asyncio import Queue
@@ -30,11 +31,17 @@ from cjtrade.pkgs.models.backtest import BacktestResult
 from dotenv import load_dotenv
 
 
-# ==================== Configuration ====================
+ # ==================== Configuration ====================
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
+    format="[%(asctime)s] %(levelname)-8s: %(message)s",
+    handlers=[
+        logging.FileHandler("cjtrade_system.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True
 )
+
 log = logging.getLogger("cjtrade.system_arenax")
 
 # load_supported_config_files()
