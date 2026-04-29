@@ -180,17 +180,19 @@ class ListOrdersCommand(CommandBase):
     def __init__(self):
         super().__init__()
         self.name = "lsodr"
+        self.optional_params = ["num_result"]
         self.description = "List all orders"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        num_result = int(args[0]) if len(args) > 0 else 5
         print("=== Order List ===")
         try:
             orders = client.list_orders()
             print(f"Found {len(orders)} orders")
 
             if orders:
-                print("\nRecent 5 orders:")
-                for i, order in enumerate(orders[-5:]):
+                print(f"\nRecent {num_result} orders:")
+                for i, order in enumerate(orders[-num_result:]):
                     print(f"\nOrder {i+1}:")
                     print(f"  Order ID: {order.id}")
                     print(f"  Symbol: {order.symbol}")
