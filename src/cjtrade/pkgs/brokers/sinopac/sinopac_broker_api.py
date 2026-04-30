@@ -43,7 +43,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         self.simulation = config.get('simulation', True)
         self._connected = False
 
-        self._cached_closed_prices = None
+        self._cached_closed_prices: dict = {}
 
         # db connection
         self.username = config.get('username', 'user999')
@@ -237,14 +237,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 cj_snapshots.append(cj_snapshot)
             return cj_snapshots
 
-        # Market open → always fetch
+        # Market open → always fetch (and invalidate stale close cache)
         if self.is_market_open():
+            self._cached_closed_prices = {}
             return fetch()
 
-        # Market closed
-        if self._cached_closed_prices is None:
-            self._cached_closed_prices = fetch()
-        return self._cached_closed_prices
+        # Market closed → per-symbol cache
+        cache_key = tuple(p.symbol for p in products)
+        if cache_key not in self._cached_closed_prices:
+            self._cached_closed_prices[cache_key] = fetch()
+        return self._cached_closed_prices[cache_key]
 
 
     # TODO: Finish this
