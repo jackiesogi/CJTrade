@@ -522,6 +522,12 @@ class ArenaX_BrokerSideServer:
             return
         self.backend.login()
         self._stop_event.clear()
+        self._keepalive_thread = threading.Thread(
+            target=self._real_account_keepalive_loop,
+            name="ArenaXKeepAliveLoop",
+            daemon=True,
+        )
+        self._keepalive_thread.start()  # <------- this will re-connect to broker every 2 hours
         self._matching_thread = threading.Thread(
             target=self._matching_loop,
             name="ArenaXMatchingLoop",
@@ -653,6 +659,15 @@ class ArenaX_BrokerSideServer:
         for symbol in symbols:
             self.backend.market.create_historical_market(symbol, days)
         return sorted(symbols)
+
+
+    def _real_account_keepalive_loop():
+        if self.real_account is not None:
+            while not self._stop_event.is_set():
+                if self.real_account.is_connected():
+                    self.real_account.logout()
+                self.real_account.login()
+                self._stop_event.wait(7200)  # <------  auto logout/login every 2 hours (real world)
 
     def _matching_loop(self) -> None:
         while not self._stop_event.is_set():
