@@ -153,4 +153,10 @@ else
     echo -e "${RED}✗ Some tests failed (exit code: $EXIT_CODE)${NC}"
 fi
 
+# Mirror the output log to LAST_BROKER_STABILITY_TEST.log for backward compatibility
+if [ -f stability_test_output.log ]; then
+    cp stability_test_output.log LAST_BROKER_STABILITY_TEST.log
+    echo -e "${YELLOW}Test output saved to LAST_BROKER_STABILITY_TEST.log${NC}"
+fi
+
 exit $EXIT_CODE

@@ -12,34 +12,22 @@ repos:
   - repo: local
     hooks:
       - id: "unit-tests"
-        name: Run unit tests (tests/unit/)
+        name: "Run unit tests (tests/unit/)"
         entry: uv run pytest tests/unit/ --tb=short -q
         language: system
         pass_filenames: false
-      - id: "ArenaX-broker-unittest"  # We skip the sinopac unit test
-        name: Run ArenaX broker integration test (tests/integration/arenax/)
+      - id: "ArenaX-broker-integration-test"  # We skip the sinopac integration test
+        name: "Run integration test: ArenaX (tests/integration/arenax/)"
         entry: bash tests/run_broker_stability_tests.sh --broker=arenax
         language: system
         pass_filenames: false
       - id: "arenax-shell"
-        name: Run CJTrade shell functional test (arenax broker)
+        name: "Run CJTrade shell test: ArenaX"
         entry: uv run atest --broker=arenax --group=all
         language: system
         pass_filenames: false
       - id: "sinopac-shell"
-        name: Run CJTrade shell functional test (sinopac broker)
+        name: "Run CJTrade shell test: Sinopac"
         entry: uv run test --broker=sinopac --group=all
         language: system
         pass_filenames: false
-
-      # This section will be removed in the future as we are moving to ArenaX broker.
-      # - id: "mock-broker-unittest"  # We skip the sinopac unit test
-      #   name: Run CJTrade mock broker unit test
-      #   entry: bash tests/run_broker_stability_tests.sh --broker=mock
-      #   language: system
-      #   pass_filenames: false
-      # - id: "mock-shell"
-      #   name: Run CJTrade shell functional test (mock broker)
-      #   entry: uv run test --broker=mock --group=all
-      #   language: system
-      #   pass_filenames: false
