@@ -11,8 +11,13 @@ repos:
       - id: reorder-python-imports
   - repo: local
     hooks:
+      - id: "unit-tests"
+        name: Run unit tests (tests/unit/)
+        entry: uv run pytest tests/unit/ --tb=short -q
+        language: system
+        pass_filenames: false
       - id: "ArenaX-broker-unittest"  # We skip the sinopac unit test
-        name: Run CJTrade ArenaX broker unit test
+        name: Run ArenaX broker integration test (tests/integration/arenax/)
         entry: bash tests/run_broker_stability_tests.sh --broker=arenax
         language: system
         pass_filenames: false

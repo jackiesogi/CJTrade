@@ -125,8 +125,24 @@ if [[ "$@" == *"--broker arenax"* ]] || [[ "$@" == *"--broker=arenax"* ]] || [[ 
     fi
 fi
 
+# Resolve which integration directory to run based on --broker= argument.
+# Defaults to arenax. Extend the case block for other brokers as needed.
+BROKER="arenax"
+for arg in "$@"; do
+    case "$arg" in
+        --broker=*) BROKER="${arg#--broker=}" ;;
+        --broker)   shift; BROKER="$1" ;;
+    esac
+done
+
+INTEGRATION_DIR="tests/integration/${BROKER}"
+if [[ ! -d "$INTEGRATION_DIR" ]]; then
+    echo -e "${RED}Error: No integration tests found for broker '${BROKER}' (looked in ${INTEGRATION_DIR})${NC}"
+    exit 1
+fi
+
 # use PIPESTATUS[0] to ensure we capture the exit code of the test command, not tee
-uv run python tests/test_broker_api_stability.py "$@" | tee stability_test_output.log
+uv run pytest "$INTEGRATION_DIR" -v | tee stability_test_output.log
 EXIT_CODE=${PIPESTATUS[0]}
 
 if [ $EXIT_CODE -eq 0 ]; then

@@ -13,11 +13,14 @@ class SqliteDatabaseConnection(DatabaseConnection):
             self.connection.close()
             self.connection = None
 
-    def execute(self, command: str) -> Any:
+    def execute(self, command: str, params: tuple = None) -> Any:
         if not self.connection:
             raise Exception("Database connection is closed.")
         cursor = self.connection.cursor()
-        cursor.execute(command)
+        if params is not None:
+            cursor.execute(command, params)
+        else:
+            cursor.execute(command)
         return cursor.fetchall()
 
     def execute_script(self, path):

@@ -1,8 +1,23 @@
+"""
+Name:
+  ArenaX Broker Middleware
+Description:
+  Served as an abstraction layer between ArenaX server and ArenaX API, providing a clean
+  interface for the API to interact with the server without worrying about the underlying
+  communication details. It translates high-level API calls into specific HTTP requests.
+Usecase:
+  Not directly used by end-users. It is an internal component of the ArenaX API implementation.
+
+Code quality check:
+- todo       : 2026-05-01
+- note       : 2026-05-01
+- code logic : N/A
+- dead code  : N/A
+"""
 from datetime import time as dt_time
 
 import requests
 from cjtrade.pkgs.models import *
-from flask import jsonify
 
 
 class ArenaXMiddleWare:
@@ -262,17 +277,22 @@ class ArenaXMiddleWare:
         data = {"order_id": order_id}
         res = self._post("trade/cancel-order", data, headers=kwargs.get("headers"))
 
-        result_data = res.get("result", {})
-        # print(f"Cancel order response: {res}")
-        # print(f"status: {result_data.get('status')}")
+        if res is None:
+            raise ConnectionError("No response from ArenaX broker-side server")
 
-        order_result = OrderResult(
+        result_data = res.get("result", {})
+        raw_status = result_data.get("status")
+        try:
+            status_enum = OrderStatus(raw_status) if raw_status is not None else OrderStatus.UNKNOWN
+        except ValueError:
+            status_enum = OrderStatus.UNKNOWN
+
+        return OrderResult(
             linked_order=result_data.get("linked_order"),
-            status=result_data.get("status"),
+            status=status_enum,
             message=result_data.get("message", ""),
             metadata=result_data.get("metadata", {}),
         )
-        return order_result
 
     def sync_state(self, order_id: str, **kwargs) -> List[OrderResult]:
         data = {"order_id": order_id}

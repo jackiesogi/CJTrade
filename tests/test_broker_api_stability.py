@@ -1,33 +1,8 @@
 #!/usr/bin/env python3
-"""
-CJTrade Broker API Stability Test Suite
-==========================================
-Main entry point for running all broker API stability tests.
-
-Tests are organized into categories:
-- normal.py: Normal operation flows
-- edge.py: Edge cases and boundary conditions
-- state.py: Database and state consistency
-- stress.py: Load and stress scenarios
-- integration.py: End-to-end integration flows
-
-Usage:
-    python tests/test_broker_api_stability.py
-
-Or via bash script:
-    ./tests/run_broker_stability_tests.sh
-"""
-import argparse
-import os
-import sys
-import unittest
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import test modules
-from tests.cj_api.normal import TestNormalOperations
-from tests.cj_api.edge import TestEdgeCases
+# This file is superseded by tests/integration/.
+# Use: pytest tests/integration/arenax/
+# Or:  bash tests/run_broker_stability_tests.sh --broker=arenax
+raise SystemExit(0)  # no-op if invoked directly
 from tests.cj_api.state import TestStateConsistency
 from tests.cj_api.stress import TestStressScenarios
 from tests.cj_api.integration import TestIntegrationFlows

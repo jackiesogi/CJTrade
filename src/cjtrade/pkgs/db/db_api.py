@@ -1,4 +1,3 @@
-# TODO: Avoid SQL injection
 # TODO: Add `Lock()`
 from datetime import datetime
 from datetime import timedelta
@@ -80,11 +79,10 @@ def get_coverage_ranges(conn: DatabaseConnection,
                         symbol: str,
                         timeframe: str = "1m") -> list[tuple[int, int]]:
     """Return sorted, merged list of (start_ts, end_ts) epoch-second tuples for a symbol."""
-    symbol_s = symbol.replace("'", "''")
-    timeframe_s = timeframe.replace("'", "''")
     rows = conn.execute(
-        f"SELECT start_ts, end_ts FROM arenax_symbol_coverage "
-        f"WHERE symbol='{symbol_s}' AND timeframe='{timeframe_s}' ORDER BY start_ts ASC"
+        "SELECT start_ts, end_ts FROM arenax_symbol_coverage "
+        "WHERE symbol=? AND timeframe=? ORDER BY start_ts ASC",
+        (symbol, timeframe)
     )
     if not rows:
         return []
@@ -136,26 +134,23 @@ def upsert_coverage_range(conn: DatabaseConnection,
     if start_ts > end_ts:
         return
 
-    symbol_s = symbol.replace("'", "''")
-    timeframe_s = timeframe.replace("'", "''")
-    source_s = source.replace("'", "''")
     now = int(datetime.utcnow().timestamp())
 
     # 1. Insert new range
-    conn.execute(f"""
-        INSERT INTO arenax_symbol_coverage (symbol, timeframe, start_ts, end_ts, source, last_checked, created_at)
-        VALUES ('{symbol_s}', '{timeframe_s}', {start_ts}, {end_ts}, '{source_s}', {now}, {now})
-    """)
+    conn.execute(
+        "INSERT INTO arenax_symbol_coverage (symbol, timeframe, start_ts, end_ts, source, last_checked, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (symbol, timeframe, start_ts, end_ts, source, now, now)
+    )
     conn.commit()
 
     # 2. Find all rows that overlap or are adjacent to [start_ts, end_ts]
-    rows = conn.execute(f"""
-        SELECT id, start_ts, end_ts FROM arenax_symbol_coverage
-        WHERE symbol='{symbol_s}' AND timeframe='{timeframe_s}'
-          AND start_ts <= {end_ts + 1}
-          AND end_ts   >= {start_ts - 1}
-        ORDER BY start_ts ASC
-    """)
+    rows = conn.execute(
+        "SELECT id, start_ts, end_ts FROM arenax_symbol_coverage "
+        "WHERE symbol=? AND timeframe=? AND start_ts <= ? AND end_ts >= ? "
+        "ORDER BY start_ts ASC",
+        (symbol, timeframe, end_ts + 1, start_ts - 1)
+    )
     if not rows or len(rows) <= 1:
         return  # nothing to consolidate
 
@@ -164,17 +159,18 @@ def upsert_coverage_range(conn: DatabaseConnection,
     merged_s = min(r[1] for r in rows)
     merged_e = max(r[2] for r in rows)
 
-    ids_csv = ",".join(str(i) for i in ids[:-1])      # keep last, update it
     keep_id = ids[-1]
+    delete_ids = ids[:-1]
 
-    conn.execute(f"""
-        UPDATE arenax_symbol_coverage
-        SET start_ts={merged_s}, end_ts={merged_e}, last_checked={now}
-        WHERE id={keep_id}
-    """)
-    conn.execute(f"""
-        DELETE FROM arenax_symbol_coverage WHERE id IN ({ids_csv})
-    """)
+    conn.execute(
+        "UPDATE arenax_symbol_coverage SET start_ts=?, end_ts=?, last_checked=? WHERE id=?",
+        (merged_s, merged_e, now, keep_id)
+    )
+    placeholders = ",".join("?" for _ in delete_ids)
+    conn.execute(
+        f"DELETE FROM arenax_symbol_coverage WHERE id IN ({placeholders})",
+        tuple(delete_ids)
+    )
     conn.commit()
 
 
@@ -193,43 +189,31 @@ def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
         return False
 
     try:
-        # basic sanitization for SQL literals (escape single quotes)
-        symbol_s = symbol.replace("'", "''")
-        timeframe_s = (timeframe or '1m').replace("'", "''")
-        source_s = (source or 'unknown').replace("'", "''")
-
         ts = int(price.timestamp.timestamp())
-        open_p = float(price.open) if price.open is not None else 'NULL'
-        high_p = float(price.high) if price.high is not None else 'NULL'
-        low_p = float(price.low) if price.low is not None else 'NULL'
-        close_p = float(price.close) if price.close is not None else 'NULL'
-        volume_p = float(price.volume) if price.volume is not None else 'NULL'
+        open_p = float(price.open) if price.open is not None else None
+        high_p = float(price.high) if price.high is not None else None
+        low_p = float(price.low) if price.low is not None else None
+        close_p = float(price.close) if price.close is not None else None
+        volume_p = float(price.volume) if price.volume is not None else None
+        tf = timeframe or '1m'
+        src = source or 'unknown'
 
         if overwrite:
-            sqlcmd = f"""
-                INSERT INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at)
-                VALUES ('{symbol_s}', '{timeframe_s}', {ts}, {open_p}, {high_p}, {low_p}, {close_p}, {volume_p}, '{source_s}', 0, strftime('%s','now'))
-                ON CONFLICT(symbol, timeframe, ts, source) DO UPDATE SET
-                  open=excluded.open,
-                  high=excluded.high,
-                  low=excluded.low,
-                  close=excluded.close,
-                  volume=excluded.volume,
-                  fetched_at=excluded.fetched_at;
-            """
+            conn.execute(
+                "INSERT INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, strftime('%s','now')) "
+                "ON CONFLICT(symbol, timeframe, ts, source) DO UPDATE SET "
+                "open=excluded.open, high=excluded.high, low=excluded.low, "
+                "close=excluded.close, volume=excluded.volume, fetched_at=excluded.fetched_at",
+                (symbol, tf, ts, open_p, high_p, low_p, close_p, volume_p, src)
+            )
         else:
-            sqlcmd = f"""
-                INSERT OR IGNORE INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at)
-                VALUES ('{symbol_s}', '{timeframe_s}', {ts}, {open_p}, {high_p}, {low_p}, {close_p}, {volume_p}, '{source_s}', 0, strftime('%s','now'));
-            """
+            conn.execute(
+                "INSERT OR IGNORE INTO arenax_prices (symbol, timeframe, ts, open, high, low, close, volume, source, adjusted, fetched_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, strftime('%s','now'))",
+                (symbol, tf, ts, open_p, high_p, low_p, close_p, volume_p, src)
+            )
 
-        # ensure symbol exists in symbols table and update last_fetched
-        # sql_symbol_insert = f"INSERT OR IGNORE INTO symbols (symbol, first_seen, last_fetched) VALUES ('{symbol_s}', {ts}, {ts});"
-        # sql_symbol_update = f"UPDATE symbols SET last_fetched = {ts} WHERE symbol = '{symbol_s}' AND (last_fetched IS NULL OR last_fetched < {ts});"
-
-        conn.execute(sqlcmd)
-        # conn.execute(sql_symbol_insert)
-        # conn.execute(sql_symbol_update)
         conn.commit()
         return True
     except Exception as e:
@@ -249,18 +233,18 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
         return results
 
     try:
-        symbol_s = symbol.replace("'", "''")
-        timeframe_s = (timeframe or '1m').replace("'", "''")
-
-        where_clauses = [f"symbol = '{symbol_s}'", f"timeframe = '{timeframe_s}'"]
+        where_clauses = ["symbol = ?", "timeframe = ?"]
+        params = [symbol, timeframe or '1m']
         if start_ts is not None:
-            where_clauses.append(f"ts >= {int(start_ts.timestamp())}")
+            where_clauses.append("ts >= ?")
+            params.append(int(start_ts.timestamp()))
         if end_ts is not None:
-            where_clauses.append(f"ts <= {int(end_ts.timestamp())}")
+            where_clauses.append("ts <= ?")
+            params.append(int(end_ts.timestamp()))
 
         where_sql = ' AND '.join(where_clauses)
-        sqlcmd = f"SELECT ts, open, high, low, close, volume FROM arenax_prices WHERE {where_sql} ORDER BY ts ASC;"
-        rows = conn.execute(sqlcmd)
+        sql = f"SELECT ts, open, high, low, close, volume FROM arenax_prices WHERE {where_sql} ORDER BY ts ASC;"
+        rows = conn.execute(sql, tuple(params))
         for r in rows:
             ts = int(r[0])
             o = float(r[1]) if r[1] is not None else 0.0
@@ -305,9 +289,10 @@ def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
     if conn is None:
         return
     try:
-        sqlcmd = f"INSERT INTO CJ_OrderMap (cj_order_id, broker_order_id, broker) VALUES ('{cj_order_id}', '{bkr_order_id}', '{broker}')"
-        print(sqlcmd)
-        conn.execute(sqlcmd)
+        conn.execute(
+            "INSERT INTO CJ_OrderMap (cj_order_id, broker_order_id, broker) VALUES (?, ?, ?)",
+            (cj_order_id, bkr_order_id, broker)
+        )
         conn.commit()
     except Exception as e:
         print(f"Failed to insert order mapping for CJ order {cj_order_id} in local DB: {e}")
@@ -316,11 +301,12 @@ def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id:
     if conn is None:
         return None
     try:
-        sqlcmd = f"SELECT broker_order_id FROM CJ_OrderMap WHERE cj_order_id = '{cj_order_id}'"
-        print(sqlcmd)
-        result = conn.execute(sqlcmd)
+        result = conn.execute(
+            "SELECT broker_order_id FROM CJ_OrderMap WHERE cj_order_id = ?",
+            (cj_order_id,)
+        )
         if result:
-            return result[0][0]  # TODO: this is currently a workaround for mal-design DB API that returns a tuple
+            return result[0][0]
         else:
             print(f"No mapping found for CJ order {cj_order_id} in local DB.")
             return None
@@ -332,13 +318,13 @@ def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id:
     if conn is None:
         return None
     try:
-        sqlcmd = f"SELECT cj_order_id FROM CJ_OrderMap WHERE broker_order_id = '{bkr_order_id}'"
-        # print(sqlcmd)
-        result = conn.execute(sqlcmd)
+        result = conn.execute(
+            "SELECT cj_order_id FROM CJ_OrderMap WHERE broker_order_id = ?",
+            (bkr_order_id,)
+        )
         if result:
-            return result[0][0]  # TODO: this is currently a workaround for mal-design DB API that returns a tuple
+            return result[0][0]
         else:
-            # print(f"No mapping found for broker order {bkr_order_id} in local DB.")
             return None
     except Exception as e:
         print(f"Failed to get CJ order ID for broker order {bkr_order_id} from local DB: {e}")
@@ -354,23 +340,16 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
     created_at_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        sqlcmd = \
-        f"""
-            INSERT INTO orders (
-              order_id, user_id, broker, product_id,
-              side, order_type, price_type, price,
-              quantity, status, created_at, updated_at
-            )
-            VALUES (
-              '{order.id}', '{username}', '{order.broker}',
-              '{order.product.symbol}', '{order.action}', '{order.order_type}',
-              '{order.price_type}', '{order.price}', '{order.quantity}',
-              'PLACED', '{created_at_str}', NULL
-            )
-        """
-        print(sqlcmd)
-        # Note that user default set to user_001 for simplicity
-        conn.execute(sqlcmd)
+        conn.execute(
+            "INSERT INTO orders ("
+            "  order_id, user_id, broker, product_id,"
+            "  side, order_type, price_type, price,"
+            "  quantity, status, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLACED', ?, NULL)",
+            (order.id, username, order.broker, order.product.symbol,
+             order.action, order.order_type, order.price_type, order.price,
+             order.quantity, created_at_str)
+        )
         conn.commit()
         print(f"Order {order.id} inserted in local DB.")
     except Exception as e:
@@ -385,24 +364,16 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
     created_at_str = order.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        # TODO: How to pass user into this function?
-        sqlcmd = \
-        f"""
-            INSERT INTO orders (
-              order_id, user_id, broker, product_id,
-              side, order_type, price_type, price,
-              quantity, status, created_at, updated_at
-            )
-            VALUES (
-              '{order.id}', 'user_123', '{order.broker}',
-              '{order.product.symbol}', '{order.action}', '{order.order_type}',
-              '{order.price_type}', '{order.price}', '{order.quantity}',
-              'NEW', '{created_at_str}', NULL
-            )
-        """
-        print(sqlcmd)
-        # Note that user default set to user_001 for simplicity
-        conn.execute(sqlcmd)
+        conn.execute(
+            "INSERT INTO orders ("
+            "  order_id, user_id, broker, product_id,"
+            "  side, order_type, price_type, price,"
+            "  quantity, status, created_at, updated_at"
+            ") VALUES (?, 'user_123', ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, NULL)",
+            (order.id, order.broker, order.product.symbol, order.action,
+             order.order_type, order.price_type, order.price, order.quantity,
+             created_at_str)
+        )
         conn.commit()
         print(f"Order {order.id} inserted in local DB.")
     except Exception as e:
@@ -415,15 +386,10 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
     updated_at_str = updated_at.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        sqlcmd = \
-        f"""
-            UPDATE orders
-            SET status = '{status}', updated_at = '{updated_at_str}'
-            WHERE order_id = '{oid}'
-        """
-        print(sqlcmd)
-        # Update status field ONLY
-        conn.execute(sqlcmd)
+        conn.execute(
+            "UPDATE orders SET status = ?, updated_at = ? WHERE order_id = ?",
+            (status, updated_at_str, oid)
+        )
         conn.commit()
         print(f"Order {oid} status updated to {status} in local DB.")
     except Exception as e:

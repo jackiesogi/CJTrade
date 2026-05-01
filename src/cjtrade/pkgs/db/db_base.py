@@ -9,10 +9,7 @@ from typing import List
 
 
 # Database connection base class
-# Current:
-#   close() / execute(str) / commit()
-# Future (support parameterized query 參數化查詢):
-#   will be implemented in `SqlCommand` class
+# Supports both raw SQL (legacy) and parameterized queries.
 class DatabaseConnection(ABC):
     def __init__(self, connection: Any):
         self.connection = connection
@@ -22,7 +19,7 @@ class DatabaseConnection(ABC):
         pass
 
     @abstractmethod
-    def execute(self, command: str) -> Any:
+    def execute(self, command: str, params: tuple = None) -> Any:
         pass
 
     @abstractmethod

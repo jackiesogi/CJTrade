@@ -44,6 +44,14 @@ backtest = "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest:main"
 _system_direct = "cjtrade.apps.cjtrade_system.cjtrade_system_arenax:main_system"
 
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "unit: Pure unit tests, no external dependencies",
+    "integration: Requires running external services (ArenaX server, real broker)",
+]
+
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
