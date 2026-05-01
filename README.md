@@ -179,6 +179,11 @@ uv run test --broker=sinopac --group=all
 bash tests/run_broker_stability_tests.sh --broker=arenax
 ```
 
+3. Run full unit test
+```sh
+uv run pytest tests/unit
+```
+
 ## Start develop your trading strategy using CJTrade API
 
 :warning: The API is not stable now!
