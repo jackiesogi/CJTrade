@@ -13,12 +13,12 @@ repos:
     hooks:
       - id: "unit-tests"
         name: "Run unit tests (tests/unit/)"
-        entry: uv run pytest tests/unit/ --tb=short -q
+        entry: uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit
         language: system
         pass_filenames: false
       - id: "ArenaX-broker-integration-test"  # We skip the sinopac integration test
         name: "Run integration test: ArenaX (tests/integration/arenax/)"
-        entry: bash tests/run_broker_stability_tests.sh --broker=arenax
+        entry: bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
         language: system
         pass_filenames: false
       - id: "arenax-shell"

@@ -56,6 +56,27 @@ def client(tmp_path):
     c.disconnect()
 
 
+@pytest.fixture
+def bad_api_key_client(tmp_path):
+    """AccountClient with an intentionally invalid API key — NOT connected.
+    Use this to assert that authentication errors raise the expected exception.
+
+    Example::
+
+        def test_bad_key_raises(bad_api_key_client):
+            with pytest.raises(SomeAuthError):
+                bad_api_key_client.connect()
+    """
+    config = {
+        "username": "test_user",
+        "mirror_db_path": str(tmp_path / "bad_key_test.db"),
+        "speed": 120.0,
+        "api_key": "INVALID_KEY_00000000",
+        "state_file": str(tmp_path / "state.json"),
+    }
+    return AccountClient(BrokerType.ARENAX, **config)
+
+
 # ── Order factory ─────────────────────────────────────────────────────────────
 
 def make_order(
@@ -109,3 +130,7 @@ def unlikely_fill_sell_price(client: AccountClient, symbol: str) -> float:
 def likely_fill_buy_price(client: AccountClient, symbol: str) -> float:
     """Price high enough that the simulated exchange should match it immediately."""
     return round(client.get_snapshots([Product(symbol)])[0].buy_price * 1.08, 2)
+
+def likely_fill_sell_price(client: AccountClient, symbol: str) -> float:
+    """Price low enough that the simulated exchange should match it immediately."""
+    return round(client.get_snapshots([Product(symbol)])[0].sell_price * 0.92, 2)

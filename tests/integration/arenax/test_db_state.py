@@ -12,7 +12,7 @@ from tests.integration.conftest import unlikely_fill_buy_price
 
 class TestDbState:
 
-    def test_20_db_order_persistence(self, client):
+    def test_D000_order_persistence(self, client):
         """Three placed orders must all appear in the local DB with matching symbols."""
         symbols = ["0050", "0051", "0052"]
         orders = []
@@ -30,7 +30,7 @@ class TestDbState:
             assert db_order["product_id"] == order.product.symbol
             client.cancel_order(order.id)
 
-    def test_21_status_transition_sequence(self, client):
+    def test_D001_status_transition_sequence(self, client):
         """DB status must progress: PLACED → COMMITTED_WAIT_* → CANCELLED."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
@@ -49,7 +49,7 @@ class TestDbState:
         db_after_cancel = get_order_from_db(client, order.id)
         assert db_after_cancel["status"] == "CANCELLED"
 
-    def test_22_timestamps_written_on_transitions(self, client):
+    def test_D002_timestamps_written_on_transitions(self, client):
         """updated_at timestamp must change after a status update."""
         order = make_order(price=50.0)
         client.place_order(order)

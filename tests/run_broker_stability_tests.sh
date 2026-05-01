@@ -128,10 +128,12 @@ fi
 # Resolve which integration directory to run based on --broker= argument.
 # Defaults to arenax. Extend the case block for other brokers as needed.
 BROKER="arenax"
+COVERAGE_ENABLED=false
 for arg in "$@"; do
     case "$arg" in
         --broker=*) BROKER="${arg#--broker=}" ;;
         --broker)   shift; BROKER="$1" ;;
+        --coverage) COVERAGE_ENABLED=true ;;
     esac
 done
 
@@ -141,8 +143,14 @@ if [[ ! -d "$INTEGRATION_DIR" ]]; then
     exit 1
 fi
 
+# Build pytest command with optional coverage
+PYTEST_CMD="uv run pytest $INTEGRATION_DIR -v"
+if [ "$COVERAGE_ENABLED" = true ]; then
+    PYTEST_CMD="$PYTEST_CMD --cov=src/cjtrade --cov-report=html:htmlcov/integration_${BROKER}"  #--cov-report=term-missing
+fi
+
 # use PIPESTATUS[0] to ensure we capture the exit code of the test command, not tee
-uv run pytest "$INTEGRATION_DIR" -v | tee stability_test_output.log
+$PYTEST_CMD | tee stability_test_output.log
 EXIT_CODE=${PIPESTATUS[0]}
 
 if [ $EXIT_CODE -eq 0 ]; then
