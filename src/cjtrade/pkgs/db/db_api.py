@@ -41,11 +41,13 @@ def connect_sqlite(database: str = ":memory:"):
 ##########################   ArenaX-local-pricedb-specific CURD   ############################
 DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT = "./src/cjtrade/pkgs/db/sql/create_arenax_local_price_db.sql"
 
-def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None):
+def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script_path: str = None):
     if conn is None:
         return
+    if script_path is None:
+        script_path = DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT
     try:
-        with open(DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT, 'r') as f:
+        with open(script_path, 'r') as f:
             sql_script = f.read()
             conn.execute_script(sql_script)
         conn.commit()
@@ -264,16 +266,18 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
 from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
 
 DEFAUT_PREPARE_TABLE_SCRIPT="./src/cjtrade/pkgs/db/sql"
-def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None):
+def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str = None):
     # Check if {orders,fills} table exists, if not create one
     if conn is None:
         return
+    if sql_dir is None:
+        sql_dir = DEFAUT_PREPARE_TABLE_SCRIPT
     try:
         import os
-        # Get all sql script path under DEFAUT_PREPARE_TABLE_SCRIPT
-        sql_files = [f for f in os.listdir(DEFAUT_PREPARE_TABLE_SCRIPT) if f.endswith('.sql')]
+        # Get all sql script path under sql_dir
+        sql_files = [f for f in os.listdir(sql_dir) if f.endswith('.sql')]
         for sql_file in sql_files:
-            sql_path = os.path.join(DEFAUT_PREPARE_TABLE_SCRIPT, sql_file)
+            sql_path = os.path.join(sql_dir, sql_file)
             with open(sql_path, 'r') as f:
                 sql_script = f.read()
                 conn.execute_script(sql_script)
