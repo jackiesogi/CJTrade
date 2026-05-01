@@ -111,7 +111,12 @@ echo > ./data/arenax_CJ.db
 rm -f ./arenax_CJ.json
 
 gnome-terminal() {
-    command gnome-terminal --zoom=0.8 "$@"
+    PLATFORM=$(uname)
+    if [[ "$PLATFORM" == "Darwin" || -n "$SKIP_DISPLAY" ]]; then
+        echo "Stub...... $@"
+    else
+        command gnome-terminal --zoom=0.8 "$@"
+    fi
 }
 
 # ------------------------
