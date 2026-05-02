@@ -665,9 +665,13 @@ class ArenaX_BrokerSideServer:
     def _real_account_keepalive_loop(self):
         if self.real is not None:
             while not self._stop_event.is_set():
-                if self.real.is_connected():
+                try:
+                    if self.real.is_connected():
+                        self.real.disconnect()
                     self.real.connect()
-                self.real.disconnect()
+                except Exception as e:
+                    logger.exception(e)
+
                 self._stop_event.wait(7200)  # <------  auto logout/login every 2 hours (real world)
 
     def _matching_loop(self) -> None:
