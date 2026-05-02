@@ -148,6 +148,7 @@ class ArenaX_BrokerSideServer:
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **internal_config)
             elif backend_str == "none":
+                self.real = None
                 self.backend = ArenaX_Backend_None(**internal_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
@@ -661,12 +662,12 @@ class ArenaX_BrokerSideServer:
         return sorted(symbols)
 
 
-    def _real_account_keepalive_loop():
-        if self.real_account is not None:
+    def _real_account_keepalive_loop(self):
+        if self.real is not None:
             while not self._stop_event.is_set():
-                if self.real_account.is_connected():
-                    self.real_account.logout()
-                self.real_account.login()
+                if self.real.is_connected():
+                    self.real.connect()
+                self.real.disconnect()
                 self._stop_event.wait(7200)  # <------  auto logout/login every 2 hours (real world)
 
     def _matching_loop(self) -> None:
