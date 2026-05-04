@@ -40,6 +40,25 @@ logging.basicConfig(
 )
 log = logging.getLogger("cjtrade.arenax_server")
 
+# Strip the "IP - - [timestamp] " prefix that werkzeug embeds directly into
+# the access-log message string, so the outer logging formatter's timestamp
+# is the only one shown.
+import re as _re
+class _WerkzeugAccessFormatter(logging.Formatter):
+    _PREFIX = _re.compile(r'^\S+ - - \[[^\]]+\] ')
+    def format(self, record: logging.LogRecord) -> str:
+        record.msg = self._PREFIX.sub('', record.getMessage())
+        record.args = None
+        return super().format(record)
+
+_wz_logger = logging.getLogger("werkzeug")
+_wz_logger.propagate = False
+_wz_handler = logging.StreamHandler()
+_wz_handler.setFormatter(_WerkzeugAccessFormatter(
+    fmt="[%(asctime)s] %(levelname)-8s: %(message)s"
+))
+_wz_logger.addHandler(_wz_handler)
+
 def prepare_price_db(price_db_path: Optional[str]):
     if not price_db_path:
         return
@@ -670,7 +689,7 @@ class ArenaX_BrokerSideServer:
                         self.real.disconnect()
                     self.real.connect()
                 except Exception as e:
-                    logger.exception(e)
+                    log.exception(e)
 
                 self._stop_event.wait(7200)  # <------  auto logout/login every 2 hours (real world)
 
