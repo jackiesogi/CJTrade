@@ -5,7 +5,7 @@
 ## Introduction
 
 ArenaX is a simulated broker designed for CJTrade.
-It provides a fully functional trading environment that mimics the behavior of a real broker, allowing client applications to interact with it as if they were connected to a live trading service.
+It provides a fully functional trading environment that mimics the behavior of a real broker, allowing client applications to interact with it as if they were connected to a paper trading service.
 
 ArenaX supports:
 
@@ -31,9 +31,9 @@ There are 3 modes in ArenaX, they are categorized by their "price data source" a
 
 | Mode   | Price Data Source | Typical Use Case                                          |
 | ------ | ----------------- | --------------------------------------------------------- |
-| `live` | Custom broker API | Paper trading with real-time market data                  |
-| `hist` | Custom broker API | Historical market replay for backtesting                  |
-| `none` (default) | `yfinance`        | Lightweight simulation **WITHOUT** needing a broker account |
+| `paper` | Custom broker API | Paper trading with real-time market data                  |
+| `backtest` | Custom broker API | Historical market replay for backtesting                  |
+| `demo` (default) | `yfinance`        | Lightweight simulation **WITHOUT** needing a broker account |
 
 ## Test with server admin shell
 

@@ -18,9 +18,9 @@ class DataReadiness(enum.Enum):
     RESERVED    = "reserved"      # Reserved for future use
 
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
-from cjtrade.apps.ArenaX.hist_backend import ArenaX_Backend_Historical
-from cjtrade.apps.ArenaX.live_backend import ArenaX_Backend_PaperTrade
-from cjtrade.apps.ArenaX.none_backend import ArenaX_Backend_None
+from cjtrade.apps.ArenaX.backtest_backend import ArenaX_Backend_Historical
+from cjtrade.apps.ArenaX.paper_backend import ArenaX_Backend_PaperTrade
+from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from dotenv import load_dotenv
@@ -69,7 +69,7 @@ def load_cjconf():
     external_config['ca_passwd'] = external_config.get('ca_password', "")
 
 # CJSYS is for CJTrade System itself
-def load_cjsys(backend_str: str = "none"):
+def load_cjsys(backend_str: str = "demo"):
     # Choose config file based on backend type
     config_filename = f"{backend_str}.cjsys"
     file_to_load = Path(__file__).parent / "configs" / config_filename
@@ -77,7 +77,7 @@ def load_cjsys(backend_str: str = "none"):
     if not file_to_load.exists():
         # Fallback to default if specific backend config doesn't exist
         log.warning(f"Config file {config_filename} not found, using default")
-        file_to_load = Path(__file__).parent / "configs" / "none.cjsys"
+        file_to_load = Path(__file__).parent / "configs" / "demo.cjsys"
 
     log.info(f"Loading config file {file_to_load}")
 
@@ -127,7 +127,7 @@ class ArenaX_BrokerSideServer:
     def __init__(
         self,
         price_db_path: Optional[str] = None,
-        backend_str: str = "none",
+        backend_str: str = "demo",
         backend: Optional[ArenaX_BackendBase] = None,
         host: str = "127.0.0.1",
         port: int = 8801,
@@ -139,15 +139,15 @@ class ArenaX_BrokerSideServer:
             print(internal_config)
             print(external_config)
             # time.sleep(30)
-            if backend_str == "hist":
+            if backend_str == "backtest":
                 # Current default, ArenaX use sinopac backend for price feed.
                 # print(f"internal_config: {internal_config}")
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
-            elif backend_str == "live":
+            elif backend_str == "paper":
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **internal_config)
-            elif backend_str == "none":
+            elif backend_str == "demo":
                 self.real = None
                 self.backend = ArenaX_Backend_None(**internal_config)
             else:
@@ -711,7 +711,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server.")
     parser.add_argument("--port", type=int, default=8801, help="Port to bind the server.")
-    parser.add_argument("--backend", type=str, choices=["hist", "live", "none"], default="none", help="Backend type to use.")
+    parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo"], default="demo", help="Backend type to use.")
     args = parser.parse_args()
 
     load_cjconf()

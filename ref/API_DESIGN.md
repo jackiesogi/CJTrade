@@ -25,7 +25,7 @@
 | **SMA** | 中 | 低 | `ta.sma(prices, period)` | `sma = ta.sma(kbars.closes, 20)` |
 | **Bollinger Bands** | 中 | 低 | `ta.bb(prices, period)` | `upper, mid, lower = ta.bb(kbars.closes)` |
 | **RSI** | 中 | 低 | `ta.rsi(prices, period)` | `rsi = ta.rsi(kbars.closes, 14)` |
-| **MACD** | 中 | 低 | `ta.macd(prices)` | `macd, signal, hist = ta.macd(kbars.closes)` |
+| **MACD** | 中 | 低 | `ta.macd(prices)` | `macd, signal, backtest = ta.macd(kbars.closes)` |
 | **Stochastic** | 中 | 低 | `ta.stoch(high, low, close)` | `sk, sd = ta.stoch(kbars.highs, kbars.lows, kbars.closes)` |
 
 ---

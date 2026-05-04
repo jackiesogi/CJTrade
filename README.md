@@ -135,7 +135,7 @@ If you want to test it out, please follow the installation guide in the previous
 # Note that choosing `sinopac` as broker will place real order when strategy condition is met,
 # unless you expliclitly export an environment variable `export SIMULATION=y` before running this.
 export CJSYS_WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
-uv run system --broker=arenax --mode=none
+uv run system --broker=arenax --mode=demo
 ```
 
 ## Backtesting
@@ -151,7 +151,7 @@ For testing oneshot:
 # Root cause:
 # `cjtrade_oneshot_backtest.py` directly calls `ArenaX_MiddleWare` rather than `ArenaXBrokerAPI_v2`,
 # get_kbars() from ArenaXBrokerAPI_v2 will auto try yfinance data provider as fallback when real_broker's
-# data not available at that time range, or simply because user does not set up a real account (e.g. --mode=none)
+# data not available at that time range, or simply because user does not set up a real account (e.g. --mode=demo)
 # However, get_kbars() from ArenaX_MiddleWare, user need to explicitly pass `fallback=True` in order to
 # have fallback mechanism, currently poc/backtest.sh does not pass this parameter.
 bash poc/backtest.sh \
@@ -160,7 +160,7 @@ bash poc/backtest.sh \
   --start 2024-12-16 \
   --days 60 \
   --interval 1d \
-  --mode none
+  --mode demo
 ```
 After the backtest is finish, it will generate a insightful report for evaluating your strategy. (CAGR, Sharpe ratio, Win rate...)
 

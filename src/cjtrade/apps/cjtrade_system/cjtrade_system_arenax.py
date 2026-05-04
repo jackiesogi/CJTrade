@@ -75,10 +75,10 @@ def load_cjsys(broker: str, mode: str):
     config_dir = pathlib.Path(__file__).parent / "configs"
     file_to_load = config_dir / f"{broker}_{mode}.cjsys"
 
-    if mode == 'live' and broker == 'arenax':
+    if mode == 'paper' and broker == 'arenax':
         pass
-        # log.error("Using LIVE mode for arenax broker does not make sense!"
-        #           " If you want to use live mode, please switch to the 'realistic'!")
+        # log.error("Using paper mode for arenax broker does not make sense!"
+        #           " If you want to use paper mode, please switch to the 'realistic'!")
         # exit(1)
 
     if not file_to_load.exists():
@@ -207,7 +207,7 @@ class TradingSystem:
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
-        if self.launch_mode in ['hist', 'none']:
+        if self.launch_mode in ['backtest', 'demo']:
             self.start_time = self.client.broker_api.get_system_time()['mock_current_time']
             log.info(f"⏰ Using mock market start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         else:
@@ -220,7 +220,7 @@ class TradingSystem:
 
         # Get playback speed from mock broker backend (for time-scaled delays)
         self.playback_speed = 1.0
-        if self.launch_mode in ['hist', 'none']:
+        if self.launch_mode in ['backtest', 'demo']:
             #self.playback_speed = self.client.broker_api.api.market.playback_speed
             self.playback_speed = self.client.broker_api.middleware.get_config()['internal_config']['playback_speed']
             log.info(f"⚡ Playback speed: {self.playback_speed}x (response from server, not set by user)")
@@ -451,11 +451,11 @@ class TradingSystem:
         - Day 0: 09:00 start, 13:30 close = 1 completed trading day
         - After 13:30, the day is considered complete
         """
-        if not self.launch_mode in ['hist', 'none']:
+        if not self.launch_mode in ['backtest', 'demo']:
             return False
 
-        # Use mock market time for backtest modes; live mode uses real wall-clock time
-        if self.launch_mode in ['hist', 'none']:
+        # Use mock market time for backtest modes; paper mode uses real wall-clock time
+        if self.launch_mode in ['backtest', 'demo']:
             current_time = self.client.broker_api.get_system_time()['mock_current_time']
         else:
             current_time = datetime.now()
@@ -813,7 +813,7 @@ class TradingSystem:
             # startup lag does not silently consume backtest time at high playback speed.
             # Ensure we operate on the module-level flag so the change persists.
             global RESUME_TIME_AFTER_CLIENT_READY
-            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('hist', 'none'):
+            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('backtest', 'demo'):
                 try:
                     self.client.broker_api.middleware.resume_time_progress()
                     log.info("▶ Mock time resumed (client ready)")
@@ -832,7 +832,7 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 # Check if backtest period is over
-                if self.launch_mode in ['hist', 'none'] and self.should_exit_backtest():
+                if self.launch_mode in ['backtest', 'demo'] and self.should_exit_backtest():
                     log.info("🏁 Backtest completed. Shutting down...")
                     SHUTDOWN = True
                     break
@@ -849,7 +849,7 @@ class TradingSystem:
                 result = signal_event['result']
                 price = result['price']
 
-                if self.launch_mode in ['hist', 'none']:
+                if self.launch_mode in ['backtest', 'demo']:
                     current_time = self.client.broker_api.get_system_time()['mock_current_time']
 
                     start_date = self.start_time.date()
@@ -865,7 +865,7 @@ class TradingSystem:
                     remaining = BACKTEST_DURATION_DAYS - completed_trading_days
                     mode_prefix = f"[BACKTEST {remaining}d]"
                 else:
-                    mode_prefix = "[LIVE]"
+                    mode_prefix = "[PAPER]"
 
                 log.info(f"{mode_prefix} ⚡ Processing signal event: {symbol} {signal} @ {price:.2f}")
 
@@ -1106,7 +1106,7 @@ async def async_main():
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 """)
-    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in ['hist', 'none'] else 'LIVE'}")
+    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in ['backtest', 'demo'] else 'paper'}")
     print("CJTrade System is about to launch", end=" ")
     countdown = 8
     for i in range(countdown, 0, -1):
@@ -1119,12 +1119,12 @@ async def async_main():
     except KeyboardInterrupt:
         log.info("Keyboard interrupt received")
 
-    if LAUNCH_MODE == 'hist' or LAUNCH_MODE == 'none':
+    if LAUNCH_MODE == 'backtest' or LAUNCH_MODE == 'demo':
         system.print_backtest_summary()
         prefix = "backtest"
     else:
         system.print_backtest_summary()
-        prefix = "live"
+        prefix = "paper"
 
     # Build and persist result immediately, before disconnect,
     # so fill_history is still queryable on the server.
@@ -1153,9 +1153,9 @@ def main_system():
     parser.add_argument("-B", "--broker", type=str, default="arenax",
                         choices=["arenax", "sinopac"],
                         help="Broker type: arenax or sinopac")
-    parser.add_argument("-m", "--mode", type=str, default='hist',
-                        choices=['hist', 'live', 'none'],
-                        help="Backtest mode: hist, live or none")
+    parser.add_argument("-m", "--mode", type=str, default='backtest',
+                        choices=['backtest', 'paper', 'demo'],
+                        help="Backtest mode: backtest, paper or demo")
     args = parser.parse_args()
 
     os.environ['BROKER_TYPE'] = args.broker

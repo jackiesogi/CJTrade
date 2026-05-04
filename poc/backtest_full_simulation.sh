@@ -10,7 +10,7 @@ LAST_FILE="$CONFIG_DIR/last_watch_list"
 DEFAULT_WATCH_LIST="1234"
 DEFAULT_FUND=500000
 DEFAULT_DAYS=5
-DEFAULT_MODE="hist"
+DEFAULT_MODE="backtest"
 
 # ------------------------
 # Load last used
@@ -75,7 +75,7 @@ if [ -z "$WATCH_LIST" ]; then
     fi
 fi
 
-if [ -z "$INITIAL_FUND" ] && [ "$ARENAX_MODE" != "live" ]; then
+if [ -z "$INITIAL_FUND" ] && [ "$ARENAX_MODE" != "paper" ]; then
     read -p "Enter initial fund (default: $DEFAULT_FUND): " input
     INITIAL_FUND=${input:-$DEFAULT_FUND}
 fi
@@ -122,8 +122,8 @@ gnome-terminal() {
 # ------------------------
 # Init account
 # ------------------------
-if [ "$ARENAX_MODE" = "live" ]; then
-    echo "Live mode: account state will be synced from real broker, skipping init account generation."
+if [ "$ARENAX_MODE" = "paper" ]; then
+    echo "paper mode: account state will be synced from real broker, skipping init account generation."
     rm -f "arenax_CJ.json"   # ensure no stale file triggers mock-file path
 else
     USERNAME=CJ bash scripts/gen_init_account.sh arenax "$INITIAL_FUND"

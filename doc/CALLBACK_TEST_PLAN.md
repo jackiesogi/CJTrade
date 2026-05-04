@@ -155,7 +155,7 @@ OrderEvent {
 app or `test_sinopac_api_update_qty.py`) still triggers the registered
 callback, mapping correctly back to the CJ order ID.
 
-**Prerequisite**: A live open order exists (place another far-below-market order
+**Prerequisite**: A paper open order exists (place another far-below-market order
 before this test; **do not cancel it**).
 
 **Steps**:

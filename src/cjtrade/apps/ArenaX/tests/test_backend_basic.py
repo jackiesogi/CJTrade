@@ -6,9 +6,9 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pandas as pd
-from cjtrade.apps.ArenaX.hist_backend import ArenaX_Backend_Historical
-from cjtrade.apps.ArenaX.live_backend import ArenaX_Backend_PaperTrade
-from cjtrade.apps.ArenaX.none_backend import ArenaX_Backend_None
+from cjtrade.apps.ArenaX.backtest_backend import ArenaX_Backend_Historical
+from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
+from cjtrade.apps.ArenaX.paper_backend import ArenaX_Backend_PaperTrade
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.order import OrderLot

@@ -1,25 +1,23 @@
-# Realistic Broker - Backtest Mode Configuration
-# Moderate speed with realistic market conditions
+# Backtest Mode Configuration
 
 # =====================================   CJTrade System Launch Mode   ======================================
-# `hist` mode stands for "historical" mode.
-# `hist` mode consumes historical price data from broker API and conducts backtesting (回測)
+# `backtest` mode consumes historical price data from broker API and conducts backtesting (回測)
 #
 # 3 main modes:
 # |       Mode       | Price Data Source  |  Use Case                                | Need broker account? |
 # | ---------------- | ------------------ | ---------------------------------------- | -------------------- |
-# | `live`           | Custom broker API  | Paper trading with real-time market data | Yes                  |
-# | `hist`           | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
-# | `none` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
-AX_LAUNCH_MODE = none  # set launch mode to `none`
+# | `paper`          | Custom broker API  | Paper trading with real-time market data | Yes                  |
+# | `backtest`       | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
+# | `demo` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
+AX_LAUNCH_MODE = backtest  # set launch mode to `backtest`
 
-AX_REAL_ACCOUNT_BROKER_TYPE =
+AX_REAL_ACCOUNT_BROKER_TYPE = sinopac # Bind to launch mode
 # ===========================================================================================================
 
 
 # =======================================   Backtest Configuration   ========================================
 # backtest duration controls how many days of historical data to use for backtesting.
-AX_BACKTEST_DURATION_DAYS  = 11
+AX_BACKTEST_DURATION_DAYS  = 300
 
 # playback speed controls how fast the time advances in virtual environment during backtesting.
 # 3000x means 1 second in real time corresponds to 3000 seconds (50 minutes) in backtest time.
@@ -28,15 +26,15 @@ AX_BACKTEST_DURATION_DAYS  = 11
 #
 # Supported playback speeds:
 #   [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
-AX_BACKTEST_PLAYBACK_SPEED = 120.0
+AX_BACKTEST_PLAYBACK_SPEED = 30000.0
 # ===========================================================================================================
 
 
 # =========================================   General Configuration   =======================================
 AX_HOST_ADDRESS = 127.0.0.1
 AX_HOST_PORT = 8801
-AX_STATE_FILE = none_account_state.json
-AX_SKIP_NON_TRADING_HOURS = y
+AX_STATE_FILE = backtest_account_state.json
+AX_SKIP_NON_TRADING_HOURS = y   # Auto-jump over after-hours / weekends to accelerate backtest
 AX_SKIP_DATA_PRELOAD = n
 AX_AUTO_TIME_PROGRESS = y
 AX_AUTO_START_BACKEND = y

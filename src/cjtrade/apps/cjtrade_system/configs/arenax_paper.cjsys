@@ -1,4 +1,4 @@
-# ArenaX Broker - Live Paper Trading Mode Configuration
+# ArenaX Broker - Paper Trading Mode Configuration
 # Uses real broker price feed, but orders are simulated (paper trading).
 # Requires a real broker account for price data.
 
@@ -8,14 +8,14 @@ CJSYS_WATCH_LIST              =
 
 
 # =======================================   Backtest Configuration   ========================================
-# Live mode always runs at 1x speed (real time).
+# paper mode always runs at 1x speed (real time).
 CJSYS_BACKTEST_PLAYBACK_SPEED = 1.0
 
-# Not applicable in live mode (no exit condition based on duration).
+# Not applicable in paper mode (no exit condition based on duration).
 # CJSYS_BACKTEST_DURATION_DAYS =
 
 CJSYS_SKIP_NON_TRADING_HOURS = n
-CJSYS_STATE_FILE = live_account_state.json
+CJSYS_STATE_FILE = paper_account_state.json
 # ===========================================================================================================
 
 

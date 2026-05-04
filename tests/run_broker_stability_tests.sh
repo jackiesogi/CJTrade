@@ -45,7 +45,7 @@ function ping_server_backend() {
 # TODO: Note that this is just a workaround to ensure the server
 #       has a consistent init account state every time doing tests.
 function prepare_init_account() {
-cat <<EOF > hist_account_state.json
+cat <<EOF > backtest_account_state.json
 { "balance": 999999,
   "positions": [
     {
@@ -65,7 +65,7 @@ cat <<EOF > hist_account_state.json
   "fill_history": []
 }
 EOF
-cat <<EOF > none_account_state.json
+cat <<EOF > demo_account_state.json
 { "balance": 999999,
   "positions": [
     {
@@ -100,7 +100,7 @@ prepare_init_account
 if [[ "$@" == *"--broker arenax"* ]] || [[ "$@" == *"--broker=arenax"* ]] || [[ -z "$@" ]]; then
     if ! ping_server_backend > /dev/null; then
         echo "Starting ArenaX broker server..."
-        # uv run arenaxd --backend=hist > /dev/null 2>&1 &
+        # uv run arenaxd --backend=backtest > /dev/null 2>&1 &
         uv run arenaxd > /dev/null 2>&1 &  # for simplicity
         ARENAX_PID=$!
 

@@ -153,8 +153,8 @@ def _build_server_overrides(user_cfg: dict, mode: str) -> dict:
         overrides["playback_speed"] = speed
         overrides["speed"]          = speed           # backward-compat alias
 
-    # live mode always real-time, never skip non-trading hours
-    if mode == "live":
+    # paper mode always real-time, never skip non-trading hours
+    if mode == "paper":
         overrides.setdefault("playback_speed", 1.0)
         overrides.setdefault("speed",          1.0)
         overrides["skip_non_trading_hours"] = False   # At this point, backend has already
@@ -174,7 +174,7 @@ class ArenaXRunner:
 
     Usage::
 
-        runner = ArenaXRunner(mode="hist", broker="arenax")
+        runner = ArenaXRunner(mode="backtest", broker="arenax")
         runner.run()
     """
 
@@ -293,9 +293,9 @@ def main() -> None:
     )
     parser.add_argument(
         "-m", "--mode",
-        type=str, default="hist",
-        choices=["hist", "live", "none"],
-        help="Launch mode: hist (backtest w/ real prices), none (yfinance mock), live (paper trading)",
+        type=str, default="backtest",
+        choices=["backtest", "paper", "demo"],
+        help="Launch mode: backtest (backtest w/ real prices), demo (yfinance mock), paper (paper trading)",
     )
     parser.add_argument(
         "--host", type=str, default="127.0.0.1",

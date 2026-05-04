@@ -15,7 +15,7 @@ DEFAULT_WATCH_LIST="1234"
 DEFAULT_FUND=500000
 DEFAULT_DAYS=365
 DEFAULT_INTERVAL="1d"
-DEFAULT_MODE="hist"
+DEFAULT_MODE="backtest"
 
 # ------------------------
 # Load last used

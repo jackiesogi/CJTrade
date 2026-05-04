@@ -44,11 +44,11 @@ PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
 #      v
 # 3 kinds of ArenaX_Backend (for all necessary backend simulation)
 
-# hist / live / none
+# backtest / paper / demo
 # mode = price_data_src + use_case
-# hist: (real_account + playback_speed + state_file + num_days_preload) + start/stop
-# live: (real_account + state_file) + start/stop
-# none: (playback_speed + state_file + num_days_preload) + start/stop
+# backtest: (real_account + playback_speed + state_file + num_days_preload) + start/stop
+# paper: (real_account + state_file) + start/stop
+# demo: (playback_speed + state_file + num_days_preload) + start/stop
 @dataclass
 class ArenaX_AccountState:
     balance: float = 0.0

@@ -1,0 +1,49 @@
+# Real Mode Configuration
+# ----------------------
+# Warning: This configuration will be used as the default for live trading in the CJTrade System,
+# unless the user explicitly specifies a custom configuration file.
+# ----------------------
+# 請注意：在 CJTrade System 進行實盤交易時，此設定檔將自動作為預設設定，除非使用者另外明確指定自訂設定檔。
+# ----------------------
+# 注意：CJTradeシステムで実取引を行う際、この設定ファイルはデフォルト設定として使用されます。ユーザーが明示
+# 的にカスタム設定を指定しない限り変更されません。
+# ----------------------
+# 주의: CJTrade 시스템에서 실거래를 진행할 경우, 이 설정 파일은 기본 설정으로 사용됩니다.
+# 사용자가 별도로 사용자 정의 설정을 명시하지 않는 한 변경되지 않습니다.
+# ----------------------
+# Advertencia: Esta configuración se utilizará como predeterminada para operaciones en vivo en el
+# sistema CJTrade, a menos que el usuario especifique explícitamente una configuración personalizada.
+# ----------------------
+# Avertissement : Cette configuration sera utilisée par défaut pour le trading en direct dans le
+# système CJTrade, sauf si l'utilisateur spécifie explicitement une configuration personnalisée.
+
+# =====================================   CJTrade System Launch Mode   ======================================
+# `real` mode is used for REAL (LIVE) TRADING, you must be careful to adjust these settings,
+# be sure to have enough backtest and analysis before go into `real` mode, or you may risk your money!!!
+AX_LAUNCH_MODE = real  # set launch mode to `real`
+
+AX_REAL_ACCOUNT_BROKER_TYPE = sinopac  # Bind to launch mode
+# ===========================================================================================================
+
+
+# =======================================   Backtest Configuration   ========================================
+# Backtest configuration not available in `real` mode !!!
+# ===========================================================================================================
+
+
+# =========================================   General Configuration   =======================================
+AX_HOST_ADDRESS = 127.0.0.1
+AX_HOST_PORT = 8801
+AX_STATE_FILE = real_account_state.json
+AX_SKIP_NON_TRADING_HOURS = n
+AX_SKIP_DATA_PRELOAD = n
+AX_AUTO_TIME_PROGRESS = y
+AX_AUTO_START_BACKEND = y
+# ===========================================================================================================
+
+
+# ======================================  System Intervals (seconds)  =======================================
+# This section control how often the system performs certain actions during paper paper trading.
+# Adjusting these intervals can help balance between realism and speed of paper paper trading.
+AX_ORDER_MATCHING_INTERVAL  = 1.0      # seconds in virtual environment
+# ===========================================================================================================

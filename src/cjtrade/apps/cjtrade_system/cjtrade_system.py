@@ -58,20 +58,20 @@ def load_cjsys(broker: str, backtest_mode: bool):
     """
     Load CJTrade system configuration from .cjsys files
 
-    Note: mock + live mode is NOT supported
+    Note: mock + paper mode is NOT supported
     - mock broker uses yfinance data which has 15-minute delay
-    - live mode requires real-time data, so use 'realistic' broker instead
+    - paper mode requires real-time data, so use 'realistic' broker instead
     - mock broker is only suitable for backtest mode (historical data replay)
     """
     # Find config file relative to this module
     import pathlib
     config_dir = pathlib.Path(__file__).parent / "configs"
-    mode = 'backtest' if backtest_mode else 'live'
+    mode = 'backtest' if backtest_mode else 'paper'
     file_to_load = config_dir / f"{broker}_{mode}.cjsys"
 
-    if mode == 'live' and broker == 'mock':
-        log.error("Using LIVE mode for mock broker does not make sense!"
-                  " If you want to use live mode, please switch to the 'realistic'!")
+    if mode == 'paper' and broker == 'mock':
+        log.error("Using paper mode for mock broker does not make sense!"
+                  " If you want to use paper mode, please switch to the 'realistic'!")
         exit(1)
 
     if not file_to_load.exists():
@@ -696,7 +696,7 @@ class TradingSystem:
                     remaining = BACKTEST_DURATION_DAYS - completed_trading_days
                     mode_prefix = f"[BACKTEST {remaining}d]"
                 else:
-                    mode_prefix = "[LIVE]"
+                    mode_prefix = "[PAPER]"
 
                 log.info(f"{mode_prefix} ⚡ Processing signal event: {symbol} {signal} @ {price:.2f}")
 
@@ -854,7 +854,7 @@ async def async_main():
 
     log.info(
         f"System config loaded: {broker_type} | "
-        f"{'BACKTEST' if cfg.backtest_mode else 'LIVE'} | "
+        f"{'BACKTEST' if cfg.backtest_mode else 'PAPER'} | "
         f"speed={cfg.playback_speed}x | "
         f"window={cfg.window_size} | "
         f"duration={cfg.backtest_duration_days}d"
@@ -915,7 +915,7 @@ async def async_main():
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 """)
-    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if BACKTEST_MODE else 'LIVE'}")
+    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if BACKTEST_MODE else 'PAPER'}")
 
     try:
         while not SHUTDOWN:
