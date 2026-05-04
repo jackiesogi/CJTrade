@@ -17,6 +17,7 @@ from typing import List
 from typing import Optional
 
 import numpy as np
+from cjtrade.apps.cjtrade_system.extensions.ntfy_sh import push_to_ntfy_sh
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
 from cjtrade.pkgs.brokers.account_client import AccountClient
@@ -919,6 +920,7 @@ class TradingSystem:
                             print(f"📝 BUY {quantity} shares of {symbol} at {price:.2f} ({reason})")
 
                             log.info(f"{mode_prefix} ✅ Order placed: {order_result}")
+                            push_to_ntfy_sh(title="New order placed", message=f"Buy {symbol} {quantity} shares @ ${price:.2f}")
                         except Exception as e:
                             log.error(f"{mode_prefix} ❌ Failed to place BUY order: {e}")
 
@@ -960,6 +962,7 @@ class TradingSystem:
                             print(f"📝 SELL {quantity} shares of {symbol} at {price:.2f} ({reason})")
 
                             log.info(f"{mode_prefix} ✅ Order placed: {order_result}")
+                            push_to_ntfy_sh(title="New order placed", message=f"Sell {symbol} {quantity} shares @ ${price:.2f}")
                         except Exception as e:
                             log.error(f"{mode_prefix} ❌ Failed to place SELL order: {e}")
 
