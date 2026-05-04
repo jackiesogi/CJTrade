@@ -191,7 +191,7 @@ class TestNormalOperations:
         assert client.get_market_movers() == None  # Currently not implemented
 
     def test_N010_get_broker_name(self, client):
-        assert client.get_broker_name() == "arenax"
+        assert "arenax" in client.get_broker_name()
 
     def test_N011_is_market_open(self, client):
         assert client.is_market_open() in (True, False)

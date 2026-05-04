@@ -63,6 +63,7 @@ def load_cjconf():
     config['ca_passwd'] = config.get('ca_password', "")
 
 
+# TODO: config control flow is a MESS...... = =
 # CJSYS is for CJTrade System itself
 # Note that need to consider bridging to real brokers in the future, so don't
 # make CJSYS too specific to ArenaX !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -87,9 +88,9 @@ def load_cjsys(broker: str, mode: str):
 
     log.info(f"Loading config file {file_to_load}")
     load_dotenv(file_to_load, override=False)
-    keys = ['CJSYS_WATCH_LIST', 'CJSYS_ANALYSIS_INTERVAL', 'CJSYS_CHECK_FILL_INTERVAL', 'CJSYS_BACKTEST_DURATION_DAYS',
-            'CJSYS_BACKTEST_PLAYBACK_SPEED', 'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL', 'CJSYS_PRICE_MONITOR_INTERVAL',
-            'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT']
+    keys = ['CJSYS_WATCH_LIST', 'CJSYS_REMOTE_HOST', 'CJSYS_REMOTE_PORT', 'CJSYS_ANALYSIS_INTERVAL', 'CJSYS_CHECK_FILL_INTERVAL',
+            'CJSYS_BACKTEST_DURATION_DAYS', 'CJSYS_BACKTEST_PLAYBACK_SPEED', 'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL',
+            'CJSYS_PRICE_MONITOR_INTERVAL', 'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -97,6 +98,11 @@ def load_cjsys(broker: str, mode: str):
 
     # Adjust the types of certain keys
     config['launch_mode'] = mode
+    config['remote_host'] = config.get('cjsys_remote_host', 'localhost')
+    config['remote_port'] = int(config.get('cjsys_remote_port', 8801))
+    # Map to ArenaXBrokerAPI_v2 expected keys
+    config['arenax_host'] = config['remote_host']
+    config['arenax_port'] = config['remote_port']
     config['backtest_duration_days'] = int(config.get('cjsys_backtest_duration_days', 7))
     config['watch_list'] = config.get('cjsys_watch_list', "").split(',') if config.get('cjsys_watch_list') else []
     config['analysis_interval'] = float(config.get('cjsys_analysis_interval', 30))
@@ -126,12 +132,14 @@ class SystemConfig:
     risk_max_position_pct: float
     launch_mode: str
     backtest_duration_days: float
+    remote_host: str = "localhost"      # Default for direct cjtrade_system launch (without runner)
+    remote_port: int = 8801             # Default for direct cjtrade_system launch (without runner)
     # backtest_playback_speed: float
 
 
 def _apply_config(cfg: SystemConfig) -> None:
     """Write a SystemConfig into module-level globals used by all coroutines."""
-    global LAUNCH_MODE
+    global LAUNCH_MODE, REMOTE_HOST, REMOTE_PORT
     global BACKTEST_DURATION_DAYS, BACKTEST_PLAYBACK_SPEED
     global WATCH_LIST
     global ANALYSIS_INTERVAL, CHECK_FILL_INTERVAL, DISPLAY_TIME_INTERVAL, LLM_REPORT_INTERVAL, PRICE_MONITOR_INTERVAL
@@ -141,6 +149,8 @@ def _apply_config(cfg: SystemConfig) -> None:
     BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
     # BACKTEST_PLAYBACK_SPEED    = cfg.backtest_playback_speed
     LAUNCH_MODE                = cfg.launch_mode
+    REMOTE_HOST                = cfg.remote_host
+    REMOTE_PORT                = cfg.remote_port
     WATCH_LIST                 = cfg.watch_list
     PRICE_MONITOR_INTERVAL     = cfg.price_monitor_interval
     ANALYSIS_INTERVAL          = cfg.analysis_interval
@@ -1037,6 +1047,8 @@ async def async_main():
         bb_window_size=config['bb_window_size'],
         risk_max_position_pct=config['risk_max_position_pct'],
         launch_mode=config['launch_mode'],
+        remote_host=config.get('remote_host', 'localhost'),
+        remote_port=config.get('remote_port', 8801),
     )
 
     # Apply config to module-level globals

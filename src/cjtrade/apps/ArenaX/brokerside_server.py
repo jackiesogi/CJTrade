@@ -728,16 +728,20 @@ class ArenaX_BrokerSideServer:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server.")
-    parser.add_argument("--port", type=int, default=8801, help="Port to bind the server.")
+    parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")
     parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo"], default="demo", help="Backend type to use.")
     args = parser.parse_args()
 
     load_cjconf()
     load_cjsys(backend_str=args.backend)
 
-    server = ArenaX_BrokerSideServer(host=args.host, port=args.port, backend_str=args.backend)
-    print(f"Starting server on {args.host}:{args.port} with backend '{args.backend}'...")
+    # Priority: CLI option > config file > hardcoded default
+    host = args.host or internal_config.get('host_address', '127.0.0.1')
+    port = args.port or int(internal_config.get('host_port', 8801))
+
+    server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend)
+    print(f"Starting server on {host}:{port} with backend '{args.backend}'...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -42,9 +42,12 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     """
     def __init__(self, **config: Any):
         super().__init__(**config)
-        self.middleware: ArenaXMiddleWare = config.get('middleware') or ArenaXMiddleWare(
-            host=config.get('host', 'localhost'),
-            port=config.get('port', 8801),
+        self.host = config.get('arenax_host', 'localhost')
+        self.port = config.get('arenax_port', 8801)
+        self.middleware: ArenaXMiddleWare = config.get('middleware') or \
+        ArenaXMiddleWare(
+            host=self.host,
+            port=self.port
         )
         self.config = config
 
@@ -233,7 +236,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def get_broker_name(self) -> str:
-        return "arenax"
+        return f"arenax ({self.port})"
 
 
     def get_market_time(self) -> dict:

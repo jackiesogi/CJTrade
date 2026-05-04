@@ -116,6 +116,8 @@ _SERVER_KEY_MAP = {
     "CJSYS_SKIP_NON_TRADING_HOURS":   "skip_non_trading_hours",
     "CJSYS_STATE_FILE":               "state_file",
     "CJSYS_WATCH_LIST":               "watch_list",
+    "CJSYS_REMOTE_HOST":              "host",
+    "CJSYS_REMOTE_PORT":              "port",
 }
 
 
@@ -182,40 +184,49 @@ class ArenaXRunner:
         self,
         mode: str,
         broker: str = "arenax",
-        host: str = "127.0.0.1",
-        port: int = 8801,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
     ):
         self.mode   = mode
         self.broker = broker
         self.host   = host
         self.port   = port
         self._server = None
+        self._config_file = None  # Will be set in run()
 
     # ------------------------------------------------------------------
     def run(self) -> None:
         # 1. Load user cjsys (no env mutation yet)
         user_cfg, cfg_file = _load_user_cjsys(self.broker, self.mode)
+        self._config_file = cfg_file
         srv_overrides = _build_server_overrides(user_cfg, self.mode)
+
+        # 2. Priority for host/port: CLI > config > hardcoded default
+        self.host = self.host or srv_overrides.get("host") or "127.0.0.1"
+        self.port = self.port or int(srv_overrides.get("port", 8801))
 
         log.info(f"Loaded config: {cfg_file.name}")
         log.info(f"  mode={self.mode}  broker={self.broker}")
+        log.info(f"  server.host = {self.host}")
+        log.info(f"  server.port = {self.port}")
         for k, v in srv_overrides.items():
-            log.info(f"  server.{k} = {v}")
+            if k not in ("host", "port"):
+                log.info(f"  server.{k} = {v}")
 
-        # 2. Kill stale server → start fresh
+        # 3. Kill stale server → start fresh
         if _is_port_in_use(self.host, self.port):
             log.info(f"Port {self.port} in use – killing existing server…")
             _kill_on_port(self.port)
 
         self._start_server(srv_overrides)
 
-        # 3. Expose env vars for cjtrade_system_arenax.async_main()
+        # 4. Expose env vars for cjtrade_system_arenax.async_main()
         os.environ["BROKER_TYPE"] = self.broker
         os.environ["LAUNCH_MODE"] = self.mode
         #   Load the cjsys file into env (override=False so explicit CLI vars win)
         load_dotenv(cfg_file, override=False)
 
-        # 4. Hand off to the trading system
+        # 5. Hand off to the trading system
         from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import async_main
         try:
             asyncio.run(async_main())
@@ -298,12 +309,12 @@ def main() -> None:
         help="Launch mode: backtest (backtest w/ real prices), demo (yfinance mock), paper (paper trading)",
     )
     parser.add_argument(
-        "--host", type=str, default="127.0.0.1",
-        help="ArenaX server host (default: 127.0.0.1)",
+        "--host", type=str, default=None,
+        help="ArenaX server host (CLI > config > default 127.0.0.1)",
     )
     parser.add_argument(
-        "--port", type=int, default=8801,
-        help="ArenaX server port (default: 8801)",
+        "--port", type=int, default=None,
+        help="ArenaX server port (CLI > config > default 8801)",
     )
     args = parser.parse_args()
 

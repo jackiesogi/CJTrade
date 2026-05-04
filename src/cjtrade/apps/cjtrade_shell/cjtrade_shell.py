@@ -915,6 +915,8 @@ def main():
         'username': os.environ.get('USERNAME', 'user000'),
         'news_source': os.environ.get('NEWS_SOURCE', 'cnyes'),
         # 'mirror_db_path': './data/mock_user000.db',
+        'arenax_host': os.environ.get('ARENAX_HOST', 'localhost'),
+        'arenax_port': int(os.environ.get('ARENAX_PORT', 8801)),
     }
 
 

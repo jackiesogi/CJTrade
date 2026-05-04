@@ -23,7 +23,7 @@ AX_REAL_ACCOUNT_BROKER_TYPE = sinopac  # Bind to launch mode
 
 # =========================================   General Configuration   =======================================
 AX_HOST_ADDRESS = 127.0.0.1
-AX_HOST_PORT = 8801
+AX_HOST_PORT = 8803
 AX_STATE_FILE = paper_account_state.json
 AX_SKIP_NON_TRADING_HOURS = n
 AX_SKIP_DATA_PRELOAD = n

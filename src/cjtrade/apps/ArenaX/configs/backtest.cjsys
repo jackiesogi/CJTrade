@@ -32,7 +32,7 @@ AX_BACKTEST_PLAYBACK_SPEED = 30000.0
 
 # =========================================   General Configuration   =======================================
 AX_HOST_ADDRESS = 127.0.0.1
-AX_HOST_PORT = 8801
+AX_HOST_PORT = 8802
 AX_STATE_FILE = backtest_account_state.json
 AX_SKIP_NON_TRADING_HOURS = y   # Auto-jump over after-hours / weekends to accelerate backtest
 AX_SKIP_DATA_PRELOAD = n

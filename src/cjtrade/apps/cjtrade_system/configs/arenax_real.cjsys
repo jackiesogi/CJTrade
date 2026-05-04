@@ -25,6 +25,8 @@
 # watch list controls which stock tickers to include in the backtest (comma-separated e.g. 0050,2330,2317)
 # If empty, it will use the positions in your current portfolio as the watch list for backtesting.
 CJSYS_WATCH_LIST              =
+CJSYS_REMOTE_HOST             = localhost
+CJSYS_REMOTE_PORT             = 8888
 # ===========================================================================================================
 
 
