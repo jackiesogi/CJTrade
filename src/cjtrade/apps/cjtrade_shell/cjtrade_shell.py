@@ -188,13 +188,15 @@ class ListOrdersCommand(CommandBase):
         print("=== Order List ===")
         try:
             orders = client.list_orders()
+            orders.sort(key=lambda o: o.created_at, reverse=True)  # Sort by creation time
             print(f"Found {len(orders)} orders")
 
             if orders:
                 print(f"\nRecent {num_result} orders:")
-                for i, order in enumerate(orders[-num_result:]):
+                for i, order in enumerate(orders[:num_result]):
                     print(f"\nOrder {i+1}:")
-                    print(f"  Order ID: {order.id}")
+                    print(f"  Order ID: {order.id[:7]}")
+                    print(f"  Created At: {order.created_at}")
                     print(f"  Symbol: {order.symbol}")
                     print(f"  Action: {order.action}")
                     print(f"  Quantity: {order.quantity}")
@@ -439,7 +441,8 @@ class LLMCommand(CommandBase):
             headelines = news_engine.fetch_headline_news(n=10)
         news = "\n".join([f"{n.title} {n.content}" for n in headelines])
         position_summary = "\n".join([f"{p.symbol}: {p.quantity} shares at avg cost {p.avg_cost}" for p in positions])
-        return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}"
+        recent_trades = "\n".join([f"{o.symbol} {o.action} {o.quantity} shares at {o.price} ({o.status})" for o in orders[-15:]])
+        return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}; Recent Trades:\n{recent_trades}"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         prompt = args[0]
