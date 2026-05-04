@@ -20,6 +20,7 @@ class DataReadiness(enum.Enum):
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.backtest_backend import ArenaX_Backend_Historical
 from cjtrade.apps.ArenaX.paper_backend import ArenaX_Backend_PaperTrade
+from cjtrade.apps.ArenaX.real_backend import ArenaX_Backend_RealTrade
 from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
@@ -169,6 +170,10 @@ class ArenaX_BrokerSideServer:
             elif backend_str == "demo":
                 self.real = None
                 self.backend = ArenaX_Backend_None(**internal_config)
+            elif backend_str == "real":
+                raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it manually after reviewing the code.")
+                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, **internal_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
 
@@ -186,7 +191,7 @@ class ArenaX_BrokerSideServer:
 
         # When enabled, the matching loop automatically jumps over non-trading hours
         # (after 13:30 or weekends) to accelerate backtesting.
-        self._skip_non_trading_hours = internal_config["skip_non_trading_hours"]
+        self._skip_non_trading_hours = internal_config.get('skip_non_trading_hours', False)
 
         prepare_price_db(price_db_path)
         self._app = self._create_app()
@@ -730,7 +735,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
     parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")
-    parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo"], default="demo", help="Backend type to use.")
+    parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo", "real"], default="demo", help="Backend type to use.")
     args = parser.parse_args()
 
     load_cjconf()

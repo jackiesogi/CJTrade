@@ -122,8 +122,8 @@ gnome-terminal() {
 # ------------------------
 # Init account
 # ------------------------
-if [ "$ARENAX_MODE" = "paper" ]; then
-    echo "paper mode: account state will be synced from real broker, skipping init account generation."
+if [ "$ARENAX_MODE" = "paper" ] || [ "$ARENAX_MODE" = "real" ]; then
+    echo "paper / real mode: account state will be synced from real broker, skipping init account generation."
     rm -f "arenax_CJ.json"   # ensure no stale file triggers mock-file path
 else
     USERNAME=CJ bash scripts/gen_init_account.sh arenax "$INITIAL_FUND"

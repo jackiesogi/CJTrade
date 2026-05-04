@@ -305,7 +305,7 @@ def main() -> None:
     parser.add_argument(
         "-m", "--mode",
         type=str, default="backtest",
-        choices=["backtest", "paper", "demo"],
+        choices=["backtest", "paper", "demo", "real"],
         help="Launch mode: backtest (backtest w/ real prices), demo (yfinance mock), paper (paper trading)",
     )
     parser.add_argument(
