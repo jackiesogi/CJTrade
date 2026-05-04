@@ -973,7 +973,7 @@ class TradingSystem:
         log.info("Time display started")
 
         while not SHUTDOWN:
-            if self.client.get_broker_name() == "arenax":
+            if "arenax" in self.client.get_broker_name():
                 ts = self.client.broker_api.get_system_time()['mock_current_time']
             else:
                 ts = self.client.broker_api.get_system_time()['real_current_time']
