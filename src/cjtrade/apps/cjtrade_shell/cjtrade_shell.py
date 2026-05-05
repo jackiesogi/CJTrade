@@ -188,7 +188,7 @@ class ListOrdersCommand(CommandBase):
         print("=== Order List ===")
         try:
             orders = client.list_orders()
-            orders.sort(key=lambda o: o.created_at, reverse=True)  # Sort by creation time
+            orders.sort(key=lambda o: o.order_datetime, reverse=True)  # Sort by creation time
             print(f"Found {len(orders)} orders")
 
             if orders:
@@ -196,7 +196,7 @@ class ListOrdersCommand(CommandBase):
                 for i, order in enumerate(orders[:num_result]):
                     print(f"\nOrder {i+1}:")
                     print(f"  Order ID: {order.id[:7]}")
-                    print(f"  Created At: {order.created_at}")
+                    print(f"  Created At: {order.order_datetime}")
                     print(f"  Symbol: {order.symbol}")
                     print(f"  Action: {order.action}")
                     print(f"  Quantity: {order.quantity}")
