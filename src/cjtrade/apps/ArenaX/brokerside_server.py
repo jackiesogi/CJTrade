@@ -1,4 +1,5 @@
 import enum
+import json
 import logging
 import os
 import threading
@@ -8,6 +9,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 from typing import Optional
+
+import requests
 
 
 class DataReadiness(enum.Enum):
@@ -394,6 +397,19 @@ class ArenaX_BrokerSideServer:
                 result = self.backend.place_order(order)
                 print(f"Placing order {order.__dict__}")
                 print(f"Order result: {result.__dict__ if result else None}")
+
+                ts = self.backend.market.get_market_time()['mock_current_time']
+
+                # FinHub operations
+                self.finhub_add_entry(
+                        desc=f'現貨買入 {product.symbol} (突破下軌)' if action == 'BUY' else f'現貨賣出 {product.symbol} (突破上軌)',
+                        amount=round(float(price) * int(quantity)),
+                        category='Trading',
+                        transaction_type='expense' if action == 'BUY' else 'income',
+                        account_id=1,
+                        date=ts.strftime('%Y-%m-%d')
+                )
+
                 return jsonify({"ok":True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -542,6 +558,72 @@ class ArenaX_BrokerSideServer:
 
 ################################ Core logic ##################################
 
+    def finhub_reset(self):
+        BASE_URL = "http://localhost:8000"
+        username = os.environ.get('FH_USERNAME', 'john')
+        password = os.environ.get('FH_PASSWORD', 'password123')
+        login_response = requests.post(
+            f"{BASE_URL}/api/v1/auth/login",
+            data={"username": username, "password": password}
+        )
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        accounts_response = requests.get(
+            f"{BASE_URL}/api/v1/accounts",
+            headers=headers
+        )
+        accounts = accounts_response.json()
+        for account in accounts:
+            print(f"   帳戶: {account['name']} (ID={account['id']}, 餘額=${account['balance']})")
+
+        print("\n清空前的交易記錄...")
+        tx_response = requests.get(
+            f"{BASE_URL}/api/v1/transactions",
+            headers=headers
+        )
+        transactions = tx_response.json()
+        print(f"   共 {len(transactions)} 筆交易")
+        for tx in transactions:
+            print(f"   - {tx['description']}: ${tx['amount']} ({tx['transaction_type']})")
+
+        print("\n清空帳戶 1 的所有交易...")
+        clear_response = requests.delete(
+            f"{BASE_URL}/api/v1/accounts/1/transactions",
+            headers=headers
+        )
+        print(json.dumps(clear_response.json(), indent=2))
+
+
+    def finhub_add_entry(self, desc, amount, category, transaction_type, account_id, date):
+        BASE_URL = "http://localhost:8000"
+        ep = f"{BASE_URL}/api/v1/transactions"
+        username = os.environ.get('FH_USERNAME', 'john')
+        password = os.environ.get('FH_PASSWORD', 'password123')
+        login_response = requests.post(
+            f"{BASE_URL}/api/v1/auth/login",
+            # TODO: read from config
+            data={"username": username, "password": password}
+        )
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        transaction_data = {
+            "description": desc,                   #"Office supplies",
+            "amount": amount,                      #150.50,
+            "category": category,                  #"supplies",
+            "transaction_type": transaction_type,  #"expense",  # 'income'/'expense'
+            "account_id": account_id,              #1
+            "date": date
+        }
+
+        response = requests.post(
+            ep,
+            json=transaction_data,
+            headers=headers
+        )
+
+
     def start_backend(self) -> None:
         if self._running:
             return
@@ -559,6 +641,20 @@ class ArenaX_BrokerSideServer:
             daemon=True,
         )
         self._matching_thread.start()
+
+        # FinHub operations
+        self.finhub_reset()
+        balance = self.backend.account_balance()  # feed to FinHub
+        ts = self.backend.market.get_market_time()['mock_current_time']
+        self.finhub_add_entry(
+                desc='帳戶初始資金',
+                amount=balance,
+                category='Trading',
+                transaction_type='income',
+                account_id=1,
+                # TODO: may have type error on FinHub side!!!
+                date=ts.strftime('%Y-%m-%d')
+        )
         self._running = True
 
     def stop_backend(self) -> None:
