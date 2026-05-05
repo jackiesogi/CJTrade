@@ -878,7 +878,7 @@ def interactive_shell(client: AccountClient, config: dict = None):
             if not cmd:
                 continue
 
-            readline.add_history(cmd)
+            # readline.add_history(cmd)
             process_command(cmd, client, **config)
 
         except (EOFError, KeyboardInterrupt):
