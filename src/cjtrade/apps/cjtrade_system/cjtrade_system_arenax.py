@@ -27,6 +27,7 @@ from cjtrade.pkgs.llm.azure_openai import AzureOpenAIClient
 from cjtrade.pkgs.llm.chatpdf import ChatPDFClient
 from cjtrade.pkgs.llm.gemini import GeminiClient
 from cjtrade.pkgs.llm.llm_pool import LLMPool
+from cjtrade.pkgs.llm.mock_llm import MockLLMClient
 from cjtrade.pkgs.models import Product
 from cjtrade.pkgs.models.backtest import BacktestResult
 from dotenv import load_dotenv
@@ -263,12 +264,13 @@ class TradingSystem:
 
         if api_key_1 or api_key_2:
             try:
+                self.llm_client_0 = MockLLMClient()
                 self.llm_client_1 = AzureOpenAIClient(api_key=api_key_1, deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
                                                       endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
                                                       model_name=os.getenv("AZURE_OPENAI_MODEL_NAME"))
                 self.llm_client_2 = ChatPDFClient(api_key=api_key_2, pdf_src=os.environ.get('CHATPDF_BASIC_SOURCE_FILE'))
                 self.llm_client_3 = GeminiClient(api_key=api_key_3)
-                self.llm_pool = LLMPool([self.llm_client_1, self.llm_client_2, self.llm_client_3])  # Create a pool
+                self.llm_pool = LLMPool([self.llm_client_0, self.llm_client_0])  # Create a pool
                 log.info("LLM client initialized")
             except Exception as e:
                 log.warning(f"Failed to initialize LLM client: {e}")
