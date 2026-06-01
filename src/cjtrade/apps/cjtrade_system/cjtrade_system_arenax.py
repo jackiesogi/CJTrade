@@ -463,19 +463,22 @@ class TradingSystem:
             log.info(self._format_trade_log_line_log(trade))
 
     def get_watch_symbols(self) -> List[str]:
-        """Get list of symbols to monitor from watch_list config + current positions"""
+        """Get list of symbols to monitor from watch_list config, or from current positions if watch_list is empty"""
         symbols = []
         try:
             symbols = list(config.get('watch_list', []))
-            positions = self.client.get_positions()
-            if positions:
-                position_symbols = [p.symbol for p in positions]
-                symbols = list(set(symbols + position_symbols))
 
+            # Only add current positions if watch_list is empty
             if len(symbols) == 0:
-                log.warning("No symbols to monitor – set CJSYS_WATCH_LIST in your .cjsys config or ensure you have open positions")
+                positions = self.client.get_positions()
+                if positions:
+                    position_symbols = [p.symbol for p in positions]
+                    symbols = list(set(position_symbols))
+                    log.info(f"No CJSYS_WATCH_LIST specified. Watching {len(symbols)} symbol(s) from current positions: {', '.join(sorted(symbols))}")
+                else:
+                    log.warning("No symbols to monitor – set CJSYS_WATCH_LIST in your .cjsys config or ensure you have open positions")
             else:
-                log.info(f"Watching {len(symbols)} symbol(s): {', '.join(sorted(symbols))}")
+                log.info(f"Watching {len(symbols)} symbol(s) from CJSYS_WATCH_LIST: {', '.join(sorted(symbols))}")
 
             return symbols
         except Exception as e:

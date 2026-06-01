@@ -251,18 +251,22 @@ class TradingSystem:
         return seconds / self.playback_speed
 
     def get_watch_symbols(self) -> List[str]:
-        """Get list of symbols to monitor from current positions"""
+        """Get list of symbols to monitor from watch_list config, or from current positions if watch_list is empty"""
         symbols = []
         try:
-            symbols = config.get('watch_list', [])
-            positions = self.client.get_positions()
-            if positions:
-                s = [p.symbol for p in positions]
-                symbols = list(set(symbols + s))
-                log.info(f"Watching {len(symbols)} symbols from positions: {', '.join(symbols)}")
+            symbols = list(config.get('watch_list', []))
 
+            # Only add current positions if watch_list is empty
             if len(symbols) == 0:
-                log.warning("No position to monitor (Try `export WATCH_LIST=2330,0050` env variable)")
+                positions = self.client.get_positions()
+                if positions:
+                    s = [p.symbol for p in positions]
+                    symbols = list(set(s))
+                    log.info(f"No WATCH_LIST specified. Watching {len(symbols)} symbols from current positions: {', '.join(symbols)}")
+                else:
+                    log.warning("No position to monitor (Try `export WATCH_LIST=2330,0050` env variable)")
+            else:
+                log.info(f"Watching {len(symbols)} symbols from WATCH_LIST: {', '.join(symbols)}")
 
             return symbols
         except Exception as e:
