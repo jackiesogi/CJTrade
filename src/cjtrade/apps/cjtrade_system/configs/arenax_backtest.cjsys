@@ -12,11 +12,12 @@ CJSYS_REMOTE_PORT             = 8802
 # ======================================  System Intervals (seconds)  =======================================
 # This section control how often the system performs certain actions during backtesting.
 # Adjusting these intervals can help balance between realism and speed of backtesting.
-CJSYS_ANALYSIS_INTERVAL       = 60      # seconds in virtual environment
-CJSYS_CHECK_FILL_INTERVAL     = 120      # seconds in virtual environment
-CJSYS_DISPLAY_TIME_INTERVAL   = 60      # seconds in virtual environment
+CJSYS_ANALYSIS_INTERVAL       = 60         # seconds in virtual environment
+CJSYS_CHECK_FILL_INTERVAL     = 120        # seconds in virtual environment
+CJSYS_DISPLAY_TIME_INTERVAL   = 60         # seconds in virtual environment
 CJSYS_LLM_REPORT_INTERVAL     = 999999999  # seconds in virtual environment
-CJSYS_PRICE_MONITOR_INTERVAL  = 60       # seconds in virtual environment
+CJSYS_PRICE_MONITOR_INTERVAL  = 60         # seconds in virtual environment
+#CJSYS_PRICE_MONITOR_INTERVAL  = 900       # 15 minutes – matches MACD 15m strategy
 # ===========================================================================================================
 
 
@@ -50,4 +51,11 @@ CJSYS_SKIP_NON_TRADING_HOURS = y
 
 # Account state file path (relative to CWD)
 CJSYS_STATE_FILE = backtest_account_state.json
+# ===========================================================================================================
+
+# ===========================================     API Server     ============================================
+# The CJTrade System API Server is a lightweight HTTP service
+# that enables third-party applications to integrate with CJTrade System.
+CJSYS_API_HOST                = 0.0.0.0
+CJSYS_API_PORT                = 8899
 # ===========================================================================================================

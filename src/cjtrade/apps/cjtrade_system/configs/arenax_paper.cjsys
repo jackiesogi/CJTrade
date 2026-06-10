@@ -27,6 +27,7 @@ CJSYS_CHECK_FILL_INTERVAL     = 30
 CJSYS_DISPLAY_TIME_INTERVAL   = 40
 CJSYS_LLM_REPORT_INTERVAL     = 14400  # 4 hours
 CJSYS_PRICE_MONITOR_INTERVAL  = 60
+#CJSYS_PRICE_MONITOR_INTERVAL  = 900      # 15 minutes – matches MACD 15m strategy
 # ===========================================================================================================
 
 
@@ -38,4 +39,11 @@ CJSYS_BB_WINDOW_SIZE          = 50
 
 # =========================================     Risk Management    ==========================================
 CJSYS_RISK_MAX_POSITION_PCT   = 0.05
+# ===========================================================================================================
+
+# ===========================================     API Server     ============================================
+# The CJTrade System API Server is a lightweight HTTP service
+# that enables third-party applications to integrate with CJTrade System.
+CJSYS_API_HOST                = 0.0.0.0
+CJSYS_API_PORT                = 8899
 # ===========================================================================================================

@@ -21,6 +21,7 @@ from typing import List
 from typing import Optional
 
 import numpy as np
+from aiohttp import web as _aiohttp_web
 from cjtrade.apps.cjtrade_system.extensions.ntfy_sh import push_to_ntfy_sh
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
@@ -96,7 +97,8 @@ def load_cjsys(broker: str, mode: str):
     load_dotenv(file_to_load, override=False)
     keys = ['CJSYS_WATCH_LIST', 'CJSYS_REMOTE_HOST', 'CJSYS_REMOTE_PORT', 'CJSYS_ANALYSIS_INTERVAL', 'CJSYS_CHECK_FILL_INTERVAL',
             'CJSYS_BACKTEST_DURATION_DAYS', 'CJSYS_BACKTEST_PLAYBACK_SPEED', 'CJSYS_DISPLAY_TIME_INTERVAL', 'CJSYS_LLM_REPORT_INTERVAL',
-            'CJSYS_PRICE_MONITOR_INTERVAL', 'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT']
+            'CJSYS_PRICE_MONITOR_INTERVAL', 'CJSYS_BB_MIN_WIDTH_PCT', 'CJSYS_BB_WINDOW_SIZE', 'CJSYS_RISK_MAX_POSITION_PCT',
+            'CJSYS_API_HOST', 'CJSYS_API_PORT']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -119,6 +121,8 @@ def load_cjsys(broker: str, mode: str):
     config['bb_min_width_pct'] = float(config.get('cjsys_bb_min_width_pct', 0.01))
     config['bb_window_size'] = int(config.get('cjsys_bb_window_size', 20))
     config['risk_max_position_pct'] = float(config.get('cjsys_risk_max_position_pct', 0.05))
+    config['api_host'] = config.get('cjsys_api_host', '0.0.0.0')
+    config['api_port'] = int(config.get('cjsys_api_port', 8899))
 
 
 def print_config():
@@ -169,6 +173,7 @@ def _apply_config(cfg: SystemConfig) -> None:
 
 
 SHUTDOWN = False
+
 
 
 # ====================  Signal abstraction  ====================
@@ -313,6 +318,10 @@ class BollingerBandsCalculator(SignalCalculator):
                 'band_width': round(band_width * 100, 2),
             },
         )
+
+# CJTrade lightweight API server (for FinHub / external consumers)
+CJTRADE_API_HOST = "0.0.0.0"
+CJTRADE_API_PORT = 8899
 
 # ==================== Trading System Class ====================
 class TradingSystem:
@@ -1119,6 +1128,148 @@ class TradingSystem:
             await asyncio.sleep(self.mock_env_sleep(CHECK_FILL_INTERVAL))
 
 
+# ==================== CJTrade Lightweight API Server ====================
+
+async def run_api_server(system: 'TradingSystem') -> None:
+    """Read-only HTTP server that Finhub (and other consumers) can poll.
+
+    Runs inside the same asyncio event loop as the trading system.
+    All endpoints are GET-only (or auth POST); no order execution here.
+
+    Endpoints
+    ---------
+    POST /api/auth/login          Accept any username, return a bearer token.
+    GET  /api/account             Cash balance, equity, P&L summary.
+    GET  /api/positions           Current open positions (holdings).
+    GET  /api/trades              Executed trade log (newest-first).
+    GET  /api/equity_curve        Equity-curve data points.
+    """
+
+    @_aiohttp_web.middleware
+    async def _cors(request, handler):
+        """Allow cross-origin requests from the Finhub frontend."""
+        if request.method == 'OPTIONS':
+            return _aiohttp_web.Response(status=204, headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+            })
+        resp = await handler(request)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+
+    async def login(request):
+        """Issue a CJTrade bearer token.
+
+        Accepts any username for now; token format is ``cjtrade-{username}``.
+        Caller (Finhub) should send ``{"username": "john"}`` in the body.
+        """
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        username = data.get('username', 'anonymous')
+        return _aiohttp_web.json_response({
+            'access_token': f'cjtrade-{username}',
+            'token_type': 'bearer',
+            'username': username,
+        })
+
+    async def get_account(request):
+        try:
+            balance = system.client.get_balance()
+            equity  = system.get_total_equity()
+            pnl     = equity - system.initial_equity
+            pnl_pct = (pnl / system.initial_equity * 100) if system.initial_equity > 0 else 0
+            return _aiohttp_web.json_response({
+                'balance':         round(balance, 2),
+                'equity':          round(equity, 2),
+                'initial_equity':  round(system.initial_equity, 2),
+                'pnl':             round(pnl, 2),
+                'pnl_pct':         round(pnl_pct, 2),
+                'session_id':      system.session_id,
+                'launch_mode':     system.launch_mode,
+            })
+        except Exception as e:
+            log.error(f"API /account error: {e}")
+            return _aiohttp_web.json_response({'error': str(e)}, status=500)
+
+    async def get_positions(request):
+        try:
+            positions = system.client.get_positions() or []
+            result = []
+            for p in positions:
+                cost    = p.avg_cost * p.quantity
+                pnl_pct = (p.unrealized_pnl / cost * 100) if cost > 0 else 0
+                result.append({
+                    'symbol':            p.symbol,
+                    'quantity':          p.quantity,
+                    'avg_cost':          round(p.avg_cost, 2),
+                    'current_price':     round(p.current_price, 2),
+                    'market_value':      round(p.market_value, 2),
+                    'unrealized_pnl':    round(p.unrealized_pnl, 2),
+                    'unrealized_pnl_pct': round(pnl_pct, 2),
+                })
+            return _aiohttp_web.json_response(result)
+        except Exception as e:
+            log.error(f"API /positions error: {e}")
+            return _aiohttp_web.json_response({'error': str(e)}, status=500)
+
+    async def get_trades(request):
+        try:
+            trades = []
+            for t in reversed(system.trade_log):   # newest-first
+                ts = t.get('mock_time') or t.get('timestamp')
+                ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
+                trades.append({
+                    'action':    t['action'],
+                    'symbol':    t['symbol'],
+                    'quantity':  t['quantity'],
+                    'price':     round(t['price'], 2),
+                    'timestamp': ts_str,
+                    'reason':    t.get('reason', ''),
+                })
+            return _aiohttp_web.json_response(trades)
+        except Exception as e:
+            log.error(f"API /trades error: {e}")
+            return _aiohttp_web.json_response({'error': str(e)}, status=500)
+
+    async def get_equity_curve(request):
+        try:
+            return _aiohttp_web.json_response(system._equity_curve)
+        except Exception as e:
+            log.error(f"API /equity_curve error: {e}")
+            return _aiohttp_web.json_response({'error': str(e)}, status=500)
+
+    app = _aiohttp_web.Application(middlewares=[_cors])
+    app.router.add_post('/api/v1/auth/login',   login)
+    app.router.add_get('/api/v1/account',       get_account)
+    app.router.add_get('/api/v1/positions',     get_positions)
+    app.router.add_get('/api/v1/trades',        get_trades)
+    app.router.add_get('/api/v1/equity_curve',  get_equity_curve)
+    # Catch-all OPTIONS for preflight
+    app.router.add_route('OPTIONS', r'/{path_info:.*}',
+        lambda r: _aiohttp_web.Response(status=204, headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        })
+    )
+
+    runner = _aiohttp_web.AppRunner(app, access_log=None)
+    await runner.setup()
+    site = _aiohttp_web.TCPSite(runner, CJTRADE_API_HOST, CJTRADE_API_PORT)
+    await site.start()
+    log.info(f"🌐 CJTrade API server: http://{CJTRADE_API_HOST}:{CJTRADE_API_PORT}/api/")
+
+    try:
+        while not SHUTDOWN:
+            await asyncio.sleep(1)
+    finally:
+        await runner.cleanup()
+        log.info("CJTrade API server stopped")
+
+
 # ==================== Main Entry Point ====================
 def signal_handler(sig, frame):
     global SHUTDOWN
@@ -1205,12 +1356,18 @@ async def async_main():
     if not initial_symbols:
         log.warning("⚠️  No positions found. System will monitor positions as they are created.")
 
+    # Apply API host/port from config (after _apply_config)
+    global CJTRADE_API_HOST, CJTRADE_API_PORT
+    CJTRADE_API_HOST = config.get('api_host', CJTRADE_API_HOST)
+    CJTRADE_API_PORT = config.get('api_port', CJTRADE_API_PORT)
+
     tasks = [
-        asyncio.create_task(system.monitor_prices(), name="price_monitor"),
-        asyncio.create_task(system.analyze_signals(), name="signal_analysis"),
-        asyncio.create_task(system.generate_llm_report(), name="llm_report"),
-        asyncio.create_task(system.execute_orders(), name="order_executor"),
-        asyncio.create_task(system.display_time(), name="time_display"),
+        asyncio.create_task(system.monitor_prices(),       name="price_monitor"),
+        asyncio.create_task(system.analyze_signals(),      name="signal_analysis"),
+        asyncio.create_task(system.generate_llm_report(),  name="llm_report"),
+        asyncio.create_task(system.execute_orders(),       name="order_executor"),
+        asyncio.create_task(system.display_time(),         name="time_display"),
+        asyncio.create_task(run_api_server(system),        name="api_server"),
         # asyncio.create_task(system.trigger_order_matching(), name="order_matching"),
     ]
 
