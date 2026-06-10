@@ -188,6 +188,7 @@ class ArenaX_BrokerSideServer:
         self._valid_api_keys = set()            # Placeholder for API key management
         self._valid_api_keys.add('testkey123')  # hardcoded API key for testing
         self._data_readiness = DataReadiness.NONE
+        self._backend_str = backend_str  # stored to skip keepalive in backtest mode
 
         # When enabled, the matching loop automatically jumps over non-trading hours
         # (after 13:30 or weekends) to accelerate backtesting.
@@ -547,12 +548,17 @@ class ArenaX_BrokerSideServer:
             return
         self.backend.login()
         self._stop_event.clear()
-        self._keepalive_thread = threading.Thread(
-            target=self._real_account_keepalive_loop,
-            name="ArenaXKeepAliveLoop",
-            daemon=True,
-        )
-        self._keepalive_thread.start()  # <------- this will re-connect to broker every 2 hours
+        # In backtest mode the Sinopac connection is only needed for the initial
+        # data preload (done in __init__).  Starting the keepalive loop would
+        # immediately call shioaji.logout() which triggers a C++ terminate()
+        # (known pybind11 bug) and crashes the process.  Skip it for backtest.
+        if self._backend_str != "backtest":
+            self._keepalive_thread = threading.Thread(
+                target=self._real_account_keepalive_loop,
+                name="ArenaXKeepAliveLoop",
+                daemon=True,
+            )
+            self._keepalive_thread.start()  # <------- this will re-connect to broker every 2 hours
         self._matching_thread = threading.Thread(
             target=self._matching_loop,
             name="ArenaXMatchingLoop",

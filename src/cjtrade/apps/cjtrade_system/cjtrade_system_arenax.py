@@ -8,10 +8,14 @@ import signal
 import sys
 import time
 import uuid
+from abc import ABC
+from abc import abstractmethod
 from asyncio import Queue
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -166,56 +170,158 @@ def _apply_config(cfg: SystemConfig) -> None:
 
 SHUTDOWN = False
 
-# ==================== Bollinger Bands (TA-Lib) ====================
-# TODO: Construct a specific datatype for bollinger band result
-def calculate_bollinger_bands_mock(symbol: str, prices: List[float]) -> Dict:
-    """Calculate Bollinger Bands using TA-Lib, maintaining same interface as mock version"""
-    if not prices or len(prices) == 0:
-        return None
 
-    # Need at least WINDOW_SIZE data points for reliable BB calculation
-    if len(prices) < BB_WINDOW_SIZE:
-        log.debug(f"BB {symbol}: Insufficient data ({len(prices)}/{BB_WINDOW_SIZE} prices)")
-        return None
-    current_price, prices_array = prices[-1], np.array(prices, dtype=float)
+# ====================  Signal abstraction  ====================
 
-    # Calculate Bollinger Bands using TA-Lib
-    upper_bands, middle_bands, lower_bands = ta.bb(prices_array, timeperiod=BB_WINDOW_SIZE, nbdevup=2, nbdevdn=2)
-    upper, middle, lower = upper_bands[-1], middle_bands[-1], lower_bands[-1]
-    std_dev = (upper - middle) / 2  # Because upper = middle + 2*std
-    band_width = (upper - lower) / middle if middle > 0 else 0
+@dataclass
+class SignalResult:
+    """Unified return type for all signal calculators.
 
-    log.info(f"BB Debug [{symbol}]: Price={current_price:.2f} | "
-             f"Upper={upper:.2f} Mid={middle:.2f} Lower={lower:.2f} | "
-             f"StdDev={std_dev:.2f} BandWidth={band_width*100:.2f}%")
+    Every calculator must populate *signal*, *symbol*, *price*, and
+    *timestamp*.  Strategy-specific indicators (e.g. BB bands, DCA period)
+    go into *meta* so callers can remain generic while still being able to
+    render strategy-specific detail when needed.
+    """
+    signal: str                              # 'BUY' | 'SELL' | 'HOLD'
+    symbol: str
+    price: float                             # current market price at signal time
+    timestamp: datetime
+    reason: str = ""
+    meta: Dict[str, Any] = field(default_factory=dict)
 
-    if band_width < BB_MIN_WIDTH_PCT:
-        log.info(f"⚪ BB {symbol}: Band too narrow ({band_width*100:.2f}% < {BB_MIN_WIDTH_PCT*100:.2f}%), signal=HOLD")
-        signal = 'HOLD'
-    else:
-        signal = 'HOLD'
-        if current_price <= lower:
+
+class SignalCalculator(ABC):
+    """Base class for all live-system signal calculators.
+
+    Each subclass receives the same inputs (symbol, prices, current_time)
+    and returns the same *SignalResult* type, making strategies
+    interchangeable inside TradingSystem without any caller changes.
+    """
+
+    @abstractmethod
+    def calculate(
+        self,
+        symbol: str,
+        prices: List[float],
+        current_time: datetime,
+    ) -> Optional[SignalResult]:
+        """Return a SignalResult for the current bar, or None if insufficient data."""
+        ...
+
+
+# ====================       DCA Calculator       ====================
+
+class DCACalculator(SignalCalculator):
+    """Time-based DCA: emit BUY once every *period_days* per symbol.
+
+    Trigger state is managed internally, so callers never need to thread
+    ``last_trigger_time`` through ``analysis_results``.
+    """
+
+    def __init__(self, period_days: int = 30) -> None:
+        self._period = timedelta(days=period_days)
+        self._last_trigger: Dict[str, datetime] = {}
+
+    def calculate(
+        self,
+        symbol: str,
+        prices: List[float],
+        current_time: datetime,
+    ) -> Optional[SignalResult]:
+        if not prices:
+            return None
+        price = prices[-1]
+        last = self._last_trigger.get(symbol)
+
+        if last is None or (current_time - last) >= self._period:
+            self._last_trigger[symbol] = current_time
+            label = 'No previous trigger' if last is None else f'{(current_time - last).days}d elapsed'
+            log.info(f"DCA {symbol}: {label}, signal=BUY")
+            return SignalResult(
+                signal='BUY', symbol=symbol, price=price,
+                timestamp=current_time,
+                reason=f"DCA: {self._period.days}-day period elapsed",
+                meta={'period_days': self._period.days, 'last_trigger_time': current_time.isoformat()},
+            )
+
+        days_since = (current_time - last).days
+        log.info(f"DCA {symbol}: {days_since}/{self._period.days} days elapsed, signal=HOLD")
+        return SignalResult(
+            signal='HOLD', symbol=symbol, price=price,
+            timestamp=current_time,
+            reason=f"DCA: waiting ({days_since}/{self._period.days} days)",
+            meta={'period_days': self._period.days, 'last_trigger_time': last.isoformat()},
+        )
+
+
+# ====================  Bollinger Bands Calculator  ====================
+
+class BollingerBandsCalculator(SignalCalculator):
+    """Bollinger Band mean-reversion: BUY at lower band, SELL at upper band."""
+
+    def __init__(self, window: int = 20, min_width_pct: float = 0.01) -> None:
+        self._window = window
+        self._min_width_pct = min_width_pct
+
+    def calculate(
+        self,
+        symbol: str,
+        prices: List[float],
+        current_time: datetime,
+    ) -> Optional[SignalResult]:
+        if not prices or len(prices) < self._window:
+            log.debug(f"BB {symbol}: Insufficient data ({len(prices) if prices else 0}/{self._window} prices)")
+            return None
+
+        price = prices[-1]
+        prices_arr = np.array(prices, dtype=float)
+        upper_bands, middle_bands, lower_bands = ta.bb(prices_arr, timeperiod=self._window, nbdevup=2, nbdevdn=2)
+        upper, middle, lower = upper_bands[-1], middle_bands[-1], lower_bands[-1]
+        std_dev = (upper - middle) / 2
+        band_width = (upper - lower) / middle if middle > 0 else 0
+
+        log.info(f"BB Debug [{symbol}]: Price={price:.2f} | "
+                 f"Upper={upper:.2f} Mid={middle:.2f} Lower={lower:.2f} | "
+                 f"StdDev={std_dev:.2f} BandWidth={band_width*100:.2f}%")
+
+        if band_width < self._min_width_pct:
+            signal = 'HOLD'
+            reason = f"band too narrow ({band_width*100:.2f}%)"
+            log.info(f"⚪ BB {symbol}: {reason}, signal=HOLD")
+        elif price <= lower:
             signal = 'BUY'
-            log.info(f"🟢 BB {symbol}: Price {current_price:.2f} <= Lower {lower:.2f} → BUY")
-        elif current_price >= upper:
+            reason = f"price {price:.2f} <= lower {lower:.2f}"
+            log.info(f"🟢 BB {symbol}: {reason}")
+        elif price >= upper:
             signal = 'SELL'
-            log.info(f"🔴 BB {symbol}: Price {current_price:.2f} >= Upper {upper:.2f} → SELL")
+            reason = f"price {price:.2f} >= upper {upper:.2f}"
+            log.info(f"🔴 BB {symbol}: {reason}")
         else:
-            log.info(f"⚪ BB {symbol}: Price in middle band → HOLD")
+            signal = 'HOLD'
+            reason = "price in middle band"
+            log.info(f"⚪ BB {symbol}: {reason}")
 
-    return {
-        'upper': round(upper, 2), 'middle': round(middle, 2),
-        'lower': round(lower, 2), 'signal': signal,
-        'price': current_price, 'symbol': symbol,
-        'std_dev': round(std_dev, 2), 'band_width': round(band_width * 100, 2)
-    }
+        return SignalResult(
+            signal=signal, symbol=symbol, price=price,
+            timestamp=current_time,
+            reason=reason,
+            meta={
+                'upper': round(upper, 2),
+                'middle': round(middle, 2),
+                'lower': round(lower, 2),
+                'std_dev': round(std_dev, 2),
+                'band_width': round(band_width * 100, 2),
+            },
+        )
 
 # ==================== Trading System Class ====================
 class TradingSystem:
     def __init__(self, client: AccountClient):
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
-        self.analysis_results: Dict[str, Dict] = {}
+        self.analysis_results: Dict[str, SignalResult] = {}
+        # self.calculator: SignalCalculator = DCACalculator(period_days=30)
+        self.calculator: SignalCalculator = BollingerBandsCalculator(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
@@ -262,9 +368,11 @@ class TradingSystem:
         api_key_2 = os.getenv("CHATPDF_APIKEY")
         api_key_3 = os.getenv("GEMINI_API_KEY")
 
+        self.llm_client_0 = MockLLMClient()
+        self.llm_pool = LLMPool([self.llm_client_0])   # always enabled; real clients added below if keys exist
+
         if api_key_1 or api_key_2:
             try:
-                self.llm_client_0 = MockLLMClient()
                 self.llm_client_1 = AzureOpenAIClient(api_key=api_key_1, deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
                                                       endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
                                                       model_name=os.getenv("AZURE_OPENAI_MODEL_NAME"))
@@ -275,7 +383,7 @@ class TradingSystem:
             except Exception as e:
                 log.warning(f"Failed to initialize LLM client: {e}")
         else:
-            log.warning("GEMINI_API_KEY not found, LLM reports disabled")
+            log.warning("No LLM API keys found, using MockLLM")
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""
@@ -688,6 +796,7 @@ class TradingSystem:
             try:
                 symbols = list(self.price_history.keys())
                 log.debug(f"Analyzing {len(symbols)} symbols: {symbols}")  # debug: empty on first tick is normal
+                current_time = self.client.broker_api.get_system_time()['mock_current_time'] if self.launch_mode in ['backtest', 'demo'] else datetime.now()
 
                 for symbol in symbols:
                     history_len = len(self.price_history.get(symbol, []))
@@ -695,27 +804,25 @@ class TradingSystem:
                     if history_len < BB_WINDOW_SIZE:
                         continue
 
-                    result = calculate_bollinger_bands_mock(
-                        symbol,
-                        self.price_history[symbol]
-                    )
+                    prices = self.price_history.get(symbol, [])
+                    result = self.calculator.calculate(symbol, prices, current_time)
 
                     if result:
-                        old_signal = self.analysis_results.get(symbol, {}).get('signal', None)
-                        new_signal = result['signal']
+                        old_signal = self.analysis_results[symbol].signal if symbol in self.analysis_results else None
+                        new_signal = result.signal
 
                         if new_signal != 'HOLD' and new_signal != old_signal:
-                            log.info(f"📢 Signal changed: {symbol} {old_signal} → {new_signal} @ {result['price']:.2f}")
+                            log.info(f"📢 Signal changed: {symbol} {old_signal} → {new_signal} @ {result.price:.2f}")
                             await self.signal_queue.put({
                                 'symbol': symbol,
                                 'signal': new_signal,
                                 'result': result,
-                                'timestamp': datetime.now()
+                                'timestamp': current_time
                             })
 
                         self.analysis_results[symbol] = result
                     else:
-                        log.warning(f"{symbol}: BB calculation returned None")
+                        log.warning(f"{symbol}: signal calculation returned None")
 
             except Exception as e:
                 log.error(f"Analysis error: {e}")
@@ -762,12 +869,19 @@ class TradingSystem:
                 prices_str = " → ".join([f"{p:.2f}" for p in prices])
                 context += f"  {symbol:6s} | {prices_str} (Δ {price_change:+.2f}, {price_change_pct:+.2f}%)\n"
 
-        # BB signals
-        context += f"\n🎯 BOLLINGER BANDS SIGNALS\n"
+        # Signals
+        context += f"\n🎯 SIGNALS\n"
         for symbol in sorted(self.analysis_results.keys()):
             result = self.analysis_results[symbol]
-            signal_icon = "🟢" if result['signal'] == 'BUY' else "🔴" if result['signal'] == 'SELL' else "⚪"
-            context += f"  {signal_icon} {symbol:6s} | Signal: {result['signal']:4s} | Price: ${result['price']:>7.2f} | Upper: ${result['upper']:>7.2f} | Mid: ${result['middle']:>7.2f} | Lower: ${result['lower']:>7.2f}\n"
+            signal_icon = "🟢" if result.signal == 'BUY' else "🔴" if result.signal == 'SELL' else "⚪"
+            line = f"  {signal_icon} {symbol:6s} | Signal: {result.signal:4s} | Price: ${result.price:>7.2f}"
+            if 'upper' in result.meta:
+                line += (f" | Upper: ${result.meta['upper']:>7.2f}"
+                         f" | Mid: ${result.meta['middle']:>7.2f}"
+                         f" | Lower: ${result.meta['lower']:>7.2f}")
+            elif result.reason:
+                line += f" | {result.reason}"
+            context += line + "\n"
 
         # Recent trades
         context += f"\n📝 RECENT TRADES ({len(recent_trades)} trades)\n"
@@ -790,6 +904,18 @@ class TradingSystem:
         log.info("LLM report generator started")
 
         while not SHUTDOWN:
+            # Resume server-side mock time on the first tick, regardless of whether
+            # an LLM is configured.  Must run before any `continue` so that the
+            # backtest always starts progressing even when LLM keys are absent.
+            global RESUME_TIME_AFTER_CLIENT_READY
+            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('backtest', 'demo'):
+                try:
+                    self.client.broker_api.middleware.resume_time_progress()
+                    log.info("▶ Mock time resumed (client ready)")
+                except Exception as e:
+                    log.warning(f"Could not resume time progress: {e}")
+                RESUME_TIME_AFTER_CLIENT_READY = True
+
             try:
                 if not self.llm_pool:
                     await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
@@ -816,25 +942,9 @@ class TradingSystem:
                 # also print to file for record
                 with open("llm_report.txt", "a") as f:
                     f.write(f"\n{'='*60}\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
-
+                time.sleep(10)
             except Exception as e:
                 log.error(f"LLM report error: {e}")
-
-            # TODO: Currently this is just a workaround
-            # Resume server-side time progression now that the client is fully connected.
-            # The server pauses mock time right after initialisation so that client
-            # startup lag does not silently consume backtest time at high playback speed.
-            # Ensure we operate on the module-level flag so the change persists.
-            global RESUME_TIME_AFTER_CLIENT_READY
-            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('backtest', 'demo'):
-                try:
-                    self.client.broker_api.middleware.resume_time_progress()
-                    log.info("▶ Mock time resumed (client ready)")
-                except Exception as e:
-                    log.warning(f"Could not resume time progress: {e}")
-                # mark resumed so we don't attempt again
-                RESUME_TIME_AFTER_CLIENT_READY = True  # flag to trigger time resume in monitor_prices()
-
 
             await asyncio.sleep(self.mock_env_sleep(LLM_REPORT_INTERVAL))
 
@@ -860,7 +970,7 @@ class TradingSystem:
                 symbol = signal_event['symbol']
                 signal = signal_event['signal']
                 result = signal_event['result']
-                price = result['price']
+                price = result.price
 
                 if self.launch_mode in ['backtest', 'demo']:
                     current_time = self.client.broker_api.get_system_time()['mock_current_time']
@@ -889,7 +999,7 @@ class TradingSystem:
                     quantity = self.calculate_position_size(price)
 
                     if quantity > 0:
-                        lower_band = result.get('lower', 0)
+                        lower_band = result.meta.get('lower', 0)
                         reason = f"price {price:.2f} <= lower band {lower_band:.2f}"
 
                         log.info(f"{mode_prefix} 🟢 BUY Signal: {symbol} {quantity} shares @ ${price:.2f}")

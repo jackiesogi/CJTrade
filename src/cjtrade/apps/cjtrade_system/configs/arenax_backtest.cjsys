@@ -42,7 +42,8 @@ CJSYS_BACKTEST_DURATION_DAYS  = 300
 #
 # Supported playback speeds:
 #   [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
-CJSYS_BACKTEST_PLAYBACK_SPEED = 12000.0
+CJSYS_BACKTEST_PLAYBACK_SPEED = 30000.0
+#CJSYS_BACKTEST_PLAYBACK_SPEED = 30.0
 
 # Auto-jump over non-trading hours (after 13:30 / weekends) to accelerate backtest.
 CJSYS_SKIP_NON_TRADING_HOURS = y
