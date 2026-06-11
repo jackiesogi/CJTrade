@@ -112,7 +112,9 @@ def load_cjsys(broker: str, mode: str):
     config['arenax_host'] = config['remote_host']
     config['arenax_port'] = config['remote_port']
     config['backtest_duration_days'] = int(config.get('cjsys_backtest_duration_days', 7))
-    config['watch_list'] = config.get('cjsys_watch_list', "").split(',') if config.get('cjsys_watch_list') else []
+    _raw_wl = config.get('cjsys_watch_list', "").strip()
+    _wl_tokens = [s.strip() for s in _raw_wl.split(',') if s.strip() and s.strip().lower() != 'none']
+    config['watch_list'] = _wl_tokens
     config['analysis_interval'] = float(config.get('cjsys_analysis_interval', 30))
     config['check_fill_interval'] = float(config.get('cjsys_check_fill_interval', 60))
     config['display_time_interval'] = float(config.get('cjsys_display_time_interval', 40))
