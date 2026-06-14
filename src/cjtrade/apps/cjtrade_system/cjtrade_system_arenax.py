@@ -1040,7 +1040,8 @@ class TradingSystem:
                                 'price': price,
                                 'reason': reason,
                                 'timestamp': datetime.now(),
-                                'mock_time': mock_time
+                                'mock_time': mock_time,
+                                'order_status': order_result.status.value if hasattr(order_result.status, 'value') else str(order_result.status),
                             }
                             self.trade_log.append(trade_record)
                             print(f"📝 BUY {quantity} shares of {symbol} at {price:.2f} ({reason})")
@@ -1082,7 +1083,8 @@ class TradingSystem:
                                 'price': price,
                                 'reason': reason,
                                 'timestamp': datetime.now(),
-                                'mock_time': mock_time
+                                'mock_time': mock_time,
+                                'order_status': order_result.status.value if hasattr(order_result.status, 'value') else str(order_result.status),
                             }
                             self.trade_log.append(trade_record)
                             print(f"📝 SELL {quantity} shares of {symbol} at {price:.2f} ({reason})")
@@ -1224,12 +1226,13 @@ async def run_api_server(system: 'TradingSystem') -> None:
                 ts = t.get('mock_time') or t.get('timestamp')
                 ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
                 trades.append({
-                    'action':    t['action'],
-                    'symbol':    t['symbol'],
-                    'quantity':  t['quantity'],
-                    'price':     round(t['price'], 2),
-                    'timestamp': ts_str,
-                    'reason':    t.get('reason', ''),
+                    'action':       t['action'],
+                    'symbol':       t['symbol'],
+                    'quantity':     t['quantity'],
+                    'price':        round(t['price'], 2),
+                    'timestamp':    ts_str,
+                    'reason':       t.get('reason', ''),
+                    'order_status': t.get('order_status', 'FILLED'),
                 })
             return _aiohttp_web.json_response(trades)
         except Exception as e:
@@ -1400,7 +1403,7 @@ async def async_main():
     countdown = 8
     for i in range(countdown, 0, -1):
         print(f"...", end="", flush=True)
-        time.sleep(1)
+        await asyncio.sleep(1)
 
     try:
         while not SHUTDOWN:
