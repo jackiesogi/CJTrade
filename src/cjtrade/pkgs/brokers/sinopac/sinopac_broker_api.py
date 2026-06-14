@@ -313,6 +313,9 @@ class SinopacBrokerAPI(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
+        if order.order_type == OrderType.GTC:
+            raise NotImplementedError("GTC orders are not yet supported in Sinopac")
+
         try:
             sinopac_product = _to_sinopac_product(self.api, order.product)
             sinopac_order = _to_sinopac_order(self.api, order)

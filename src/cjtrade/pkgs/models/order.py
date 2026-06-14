@@ -22,9 +22,12 @@ class PriceType(str, Enum):
     # STOP = "STOP"  # 停損單
 
 class OrderType(str, Enum):
+    """Common order types"""
     ROD = "ROD"    # 當日有效
     IOC = "IOC"    # 立即成交否則取消
     FOK = "FOK"    # 立即全部成交否則取消
+    """Not fully supported, depends on broker's actual implementation."""
+    GTC = "GTC"    # 長效單（Good Till Cancelled）
 
 class OrderLot(str, Enum):
     IntraDayOdd = "IntraDayOdd"  # 盤中零股

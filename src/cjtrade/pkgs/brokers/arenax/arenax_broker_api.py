@@ -185,6 +185,9 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
+        if order.order_type == OrderType.GTC:
+            raise NotImplementedError("GTC orders are not yet supported in ArenaX")
+
         # Overwrite created_at (place ts is much more important than create ts)
         order.created_at = self.get_system_time()["mock_current_time"]
 
