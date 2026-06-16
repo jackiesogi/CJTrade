@@ -182,12 +182,17 @@ SHUTDOWN = False
 
 @dataclass
 class SignalResult:
-    """Unified return type for all signal calculators.
+    """Unified return type for all signal strategies.
 
-    Every calculator must populate *signal*, *symbol*, *price*, and
+    Every strategy must populate *signal*, *symbol*, *price*, and
     *timestamp*.  Strategy-specific indicators (e.g. BB bands, DCA period)
     go into *meta* so callers can remain generic while still being able to
     render strategy-specific detail when needed.
+
+    *target_quantity* lets a strategy control its own position sizing:
+      ``None``  — use the system's default ``calculate_position_size()``
+      ``0``     — do not trade (strategy says skip this signal)
+      ``>0``    — trade exactly this many shares
     """
     signal: str                              # 'BUY' | 'SELL' | 'HOLD'
     symbol: str
@@ -195,14 +200,18 @@ class SignalResult:
     timestamp: datetime
     reason: str = ""
     meta: Dict[str, Any] = field(default_factory=dict)
+    target_quantity: Optional[int] = None    # see docstring above
 
 
-class SignalCalculator(ABC):
-    """Base class for all live-system signal calculators.
+class SignalStrategy(ABC):
+    """Base class for all live-system trading strategies.
 
-    Each subclass receives the same inputs (symbol, prices, current_time)
-    and returns the same *SignalResult* type, making strategies
-    interchangeable inside TradingSystem without any caller changes.
+    Each subclass receives the same inputs (symbol, prices, current_time,
+    current_quantity) and returns the same *SignalResult* type, making
+    strategies interchangeable inside TradingSystem without any caller changes.
+
+    *current_quantity* is the number of shares currently held for *symbol*.
+    Strategies may use it to implement position-stacking logic (or prevent it).
     """
 
     @abstractmethod
@@ -211,18 +220,21 @@ class SignalCalculator(ABC):
         symbol: str,
         prices: List[float],
         current_time: datetime,
+        current_quantity: int = 0,
     ) -> Optional[SignalResult]:
         """Return a SignalResult for the current bar, or None if insufficient data."""
         ...
 
 
-# ====================       DCA Calculator       ====================
+# ====================          DCA Strategy          ====================
 
-class DCACalculator(SignalCalculator):
+class DCAStrategy(SignalStrategy):
     """Time-based DCA: emit BUY once every *period_days* per symbol.
 
     Trigger state is managed internally, so callers never need to thread
     ``last_trigger_time`` through ``analysis_results``.
+    Intentionally stacks positions: each period trigger buys a fixed lot
+    regardless of what is already held.
     """
 
     def __init__(self, period_days: int = 30) -> None:
@@ -234,6 +246,7 @@ class DCACalculator(SignalCalculator):
         symbol: str,
         prices: List[float],
         current_time: datetime,
+        current_quantity: int = 0,
     ) -> Optional[SignalResult]:
         if not prices:
             return None
@@ -261,10 +274,16 @@ class DCACalculator(SignalCalculator):
         )
 
 
-# ====================  Bollinger Bands Calculator  ====================
+# ====================  Bollinger Bands Strategy  ====================
 
-class BollingerBandsCalculator(SignalCalculator):
-    """Bollinger Band mean-reversion: BUY at lower band, SELL at upper band."""
+class BollingerBandsStrategy(SignalStrategy):
+    """Bollinger Band mean-reversion: BUY at lower band, SELL at upper band.
+
+    Position model: single entry, full exit — no stacking.
+    - BUY  fires only when flat (``current_quantity == 0``).
+    - SELL liquidates the entire position (``target_quantity = current_quantity``).
+    This keeps each trade a clean round-trip, making per-trade P&L well-defined.
+    """
 
     def __init__(self, window: int = 20, min_width_pct: float = 0.01) -> None:
         self._window = window
@@ -275,6 +294,7 @@ class BollingerBandsCalculator(SignalCalculator):
         symbol: str,
         prices: List[float],
         current_time: datetime,
+        current_quantity: int = 0,
     ) -> Optional[SignalResult]:
         if not prices or len(prices) < self._window:
             log.debug(f"BB {symbol}: Insufficient data ({len(prices) if prices else 0}/{self._window} prices)")
@@ -308,6 +328,15 @@ class BollingerBandsCalculator(SignalCalculator):
             reason = "price in middle band"
             log.info(f"⚪ BB {symbol}: {reason}")
 
+        # Non-stacking: skip BUY if already in position; full-exit on SELL
+        target_quantity: Optional[int] = None
+        if signal == 'BUY' and current_quantity > 0:
+            signal = 'HOLD'
+            reason = f"already holding {current_quantity} shares, skipping (no stacking)"
+            log.info(f"⚪ BB {symbol}: {reason}")
+        elif signal == 'SELL' and current_quantity > 0:
+            target_quantity = current_quantity  # sell everything
+
         return SignalResult(
             signal=signal, symbol=symbol, price=price,
             timestamp=current_time,
@@ -319,6 +348,7 @@ class BollingerBandsCalculator(SignalCalculator):
                 'std_dev': round(std_dev, 2),
                 'band_width': round(band_width * 100, 2),
             },
+            target_quantity=target_quantity,
         )
 
 # CJTrade lightweight API server (for FinHub / external consumers)
@@ -331,8 +361,8 @@ class TradingSystem:
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, SignalResult] = {}
-        self.calculator: SignalCalculator = DCACalculator(period_days=2)
-        # self.calculator: SignalCalculator = BollingerBandsCalculator(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
+        self.strategy: SignalStrategy = DCAStrategy(period_days=30)
+        # self.strategy: SignalStrategy = BollingerBandsStrategy(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
@@ -566,18 +596,21 @@ class TradingSystem:
             return None
 
     def calculate_position_size(self, price: float) -> int:
-        """Calculate safe position size based on risk control"""
+        """Calculate position size as a fixed percentage of total equity.
+
+        Uses ``RISK_MAX_POSITION_PCT`` (default 5 %) of current equity per order.
+        Rounds down to the nearest share; minimum 1 share if equity covers it.
+        """
         total_equity = self.get_total_equity()
         max_value = total_equity * RISK_MAX_POSITION_PCT
 
-        # Calculate quantity (round down to nearest lot)
-        # quantity = int(max_value / price)
-        quantity = 100
-
+        quantity = int(max_value / price) if price > 0 else 0
         if quantity < 1 and total_equity > price:
             quantity = 1
 
-        log.info(f"Position sizing: equity={total_equity:.2f}, max_value={max_value:.2f}, quantity={quantity}")
+        log.info(f"Position sizing: equity={total_equity:.2f}, "
+                 f"{RISK_MAX_POSITION_PCT*100:.0f}% = {max_value:.2f}, "
+                 f"quantity={quantity} @ {price:.2f}")
         return quantity
 
     def should_exit_backtest(self) -> bool:
@@ -813,6 +846,9 @@ class TradingSystem:
                 log.debug(f"Analyzing {len(symbols)} symbols: {symbols}")  # debug: empty on first tick is normal
                 current_time = self.client.broker_api.get_system_time()['mock_current_time'] if self.launch_mode in ['backtest', 'demo'] else datetime.now()
 
+                positions = self.client.get_positions() or []
+                pos_qty = {p.symbol: p.quantity for p in positions}
+
                 for symbol in symbols:
                     history_len = len(self.price_history.get(symbol, []))
 
@@ -820,7 +856,8 @@ class TradingSystem:
                         continue
 
                     prices = self.price_history.get(symbol, [])
-                    result = self.calculator.calculate(symbol, prices, current_time)
+                    result = self.strategy.calculate(symbol, prices, current_time,
+                                                     current_quantity=pos_qty.get(symbol, 0))
 
                     if result:
                         old_signal = self.analysis_results[symbol].signal if symbol in self.analysis_results else None
@@ -1011,7 +1048,9 @@ class TradingSystem:
                 has_position = any(p.symbol == symbol for p in positions) if positions else False
 
                 if signal == 'BUY':
-                    quantity = self.calculate_position_size(price)
+                    quantity = (result.target_quantity
+                                if result.target_quantity is not None
+                                else self.calculate_position_size(price))
 
                     if quantity > 0:
                         lower_band = result.meta.get('lower', 0)
@@ -1023,7 +1062,7 @@ class TradingSystem:
                             order_result = self.client.buy_stock(
                                 symbol,
                                 quantity=quantity,
-                                price=price * 1.01,
+                                price=price * 1.03,
                                 intraday_odd=True,
                                 opt_field={"session_id": self.session_id},
                             )
@@ -1055,9 +1094,12 @@ class TradingSystem:
                 elif signal == 'SELL' and has_position:
                     position = next((p for p in positions if p.symbol == symbol), None)
                     if position:
-                        quantity = min(self.calculate_position_size(price), position.quantity)
+                        quantity = (result.target_quantity
+                                    if result.target_quantity is not None
+                                    else position.quantity)  # default: full exit
+                        quantity = min(quantity, position.quantity)
 
-                        upper_band = result.get('upper', 0)
+                        upper_band = result.meta.get('upper', 0)
                         reason = f"price {price:.2f} >= upper band {upper_band:.2f}"
 
                         log.info(f"{mode_prefix} 🔴 SELL Signal: {symbol} {quantity} shares @ ${price:.2f}")
