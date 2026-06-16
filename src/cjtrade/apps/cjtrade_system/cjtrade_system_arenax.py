@@ -1222,18 +1222,24 @@ async def run_api_server(system: 'TradingSystem') -> None:
 
     async def get_trades(request):
         try:
+            # Use fill_history from broker server as ground truth.
+            # Every entry here is already confirmed FILLED; no status ambiguity.
+            middleware = system.client.broker_api.middleware
+            raw = middleware.get_backtest_state(session_id=system.session_id)
+            fills = raw.get("fill_history", []) if raw else []
+
             trades = []
-            for t in reversed(system.trade_log):   # newest-first
-                ts = t.get('mock_time') or t.get('timestamp')
-                ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
+            for f in reversed(fills):   # newest-first
+                action = f.get("action", "")
+                qty = abs(f.get("quantity", 0))
                 trades.append({
-                    'action':       t['action'],
-                    'symbol':       t['symbol'],
-                    'quantity':     t['quantity'],
-                    'price':        round(t['price'], 2),
-                    'timestamp':    ts_str,
-                    'reason':       t.get('reason', ''),
-                    'order_status': t.get('order_status', 'FILLED'),
+                    'action':       action,
+                    'symbol':       f.get("symbol", ""),
+                    'quantity':     qty,
+                    'price':        round(f.get("price", 0.0), 2),
+                    'timestamp':    f.get("time", ""),
+                    'reason':       f.get("reason", ""),
+                    'order_status': 'FILLED',
                 })
             return _aiohttp_web.json_response(trades)
         except Exception as e:
