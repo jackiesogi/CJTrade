@@ -578,7 +578,7 @@ class CalendarCommand(CommandBase):
 
         # Get timestamp from broker or system
         bkr_name = client.get_broker_name()
-        if bkr_name == 'arenax' or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
+        if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
             suffix = " (mock time)"
             ts = client.broker_api.get_system_time()['mock_current_time']
         else:
