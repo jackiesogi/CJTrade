@@ -31,17 +31,13 @@ class TestDbState:
             client.cancel_order(order.id)
 
     def test_D001_status_transition_sequence(self, client):
-        """DB status must progress: PLACED → COMMITTED_WAIT_* → CANCELLED."""
+        """DB status must progress: COMMITTED_WAIT_* → CANCELLED (place_order auto-commits)."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
         client.place_order(order)
 
         db_after_place = get_order_from_db(client, order.id)
-        assert db_after_place["status"] == "PLACED"
-
-        client.sync_state()
-        db_after_commit = get_order_from_db(client, order.id)
-        assert db_after_commit["status"] in (
+        assert db_after_place["status"] in (
             "COMMITTED_WAIT_MATCHING", "COMMITTED_WAIT_MARKET_OPEN"
         )
 

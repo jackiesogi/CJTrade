@@ -2,6 +2,7 @@
 import time
 
 import pytest
+from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 
 from tests.integration.conftest import get_order_from_db
@@ -26,16 +27,12 @@ def _wait_for_fill(client, order_id: str, timeout: float = 10.0, interval: float
 class TestLifecycle:
 
     def test_L000_full_order_lifecycle(self, client):
-        """place → sync_state → cancel all succeed and DB tracks each transition."""
+        """place_order() auto-commits; cancel succeeds; DB tracks each transition."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
 
         place_result = client.place_order(order)
-        assert place_result.status == OrderStatus.PLACED
-        assert get_order_from_db(client, order.id)["status"] == "PLACED"
-
-        commit_result = client.sync_state()
-        assert isinstance(commit_result, list)
+        assert isinstance(place_result, OrderResult)
         assert get_order_from_db(client, order.id)["status"] in (
             "COMMITTED_WAIT_MATCHING", "COMMITTED_WAIT_MARKET_OPEN"
         )

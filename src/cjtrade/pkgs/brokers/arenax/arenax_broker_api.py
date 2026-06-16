@@ -194,8 +194,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         res = self.middleware.place_order(order)
 
         insert_new_order_to_db(conn=self.db, username=self.username, order=order)
-        if res.status == OrderStatus.REJECTED:
-            update_order_status_to_db(conn=self.db, oid=order.id, status="REJECTED", updated_at=order.created_at)
+        # insert_new_order_to_db always writes 'PLACED'; update to actual status immediately
+        update_order_status_to_db(conn=self.db, oid=order.id, status=res.status.value, updated_at=order.created_at)
         return res
 
 

@@ -13,6 +13,7 @@ import pytest
 from cjtrade.pkgs.models.event import OrderCallback
 from cjtrade.pkgs.models.event import OrderEvent
 from cjtrade.pkgs.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
 
@@ -42,12 +43,12 @@ def _wait_for_fill(client, order_id: str, timeout: float = 10.0, interval: float
 class TestNormalOperations:
 
     def test_N000_order_placement_basic(self, client):
-        """place_order() returns PLACED and persists the order in the local DB."""
+        """place_order() auto-commits and returns a committed/filled status."""
         order = make_order(price=50.0)
         result = client.place_order(order)
 
         assert result is not None
-        assert result.status in (OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.PLACED)
+        assert result.status in (OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.FILLED)
 
         db_order = get_order_from_db(client, order.id)
         assert db_order is not None
@@ -61,17 +62,17 @@ class TestNormalOperations:
         client.cancel_order(order.id)
 
     def test_N001_order_commit_flow(self, client):
-        """place_order() followed by sync_state() updates DB status correctly."""
+        """place_order() auto-commits; sync_state() refreshes status without re-committing."""
         order = make_order(price=50.0)
         place_result = client.place_order(order)
-        assert place_result.status == OrderStatus.PLACED
+        assert place_result.status in (OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.FILLED)
 
-        commit_results = client.sync_state()
-        assert isinstance(commit_results, list)
-        assert len(commit_results) == 1
+        # sync_state is a pure refresh — returns list of currently-committed orders
+        refresh_results = client.sync_state()
+        assert isinstance(refresh_results, list)
 
         db_order = get_order_from_db(client, order.id)
-        assert db_order["status"] in ("COMMITTED_WAIT_MATCHING", "COMMITTED_WAIT_MARKET_OPEN")
+        assert db_order["status"] in ("COMMITTED_WAIT_MATCHING", "COMMITTED_WAIT_MARKET_OPEN", "FILLED")
 
         client.cancel_order(order.id)
 
@@ -91,10 +92,11 @@ class TestNormalOperations:
     def test_N003_multiple_orders_sequential(self, client):
         """Five sequential orders all land in DB with committed status."""
         order_ids = []
+        committed = (OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.FILLED)
         for i in range(5):
             order = make_order(price=100.0 + i)
             result = client.place_order(order)
-            assert result.status == OrderStatus.PLACED
+            assert result.status in committed
             order_ids.append(order.id)
 
         client.sync_state()
@@ -110,10 +112,10 @@ class TestNormalOperations:
     def test_N004_buy_and_sell_operations(self, client):
         """buy_stock() and sell_stock() each persist entries with correct side."""
         buy_result = client.buy_stock("2330", 3, 50.0, intraday_odd=True)
-        assert isinstance(buy_result, list)
+        assert isinstance(buy_result, OrderResult)
 
         sell_result = client.sell_stock("2330", 2, 55.0, intraday_odd=True)
-        assert isinstance(sell_result, list)
+        assert isinstance(sell_result, OrderResult)
 
         all_orders = get_all_orders_from_db(client)
         buy_orders  = [o for o in all_orders if "BUY"  in o["side"]]
@@ -136,8 +138,8 @@ class TestNormalOperations:
         balance_1 = client.get_balance()
 
         buy_result = client.buy_stock("0050", 1, likely_fill_buy_price(client, "0050"), intraday_odd=True)
-        assert isinstance(buy_result, list)
-        ready = _wait_for_fill(client, buy_result[0].linked_order)
+        assert isinstance(buy_result, OrderResult)
+        ready = _wait_for_fill(client, buy_result.linked_order)
         if not ready:
             pytest.skip("Buy order did not fill within timeout — server state may be inconsistent")
 
@@ -147,8 +149,8 @@ class TestNormalOperations:
         client.sync_state()
 
         sell_result = client.sell_stock("0050", 1, likely_fill_sell_price(client, "0050"), intraday_odd=True)
-        assert isinstance(sell_result, list)
-        ready = _wait_for_fill(client, sell_result[0].linked_order)
+        assert isinstance(sell_result, OrderResult)
+        ready = _wait_for_fill(client, sell_result.linked_order)
         if not ready:
             pytest.skip("Sell order did not fill within timeout — server state may be inconsistent")
 
