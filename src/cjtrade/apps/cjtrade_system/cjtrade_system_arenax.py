@@ -331,8 +331,8 @@ class TradingSystem:
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, SignalResult] = {}
-        # self.calculator: SignalCalculator = DCACalculator(period_days=30)
-        self.calculator: SignalCalculator = BollingerBandsCalculator(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
+        self.calculator: SignalCalculator = DCACalculator(period_days=2)
+        # self.calculator: SignalCalculator = BollingerBandsCalculator(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
@@ -571,7 +571,8 @@ class TradingSystem:
         max_value = total_equity * RISK_MAX_POSITION_PCT
 
         # Calculate quantity (round down to nearest lot)
-        quantity = int(max_value / price)
+        # quantity = int(max_value / price)
+        quantity = 100
 
         if quantity < 1 and total_equity > price:
             quantity = 1

@@ -211,21 +211,22 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def sync_state(self) -> List[OrderResult]:
+        """Refresh status of all committed orders from the broker backend."""
         res = []
-        # Use middleware account_summary to find placed orders
         summary = self.middleware.account_summary()
         orders = summary.get("orders", []) if summary else []
-        placed_orders = [o for o in orders if o.get("status") == OrderStatus.PLACED.value]
-        for o in placed_orders:
-            print(f"Committing order {o.get('id') or o.get('order_id') or o.get('ordno')} with status {o.get('status')}")
+        committed_statuses = {OrderStatus.COMMITTED_WAIT_MATCHING.value, OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value}
+        committed_orders = [o for o in orders if o.get("status") in committed_statuses]
+        for o in committed_orders:
             order_id = o.get("id") or o.get("order_id") or o.get("ordno")
             try:
-                update_at = self.get_system_time()["mock_current_time"]
-                update_order_status_to_db(conn=self.db, oid=order_id, status="COMMITTED_WAIT_MATCHING", updated_at=update_at)
-                commit_res = self.middleware.sync_state(order_id)
-                res.append(commit_res)
+                refreshed = self.middleware.sync_state(order_id)
+                if refreshed:
+                    update_at = self.get_system_time()["mock_current_time"]
+                    update_order_status_to_db(conn=self.db, oid=order_id, status=refreshed.status.value, updated_at=update_at)
+                    res.append(refreshed)
             except Exception as e:
-                print(f"Error syncing order {order_id}: {e}")
+                print(f"Error refreshing order {order_id}: {e}")
         return res
 
 
@@ -280,10 +281,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             opt_field=opt_field or {},
         )
 
-        place_result = self.place_order(order)
-        if place_result.status != OrderStatus.PLACED:
-            return place_result
-        return self.middleware.sync_state(order.id)
+        return self.place_order(order)
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
@@ -305,7 +303,4 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             opt_field=opt_field or {},
         )
 
-        place_result = self.place_order(order)
-        if place_result.status != OrderStatus.PLACED:
-            return place_result
-        return self.middleware.sync_state(order.id)
+        return self.place_order(order)

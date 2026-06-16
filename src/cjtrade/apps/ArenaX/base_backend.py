@@ -443,33 +443,56 @@ class ArenaX_BackendBase:
         else:
             order.opt_field["last_check_for_fill"] = datetime.now()
 
-        self.account_state.orders_placed.append(order)
-        self.account_state.all_order_status[order.id] = OrderStatus.PLACED
-        return PLACED_ORDER_STANDARD(order, metadata=order.opt_field)
+        # Commit immediately: skip the PLACED staging area entirely.
+        # PLACED is an ArenaX server-side implementation detail; callers should
+        # never see it as an intermediate state.
+        market_open = hasattr(self, "market") and self.market.is_market_open()
+        initial_status = OrderStatus.COMMITTED_WAIT_MATCHING if market_open else OrderStatus.COMMITTED_WAIT_MARKET_OPEN
+        self.account_state.orders_committed.append(order)
+        self.account_state.all_order_status[order.id] = initial_status
+
+        # Attempt an immediate fill check (common in backtest with fast playback).
+        self._check_if_any_order_filled()
+
+        # Return the actual status after the fill check (may have advanced to FILLED).
+        actual_status = self.account_state.all_order_status.get(order.id, initial_status)
+        return OrderResult(
+            status=actual_status,
+            message="Order filled." if actual_status == OrderStatus.FILLED else (
+                "Order committed, waiting for match." if market_open else "Order committed, waiting for market open."
+            ),
+            metadata=order.opt_field or {},
+            linked_order=order.id,
+        )
 
     def sync_state(self, order_id: str) -> OrderResult:
-        order = next((o for o in self.account_state.orders_placed if o.id == order_id), None)
+        """Refresh the status of a committed order by re-running the fill check.
+
+        Pure read/refresh operation — no state transitions performed here.
+        Returns the current status from all_order_status.
+        """
+        # Check if already resolved (filled / cancelled)
+        current_status = self.account_state.all_order_status.get(order_id)
+        if current_status in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED):
+            return OrderResult(
+                status=current_status,
+                message="Order already resolved.",
+                metadata={},
+                linked_order=order_id,
+            )
+
+        order = next((o for o in self.account_state.orders_committed if o.id == order_id), None)
         if not order:
             return REJECTED_ORDER_NOT_FOUND_FOR_COMMIT(order_id)
 
-        self.account_state.orders_committed.append(order)
-        self.account_state.orders_placed.remove(order)
+        self._check_if_any_order_filled()
 
-        market_open = hasattr(self, "market") and self.market.is_market_open()
-        if market_open:
-            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MATCHING
-            status = OrderStatus.COMMITTED_WAIT_MATCHING
-        else:
-            self.account_state.all_order_status[order.id] = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
-            status = OrderStatus.COMMITTED_WAIT_MARKET_OPEN
-
-        self._check_if_any_order_filled()  # workaround
-
+        actual_status = self.account_state.all_order_status.get(order_id, OrderStatus.COMMITTED_WAIT_MATCHING)
         return OrderResult(
-            status=status,
-            message="Order committed successfully." if market_open else "Order pending market open.",
-            metadata={"market_open": market_open},
-            linked_order=order.id,
+            status=actual_status,
+            message="Order state refreshed.",
+            metadata={},
+            linked_order=order_id,
         )
 
     def cancel_order(self, order_id: str) -> OrderResult:
