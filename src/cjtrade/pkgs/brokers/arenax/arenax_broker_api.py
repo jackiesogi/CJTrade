@@ -277,11 +277,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             opt_field=opt_field or {},
         )
 
-        tmp = self.place_order(order)
-        if tmp.status != OrderStatus.PLACED:
-            return [tmp]  # Make sure return in List[OrderResult] format
-        else:
-            return self.sync_state()
+        place_result = self.place_order(order)
+        if place_result.status != OrderStatus.PLACED:
+            return place_result
+        return self.middleware.sync_state(order.id)
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
@@ -303,8 +302,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             opt_field=opt_field or {},
         )
 
-        tmp = self.place_order(order)
-        if tmp.status != OrderStatus.PLACED:
-            return [tmp]  # Make sure return in List[OrderResult] format
-        else:
-            return self.sync_state()
+        place_result = self.place_order(order)
+        if place_result.status != OrderStatus.PLACED:
+            return place_result
+        return self.middleware.sync_state(order.id)
