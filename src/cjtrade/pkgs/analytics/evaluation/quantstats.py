@@ -146,6 +146,22 @@ class BacktestReport:
                 print(f"  Max drawdown : {mdd*100:.2f}%")
             except ImportError:
                 pass   # quantstats optional; basic stats already printed
+
+        # Round-trip analysis
+        try:
+            rts = self.result.compute_round_trips()
+            if rts:
+                wins  = [rt for rt in rts if rt.pnl > 0]
+                losses = [rt for rt in rts if rt.pnl <= 0]
+                avg_pnl = sum(rt.pnl for rt in rts) / len(rts)
+                avg_hold = sum(rt.holding_days for rt in rts) / len(rts)
+                win_rate = len(wins) / len(rts) * 100
+                print(f"  Round trips  : {len(rts)}  (win {len(wins)} / loss {len(losses)},  win rate {win_rate:.1f}%)")
+                print(f"  Avg PnL/trip : {avg_pnl:>+,.2f}")
+                print(f"  Avg hold days: {avg_hold:.1f}")
+        except Exception:
+            pass
+
         print("=" * 50)
 
     def metrics(self) -> dict:
@@ -218,6 +234,9 @@ class BacktestReport:
             title=report_title,
         )
 
+        # Inject round-trip table after quantstats saves the HTML
+        self._inject_round_trips_html(path)
+
         abs_path = os.path.abspath(path)
         print(f"[BacktestReport] HTML saved → {abs_path}")
         if open_browser:
@@ -229,6 +248,82 @@ class BacktestReport:
         qs = self._require_qs()
         self._require_nonempty()
         qs.reports.basic(self.returns)
+
+    # ------------------------------------------------------------------
+    # Round-trip HTML injection
+    # ------------------------------------------------------------------
+
+    def _inject_round_trips_html(self, path: str) -> None:
+        """Append a round-trip table to the quantstats HTML file."""
+        try:
+            rts = self.result.compute_round_trips()
+        except Exception:
+            return
+        if not rts:
+            return
+
+        wins   = sum(1 for rt in rts if rt.pnl > 0)
+        losses = sum(1 for rt in rts if rt.pnl <= 0)
+        total_pnl = sum(rt.pnl for rt in rts)
+        win_rate  = wins / len(rts) * 100
+
+        rows = "\n".join(
+            f"<tr>"
+            f"<td>{rt.symbol}</td>"
+            f"<td>{rt.entry_time[:16]}</td>"
+            f"<td style='text-align:right'>{rt.entry_price:,.2f}</td>"
+            f"<td>{rt.exit_time[:16]}</td>"
+            f"<td style='text-align:right'>{rt.exit_price:,.2f}</td>"
+            f"<td style='text-align:right'>{rt.quantity:,}</td>"
+            f"<td style='text-align:right;color:{'green' if rt.pnl>0 else 'crimson'}'>{rt.pnl:+,.2f}</td>"
+            f"<td style='text-align:right'>{rt.holding_days}</td>"
+            f"</tr>"
+            for rt in rts
+        )
+
+        html_block = f"""
+<div style="font-family:Arial,sans-serif;max-width:1100px;margin:40px auto;padding:0 20px">
+  <h2 style="border-bottom:2px solid #444;padding-bottom:6px">Round-Trip Trade Analysis</h2>
+  <p style="color:#555">
+    {len(rts)} completed round trips &nbsp;|&nbsp;
+    <span style="color:green">&#9650; {wins} wins</span> &nbsp;
+    <span style="color:crimson">&#9660; {losses} losses</span> &nbsp;|&nbsp;
+    Win rate: <b>{win_rate:.1f}%</b> &nbsp;|&nbsp;
+    Total PnL: <b style="color:{'green' if total_pnl>=0 else 'crimson'}">{total_pnl:+,.2f}</b>
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:#f0f0f0;text-align:left">
+        <th style="padding:6px 10px">Symbol</th>
+        <th style="padding:6px 10px">Entry time</th>
+        <th style="padding:6px 10px;text-align:right">Entry price</th>
+        <th style="padding:6px 10px">Exit time</th>
+        <th style="padding:6px 10px;text-align:right">Exit price</th>
+        <th style="padding:6px 10px;text-align:right">Qty</th>
+        <th style="padding:6px 10px;text-align:right">PnL</th>
+        <th style="padding:6px 10px;text-align:right">Hold (days)</th>
+      </tr>
+    </thead>
+    <tbody>
+{rows}
+    </tbody>
+  </table>
+</div>
+"""
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Insert before closing </body>
+            if "</body>" in content:
+                content = content.replace("</body>", html_block + "\n</body>", 1)
+            else:
+                content += html_block
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning(f"[BacktestReport] Could not inject round-trip table: {e}")
 
     # ------------------------------------------------------------------
     # Persistence

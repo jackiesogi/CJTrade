@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Dict
@@ -5,6 +6,39 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# RoundTrip – one complete entry + exit cycle for a single symbol
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RoundTrip:
+    """A matched entry / exit pair for one symbol.
+
+    Supports partial exits (e.g. DCA stacking): each RoundTrip represents
+    the FIFO matching of one entry lot against one exit lot.
+
+    Attributes
+    ----------
+    symbol      : stock ticker
+    entry_time  : ISO timestamp of the entry fill
+    entry_price : fill price of the entry
+    exit_time   : ISO timestamp of the exit fill
+    exit_price  : fill price of the exit
+    quantity    : number of shares matched in this pair
+    pnl         : (exit_price - entry_price) * quantity  (long only)
+    holding_days: calendar days between entry and exit
+    """
+    symbol:       str
+    entry_time:   str
+    entry_price:  float
+    exit_time:    str
+    exit_price:   float
+    quantity:     int
+    pnl:          float
+    holding_days: int
+
 
 # ---------------------------------------------------------------------------
 # BacktestResult
@@ -115,8 +149,79 @@ class BacktestResult:
         return qs.stats.max_drawdown(self.to_returns())
 
     # ------------------------------------------------------------------
-    # Per-day drill-down
+    # Round-trip analysis
     # ------------------------------------------------------------------
+    def compute_round_trips(self) -> List[RoundTrip]:
+        """Match BUY fills against SELL fills using FIFO per symbol.
+
+        Works for both non-stacking (one BUY per SELL) and stacking
+        strategies (multiple BUYs partially matched by each SELL).
+        Only long trades are supported (BUY first, then SELL).
+
+        Returns
+        -------
+        list[RoundTrip]
+            Sorted by entry_time ascending.
+        """
+        from collections import deque
+        from datetime import datetime as _dt
+
+        # Group fills by symbol, sorted by time
+        by_symbol: Dict[str, list] = defaultdict(list)
+        for f in sorted(self.fill_history, key=lambda x: x.get("time", "")):
+            by_symbol[f["symbol"]].append(f)
+
+        round_trips: List[RoundTrip] = []
+
+        for symbol, fills in by_symbol.items():
+            buy_queue: deque = deque()   # each item: [price, qty, time]
+
+            for f in fills:
+                qty = abs(f["quantity"])
+                action = f["action"]
+                price = float(f["price"])
+                ts = f["time"]
+
+                # TODO: support short-first trades
+                # 新增一個 sell_queue (deque) 對稱 buy_queue：
+                # 遇到 SELL 且 buy_queue 為空時，push 到 sell_queue（開空）；
+                # 遇到 BUY 且 sell_queue 非空時，從 sell_queue 頭端 FIFO 配對（平空），
+                # pnl = (entry_price - exit_price) * matched（方向相反）。
+                if action == "BUY":
+                    buy_queue.append([price, qty, ts])
+                elif action == "SELL":
+                    remaining = qty
+                    while remaining > 0 and buy_queue:
+                        buy_price, buy_qty, buy_ts = buy_queue[0]
+                        matched = min(remaining, buy_qty)
+
+                        try:
+                            entry_dt = _dt.fromisoformat(buy_ts)
+                            exit_dt  = _dt.fromisoformat(ts)
+                            holding_days = (exit_dt.date() - entry_dt.date()).days
+                        except Exception:
+                            holding_days = 0
+
+                        round_trips.append(RoundTrip(
+                            symbol=symbol,
+                            entry_time=buy_ts,
+                            entry_price=buy_price,
+                            exit_time=ts,
+                            exit_price=price,
+                            quantity=matched,
+                            pnl=round((price - buy_price) * matched, 2),
+                            holding_days=holding_days,
+                        ))
+
+                        if matched >= buy_qty:
+                            buy_queue.popleft()
+                        else:
+                            buy_queue[0][1] -= matched
+                        remaining -= matched
+
+        round_trips.sort(key=lambda rt: rt.entry_time)
+        return round_trips
+
     def trades_on(self, date: str) -> List[Dict]:
         """Return all fills that occurred on ``date`` (e.g. '2024-06-14')."""
         return [f for f in self.fill_history if f.get("time", "").startswith(date)]
