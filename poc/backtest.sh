@@ -89,6 +89,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [ "$SHOW_PARAMS" = "1" ]; then
+    # Just show params and exit
+    uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+      --interval "${INTERVAL:-$DEFAULT_INTERVAL}" \
+      --show-params
+    exit 0
+fi
+
 # ------------------------
 # Interactive fallback
 # ------------------------
@@ -165,7 +173,24 @@ function cleanup() {
 }
 
 function ping_server_backend() {
-    local url="http://127.0.0.1:8801/health"
+    local port
+    case "$ARENAX_MODE" in
+        backtest)
+            port=8802
+            ;;
+        paper)
+            port=8803
+            ;;
+        demo|"")
+            port=8801
+            ;;
+        *)
+            # Fallback to demo/default port for unknown mode
+            port=8801
+            ;;
+    esac
+
+    local url="http://127.0.0.1:${port}/health"
     local response
     response=$(curl -s --max-time 3 "$url" 2>/dev/null) || return 1
     if [[ $(echo "$response" | jq -r '.running' 2>/dev/null) == "true" ]]; then
@@ -204,7 +229,7 @@ trap cleanup EXIT SIGINT SIGTERM
 # Handle --show-params
 if [ "$SHOW_PARAMS" = "1" ]; then
     uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
-      --interval "$INTERVAL" \
+      --interval "${INTERVAL:-$DEFAULT_INTERVAL}" \
       --show-params
     exit 0
 fi
