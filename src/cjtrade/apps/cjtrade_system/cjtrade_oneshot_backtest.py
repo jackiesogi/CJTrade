@@ -50,11 +50,12 @@ from typing import List
 from typing import Optional
 from typing import Union
 
+from cjtrade.pkgs.analytics.backtest.engine import _TaggedKbar
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
 from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
-from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
+from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.baseline_0050 import BaselineStrategy
@@ -130,17 +131,16 @@ def run_oneshot(
     sym_label = ",".join(symbols)
 
     # 4. Fetch kbars
-    mw = ArenaXMiddleWare()
+    api = ArenaXBrokerAPI_v2()
     all_kbars = []
 
     for sym in symbols:
-        raw_bars = mw.get_kbars(sym, start_str, end_str, interval)
-        if not raw_bars:
+        kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
+        if not kbars:
             log.warning(f"[OneShot] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
-        sym_kbars = [_make_tagged_kbar(b, sym) for b in raw_bars]
-        all_kbars.extend(sym_kbars)
+        all_kbars.extend(_TaggedKbar(kb, sym) for kb in kbars)
 
     if not all_kbars:
         raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
@@ -253,24 +253,23 @@ def run_compare_strategies(
 
     # Fetch kbars for test symbols
     test_symbols = symbols.copy()  # Keep original symbols for test strategies
-    mw = ArenaXMiddleWare()
+    api = ArenaXBrokerAPI_v2()
     test_kbars = []
 
     for sym in test_symbols:
-        raw_bars = mw.get_kbars(sym, start_str, end_str, interval)
-        if not raw_bars:
+        kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
+        if not kbars:
             log.warning(f"[CompareStrategies] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
-        sym_kbars = [_make_tagged_kbar(b, sym) for b in raw_bars]
-        test_kbars.extend(sym_kbars)
+        test_kbars.extend(_TaggedKbar(kb, sym) for kb in kbars)
 
     # Fetch kbars for baseline symbol if baseline strategy exists
     baseline_kbars = []
     if baseline_strategy:
-        raw_bars = mw.get_kbars(baseline_symbol, start_str, end_str, interval)
-        if raw_bars:
-            baseline_kbars = [_make_tagged_kbar(b, baseline_symbol) for b in raw_bars]
+        kbars = api.get_kbars(Product(symbol=baseline_symbol), start_str, end_str, interval)
+        if kbars:
+            baseline_kbars = [_TaggedKbar(kb, baseline_symbol) for kb in kbars]
             log.info(f"[CompareStrategies] Fetched {len(baseline_kbars)} kbars for baseline symbol {baseline_symbol}")
         else:
             log.warning(f"[CompareStrategies] No kbars for baseline {baseline_symbol}, skipping baseline strategy")
@@ -344,24 +343,6 @@ def run_compare_strategies(
     print("=" * 80)
     multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=open_browser)
 
-
-def _make_tagged_kbar(raw: dict, symbol: str):
-    """Convert a raw kbar dict from the server into a tagged Kbar-like object."""
-    from cjtrade.pkgs.analytics.backtest.engine import _TaggedKbar
-    from cjtrade.pkgs.models.kbar import Kbar
-    timestamp = datetime.strptime(
-        raw["timestamp"], "%a, %d %b %Y %H:%M:%S GMT"
-    )
-    # print(timestamp)
-    kb = Kbar(
-        timestamp=datetime.fromisoformat(str(timestamp)),
-        open=float(raw["open"]),
-        high=float(raw["high"]),
-        low=float(raw["low"]),
-        close=float(raw["close"]),
-        volume=int(raw["volume"]),
-    )
-    return _TaggedKbar(kb, symbol)
 
 # ---------------------------------------------------------------------------
 # CLI entry point

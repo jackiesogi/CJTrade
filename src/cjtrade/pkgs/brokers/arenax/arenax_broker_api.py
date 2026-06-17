@@ -134,31 +134,36 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     # TODO: Call backend to query real kbar rather than using yfinane one in user-side
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
-        if not self._connected:
-            raise ConnectionError("Not connected to simulation environment")
+        # Note: kbar fetching is a read-only data operation and does not require
+        # an authenticated trading session.  No _connected guard here.
 
-        # Stub response from backend real broker API
-        # TODO: also need to ask server via HTTP req or middleware
-        def get_supported_intervals():
-            return ["1m", "5m", "1h", "1d"]   # relatively stable
-
-        # TODO: Implement logic to get available start and end times from backend
-        def data_available(symbol: str, start: str, end: str):
-            return self.middleware.is_kbar_data_available(start, end)
-
-        if interval not in get_supported_intervals():
+        supported_intervals = ["1m", "5m", "1h", "1d"]
+        if interval not in supported_intervals:
             print(f"Interval '{interval}' not supported by backend broker API, using '1m'")
             interval = "1m"
 
-        if not data_available(product.symbol, start, end):
-            print(f"[{product.symbol}] {start} to {end} data not available")
-            print("Falling back to use yfinance data")
-            interval = "1d"
-            kbars_raw = self.middleware.get_kbars(product.symbol, start, end, interval, fallback=True)
-        else:
-            kbars_raw = self.middleware.get_kbars(product.symbol, start, end, interval, fallback=False)
+        # Server selects the data source automatically (price_db → real broker → yfinance).
+        # No client-side availability check or fallback routing needed.
+        kbars_raw = self.middleware.get_kbars(product.symbol, start, end, interval)
 
-        kbars = [Kbar(**kr) for kr in kbars_raw] if kbars_raw else []
+        def _parse_kbar(kr: dict) -> Kbar:
+            ts = kr["timestamp"]
+            if isinstance(ts, str):
+                from datetime import datetime as _dt
+                try:
+                    ts = _dt.fromisoformat(ts)
+                except ValueError:
+                    ts = _dt.strptime(ts, "%a, %d %b %Y %H:%M:%S GMT")
+            return Kbar(
+                timestamp=ts,
+                open=float(kr["open"]),
+                high=float(kr["high"]),
+                low=float(kr["low"]),
+                close=float(kr["close"]),
+                volume=int(kr["volume"]),
+            )
+
+        kbars = [_parse_kbar(kr) for kr in kbars_raw] if kbars_raw else []
 
         return kbars
 
