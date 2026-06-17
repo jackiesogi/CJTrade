@@ -301,6 +301,12 @@ class ArenaX_BackendBase:
                 unique_kbars.append(kb)
                 seen_timestamps.add(ts)
 
+        # Final fallback: yfinance (covers demo mode and any other case where
+        # neither price_db nor real_account yielded results)
+        if not unique_kbars:
+            print(f"[kbars] No data from price_db/broker for {symbol}, falling back to yfinance")
+            unique_kbars = self.kbars_yf(symbol, start, end, interval)
+
         print(f"[kbars] Returning {len(unique_kbars)} total kbars for {symbol}")
         return unique_kbars
 

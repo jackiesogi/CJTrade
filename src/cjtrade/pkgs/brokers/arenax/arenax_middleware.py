@@ -195,20 +195,16 @@ class ArenaXMiddleWare:
         start  : str   ISO date or datetime string, e.g. '2024-01-02'
         end    : str   ISO date or datetime string, e.g. '2024-06-30'
         interval : str e.g. '1m', '5m', '1d'
+        fallback : bool  deprecated, ignored – the server now selects the data
+                         source automatically (price_db → real broker → yfinance).
 
         Returns
         -------
         list[dict]  raw dicts with keys: timestamp, open, high, low, close, volume
         """
-        if not fallback:
-            res = self._get(
-                f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
-            )
-        else:
-            res = self._get(
-                f"market/kbars_yfinance?symbol={symbol}&start={start}&end={end}&interval=1d"
-            )
-        print(res)
+        res = self._get(
+            f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
+        )
 
         if res and res.get("ok"):
             return res.get("result", [])

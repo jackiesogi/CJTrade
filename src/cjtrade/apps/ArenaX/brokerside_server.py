@@ -440,63 +440,25 @@ class ArenaX_BrokerSideServer:
 
         @app.get("/market/data_availability")
         def market_data_availability():
-            def parse_date(date_str: str):
-                DATE_FORMAT = "%Y-%m-%d"
-                try:
-                    return datetime.strptime(date_str, DATE_FORMAT)
-                except ValueError:
-                    return None
-            broker = self.backend.real_account.get_broker_name()
-            availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker)
-
-            if not availability:
-                return jsonify({
-                    "ok": False,
-                    "error": f"Unknown broker: {broker}"
-                }), 400
-
-            available_start = parse_date(availability["start"])
-            available_end = parse_date(availability["end"])
-
-            start = request.args.get("start")
-            end = request.args.get("end")
-
-            if not start or not end:
+            """Informational endpoint: returns known real-broker date range if
+            a real account is connected.  Clients should NOT use this to decide
+            whether to call /market/kbars – that endpoint handles all source
+            selection internally (price_db → real broker → yfinance).
+            """
+            if self.backend.real_account is None:
+                return jsonify({"ok": True, "has_real_broker": False}), 200
+            try:
+                broker = self.backend.real_account.get_broker_name()
+                availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker, {})
                 return jsonify({
                     "ok": True,
-                    "available": True,
+                    "has_real_broker": True,
                     "broker": broker,
-                    "available_start": availability["start"],
-                    "available_end": availability["end"],
+                    "available_start": availability.get("start"),
+                    "available_end":   availability.get("end"),
                 }), 200
-
-            requested_start = parse_date(start)
-            requested_end = parse_date(end)
-
-            if not requested_start or not requested_end:
-                return jsonify({
-                    "ok": False,
-                    "error": "Invalid date format. Use YYYY-MM-DD"
-                }), 400
-
-            if requested_start > requested_end:
-                return jsonify({
-                    "ok": False,
-                    "error": "start must be <= end"
-                }), 400
-
-            is_available = (
-                requested_start >= available_start and
-                requested_end <= available_end
-            )
-
-            return jsonify({
-                "ok": True,
-                "available": is_available,
-                "broker": broker,
-                "available_start": availability["start"],
-                "available_end": availability["end"],
-            }), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
 
         @app.get("/market/kbars")
@@ -505,6 +467,12 @@ class ArenaX_BrokerSideServer:
             start = request.args.get("start")
             end = request.args.get("end")
             interval = request.args.get("interval", "1m")
+            _SUPPORTED_INTERVALS = {"1m", "5m", "1h", "1d"}
+            if interval not in _SUPPORTED_INTERVALS:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Unsupported interval '{interval}'. Supported: {sorted(_SUPPORTED_INTERVALS)}"
+                }), 400
             try:
                 kbars = self.backend.kbars(symbol, start, end, interval)
                 print(f"length of kbars: {len(kbars)}")
