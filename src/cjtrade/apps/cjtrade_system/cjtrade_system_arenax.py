@@ -302,7 +302,7 @@ class BollingerBandsStrategy(SignalStrategy):
 
         price = prices[-1]
         prices_arr = np.array(prices, dtype=float)
-        upper_bands, middle_bands, lower_bands = ta.bb(prices_arr, timeperiod=self._window, nbdevup=2, nbdevdn=2)
+        upper_bands, middle_bands, lower_bands = ta.bb(prices_arr, timeperiod=self._window, nbdevup=2.5, nbdevdn=2.5)
         upper, middle, lower = upper_bands[-1], middle_bands[-1], lower_bands[-1]
         std_dev = (upper - middle) / 2
         band_width = (upper - lower) / middle if middle > 0 else 0
@@ -361,8 +361,8 @@ class TradingSystem:
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, SignalResult] = {}
-        self.strategy: SignalStrategy = DCAStrategy(period_days=30)
-        # self.strategy: SignalStrategy = BollingerBandsStrategy(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
+        # self.strategy: SignalStrategy = DCAStrategy(period_days=30)
+        self.strategy: SignalStrategy = BollingerBandsStrategy(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
@@ -1062,7 +1062,7 @@ class TradingSystem:
                             order_result = self.client.buy_stock(
                                 symbol,
                                 quantity=quantity,
-                                price=price * 1.03,
+                                price=price * 1.01,
                                 intraday_odd=True,
                                 opt_field={"session_id": self.session_id},
                             )

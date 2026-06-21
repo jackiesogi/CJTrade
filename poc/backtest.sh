@@ -162,6 +162,13 @@ export PARAMS
 export ARENAX_MODE
 export COMPARE_MODE
 
+# Export port so Python modules pick up the correct server port
+case "$ARENAX_MODE" in
+    backtest) export ARENAX_PORT=8802 ;;
+    paper)    export ARENAX_PORT=8803 ;;
+    *)        export ARENAX_PORT=8801 ;;
+esac
+
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
@@ -202,6 +209,10 @@ function ping_server_backend() {
 
 if ! ping_server_backend > /dev/null; then
     echo "Starting ArenaX broker server..."
+    # Unset AX_ env vars so load_dotenv(override=False) inside arenaxd picks up the
+    # correct backend config file (e.g. backtest.cjsys → port 8802) instead of being
+    # silently shadowed by stale values from a previous session.
+    unset AX_HOST_PORT AX_HOST_ADDRESS AX_LAUNCH_MODE AX_STATE_FILE
     uv run arenaxd --backend=$ARENAX_MODE > /dev/null 2>&1 &
     ARENAX_PID=$!
 

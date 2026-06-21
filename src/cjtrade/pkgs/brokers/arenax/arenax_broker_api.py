@@ -14,6 +14,7 @@ Code quality check:
 - code logic : 2026-05-01
 - dead code  : 2026-05-01
 """
+import os
 import random
 from datetime import datetime
 from typing import Any
@@ -43,7 +44,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def __init__(self, **config: Any):
         super().__init__(**config)
         self.host = config.get('arenax_host', 'localhost')
-        self.port = config.get('arenax_port', 8801)
+        _default_port = int(os.environ.get('ARENAX_PORT', 8801))
+        self.port = config.get('arenax_port', _default_port)
         self.middleware: ArenaXMiddleWare = config.get('middleware') or \
         ArenaXMiddleWare(
             host=self.host,
