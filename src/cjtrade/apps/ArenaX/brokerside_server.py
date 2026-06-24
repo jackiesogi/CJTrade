@@ -171,7 +171,9 @@ class ArenaX_BrokerSideServer:
                 self.real = None
                 self.backend = ArenaX_Backend_None(**internal_config)
             elif backend_str == "real":
-                raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it manually after reviewing the code.")
+                # TODO: Add this environment variable also into the external config
+                if not os.environ.get("I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
+                    raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
                 self.backend = ArenaX_Backend_RealTrade(real_account=self.real, **internal_config)
             else:
