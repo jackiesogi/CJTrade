@@ -243,12 +243,25 @@ class ArenaX_BackendBase:
             missing_ranges = [(int(start_dt.timestamp()), int(end_dt.timestamp()))]
 
         # Fetch missing ranges from broker
+        # Shioaji (sinopac) fetches 1-minute data internally and aggregates, so it has a
+        # hard 30-day limit per request.  Split every missing range into ≤30-day chunks.
+        _BROKER_MAX_DAYS = 30
         broker_kbars = []
         if missing_ranges and self.real_account:
             try:
+                from datetime import timedelta as _td
+                chunked_ranges = []
                 for start_epoch, end_epoch in missing_ranges:
-                    range_start = dt.fromtimestamp(start_epoch).strftime("%Y-%m-%d")
-                    range_end = dt.fromtimestamp(end_epoch).strftime("%Y-%m-%d")
+                    chunk_start = dt.fromtimestamp(start_epoch)
+                    chunk_end   = dt.fromtimestamp(end_epoch)
+                    while chunk_start < chunk_end:
+                        chunk_stop = min(chunk_start + _td(days=_BROKER_MAX_DAYS), chunk_end)
+                        chunked_ranges.append((chunk_start, chunk_stop))
+                        chunk_start = chunk_stop
+
+                for chunk_start_dt, chunk_end_dt in chunked_ranges:
+                    range_start = chunk_start_dt.strftime("%Y-%m-%d")
+                    range_end   = chunk_end_dt.strftime("%Y-%m-%d")
                     print(f"[kbars] Fetching from broker: {symbol} [{range_start} to {range_end}]")
 
                     # TODO: check if the backend real broker api support specified interval
@@ -274,8 +287,8 @@ class ArenaX_BackendBase:
                             self.market.price_db.record_coverage(
                                 symbol=symbol,
                                 timeframe=interval,
-                                start_ts=dt.strptime(range_start, "%Y-%m-%d"),
-                                end_ts=dt.strptime(range_end, "%Y-%m-%d"),
+                                start_ts=chunk_start_dt,
+                                end_ts=chunk_end_dt,
                                 source="broker_api"
                             )
                         except Exception as e:
@@ -283,10 +296,9 @@ class ArenaX_BackendBase:
 
             except Exception as exc:
                 print(f"[kbars] Error fetching from broker for {symbol}: {exc}")
-                # Fallback: return cached data even if incomplete
+                # Do NOT return here — fall through to the yfinance fallback below.
                 if cached_kbars:
                     return cached_kbars
-                return []
 
         # Merge cached + broker data, sorted by timestamp
         all_kbars = cached_kbars + broker_kbars

@@ -208,6 +208,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             base_kbars = _from_sinopac_kbar(kbars_1m)
         except Exception as e:
             print(f"Error fetchin sinopac kbars: {e}")
+            raise   # re-raise so callers can handle / fallback properly
 
         # If requesting 1m data, return as-is
         if interval == "1m":
@@ -219,8 +220,6 @@ class SinopacBrokerAPI(BrokerAPIBase):
             return _aggregate_kbars(base_kbars, interval)
         except ValueError as e:
             raise ValueError(f"Interval '{interval}' not supported: {e}") from e
-        kbars = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
-        return _from_sinopac_kbar(kbars)
 
 
     # Return close prices for given products at any time
