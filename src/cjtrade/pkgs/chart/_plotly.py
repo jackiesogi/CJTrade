@@ -147,16 +147,18 @@ class PlotlyKbarChart(KbarChartBase):
             return
 
         import os
+        import time
+        import json
         import plotly.io as pio
 
         theme_config = self._get_theme_config()
 
-        # Generate HTML div for the chart
+        # Generate HTML div for the chart (Plotly.js loaded by template CDN)
         html_content = pio.to_html(
             self.fig,
             config=theme_config['config'],
             div_id="plotly-div",
-            include_plotlyjs=True,
+            include_plotlyjs=False,
             full_html=False
         )
 
@@ -166,53 +168,47 @@ class PlotlyKbarChart(KbarChartBase):
             template = f.read()
 
         def calculate_nav_bgcolor(paper_bg):
-            if paper_bg == '#0d1117':  # GitHub dark
+            if paper_bg == '#0d1117':
                 return '#161b22'
-            elif paper_bg == '#2e3440':  # Nordic
+            elif paper_bg == '#2e3440':
                 return '#3b4252'
-            elif paper_bg == '#282828':  # Gruvbox
+            elif paper_bg == '#282828':
                 return '#32302f'
-            elif paper_bg == 'white':  # Light
+            elif paper_bg == 'white':
                 return '#f8f9fa'
-            else:  # Fallback
+            else:
                 return paper_bg
 
         nav_bgcolor = calculate_nav_bgcolor(theme_config['paper_bgcolor'])
         accent_color = '#58a6ff' if theme_config['paper_bgcolor'] == '#0d1117' else '#3498db'
         border_color = '#30363d' if theme_config['paper_bgcolor'] == '#0d1117' else '#34495e'
 
-        if accent_color == '#58a6ff':
-            accent_color_rgb = '88, 166, 255'
-        else:
-            accent_color_rgb = '52, 152, 219'
-
-        # Auto refresh meta tag
-        extra_head = '<meta http-equiv="refresh" content="2">' if self.auto_save else ''
+        # Stamp + embedded JSON enable live partial-update without a sidecar file.
+        # The browser polls the HTML itself, extracts the new stamp and JSON,
+        # and calls Plotly.react() — no file:// fetch CORS issues.
+        live_stamp = str(time.time()) if self.auto_save else ''
+        live_plotly_json = pio.to_json(self.fig) if self.auto_save else '{}'
 
         full_html = template.format(
             paper_bgcolor=theme_config['paper_bgcolor'],
             font_color=theme_config['font_color'],
             nav_bgcolor=nav_bgcolor,
             accent_color=accent_color,
-            accent_color_rgb=accent_color_rgb,
             border_color=border_color,
             chart_width=self.width,
             chart_height=self.height,
             chart_content=html_content,
             theme_name=self.theme,
-            extra_head=extra_head
+            live_update_enabled='true' if self.auto_save else 'false',
+            live_stamp=live_stamp,
+            live_plotly_json=live_plotly_json,
         )
 
-        # Handle absolute path or relative path
         if not os.path.isabs(filename):
-             filename = os.path.abspath(filename)
+            filename = os.path.abspath(filename)
 
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(full_html)
-
-        # TODO: Temporarily disable print statements
-        # print(f"Chart saved to: {filename}")
-        # print(f"Open in browser: file://{filename}")
 
     def _auto_save(self) -> None:
         if self.fig and self.output_filename:
