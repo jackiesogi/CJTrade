@@ -40,6 +40,7 @@ class CommandBase(ABC):
         self.params: List[str] = []  # Parameter names
         self.optional_params: List[str] = []  # Optional parameter names
         self.variadic: bool = False  # If True, accepts variable number of arguments
+        self.example: str = ""  # Example usage string
 
     @abstractmethod
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
@@ -65,28 +66,39 @@ class CommandBase(ABC):
             print(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
             if self.optional_params:
                 print(f"Optional: {', '.join(self.optional_params)}")
+            if self.example:
+                print(f"Example: {self.example}")
             return False
 
         if provided_count > total_count:
             print(f"Error: '{self.name}' accepts at most {total_count} arguments")
+            if self.example:
+                print(f"Example: {self.example}")
             return False
 
         return True
 
-    def get_help(self) -> str:
-        """Return help text for this command"""
+    def _usage_line(self) -> str:
+        """One-line usage: name <params> [optional] - description"""
         param_str = " ".join([f"<{p}>" for p in self.params])
         optional_str = " ".join([f"[{p}]" for p in self.optional_params])
-
-        # Add variadic indicator
         if self.variadic:
             param_str = f"{param_str} [...]" if param_str else "[...]"
-
         full_params = f"{param_str} {optional_str}".strip()
-
         if full_params:
             return f"{self.name} {full_params} - {self.description}"
         return f"{self.name} - {self.description}"
+
+    def get_help(self) -> str:
+        """Short one-line help (used by 'help' listing)."""
+        return self._usage_line()
+
+    def get_detailed_help(self) -> str:
+        """Full help with example (used by 'help <cmd>' and validation errors)."""
+        lines = [self._usage_line()]
+        if self.example:
+            lines.append(f"  Example: {self.example}")
+        return "\n".join(lines)
 
 
 # ========== Concrete Command Implementations ==========
@@ -98,6 +110,7 @@ class BuyCommand(CommandBase):
         self.description = "Place a buy order"
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
+        self.example = "buy 0050 20.25 80"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -117,6 +130,7 @@ class SellCommand(CommandBase):
         self.description = "Place a sell order"
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
+        self.example = "sell 0050 30.65 120"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -136,6 +150,7 @@ class SnapshotCommand(CommandBase):
         self.description = "Get market snapshot for one or more symbols"
         self.params = ["symbol"]  # At least one symbol required
         self.variadic = True  # Accept variable number of symbols
+        self.example = "ohlcv 2330 0050 2317"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         products = [Product(symbol=symbol) for symbol in args]
@@ -162,6 +177,7 @@ class BidAskCommand(CommandBase):
         self.description = "Get bid/ask quote"
         self.params = ["symbol"]
         self.optional_params = ["intraday_odd"]
+        self.example = "bidask 2330"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -182,6 +198,7 @@ class ListOrdersCommand(CommandBase):
         self.name = "lsodr"
         self.optional_params = ["num_result"]
         self.description = "List all orders"
+        self.example = "lsodr 10"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         num_result = int(args[0]) if len(args) > 0 else 5
@@ -213,6 +230,7 @@ class ListPositionsCommand(CommandBase):
         super().__init__()
         self.name = "lspos"
         self.description = "List all positions"
+        self.example = "lspos"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         positions = client.get_positions()
@@ -288,6 +306,7 @@ class RunAanalyticsCommand(CommandBase):
         self.name = "start"
         self.description = "Run analytics"
         self.params = ["symbol", "buy_target_price", "sell_target_price", "delay"]
+        self.example = "start 2330 580.0 620.0 5"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -334,6 +353,7 @@ class BalanceCommand(CommandBase):
         super().__init__()
         self.name = "balance"
         self.description = "Show account balance"
+        self.example = "balance"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         balance = client.get_balance()
@@ -346,6 +366,7 @@ class AnnouncementCommand(CommandBase):
         self.name = "news"
         self.description = "Get recent important announcements"
         self.optional_params = ["days"]
+        self.example = "news 7"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         days = int(args[0]) if len(args) > 0 else 3
@@ -370,6 +391,7 @@ class SearchOnlineNewsCommand(CommandBase):
         self.description = "Search online news articles"
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["query"]
+        self.example = "search 台積電"
 
     def execute(self, client: AccountClient, *args, **config) -> None:
         selection = config.get('news_source', 'cnyes').lower()
@@ -408,6 +430,7 @@ class KbarsCommand(CommandBase):
         self.name = "kbars"
         self.params = ["symbol"]
         self.description = "Get K-bars (candlestick data)"
+        self.example = "kbars 2330"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -423,6 +446,7 @@ class LLMCommand(CommandBase):
         self.name = "llm"
         self.params = ["prompt"]
         self.description = "Generate a response using the LLM."
+        self.example = "llm 分析一下我現在的持倉狀況"
         self.llm = AzureOpenAIClient(
             api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
             endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
@@ -463,6 +487,7 @@ class MoversCommand(CommandBase):
         super().__init__()
         self.name = "rank"
         self.description = "Rank market movers"
+        self.example = "rank"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         movers = client.get_market_movers()
@@ -478,6 +503,7 @@ class CancelAllCommand(CommandBase):
         super().__init__()
         self.name = "cancel"
         self.description = "Cancel all active orders"
+        self.example = "cancel"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
@@ -529,10 +555,20 @@ class HelpCommand(CommandBase):
         super().__init__()
         self.name = "help"
         self.description = "Show this help message"
+        self.optional_params = ["command"]
+        self.example = "help buy"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        for cmd in command_registry.values():
-            print(f"  {cmd.get_help()}")
+        if args:
+            cmd_name = args[0]
+            cmd = command_registry.get(cmd_name)
+            if cmd:
+                print(cmd.get_detailed_help())
+            else:
+                print(f"Unknown command: '{cmd_name}'")
+        else:
+            for cmd in command_registry.values():
+                print(f"  {cmd.get_help()}")
 
 
 class CalendarCommand(CommandBase):
@@ -541,6 +577,7 @@ class CalendarCommand(CommandBase):
         self.name = "date"
         self.description = "Show the calendar"
         self.optional_params = ["year"]
+        self.example = "date 2026"
 
         # Get paths to utility scripts
         from pathlib import Path
@@ -603,6 +640,7 @@ class InfoCommand(CommandBase):
         super().__init__()
         self.name = "info"
         self.description = "Shell info"
+        self.example = "info"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
@@ -628,6 +666,7 @@ class ClearCommand(CommandBase):
         super().__init__()
         self.name = "clear"
         self.description = "Clear the screen"
+        self.example = "clear"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import os
@@ -650,6 +689,7 @@ class SystemCommand(CommandBase):
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["cmd"]
         self.description = "Execute OS command"
+        self.example = "system uname -a"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         if len(args) == 0:
@@ -674,6 +714,7 @@ class ExitCommand(CommandBase):
         super().__init__()
         self.name = "exit"
         self.description = "Close interactive shell"
+        self.example = "exit"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         global exit_flag
@@ -688,6 +729,7 @@ class KbarAggregationCommand(CommandBase):
         self.name = "replay"
         self.params = ["symbol", "range", "interval"]  # range means [T-range, T+1)
         self.description = "Replay historical K-bar and do aggregation"
+        self.example = "replay 0050 100 1d"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import webbrowser
