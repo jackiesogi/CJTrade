@@ -228,16 +228,11 @@ class ArenaXRunner:
         else:
             log.info(f"Broker '{self.broker}': skipping ArenaX server startup")
 
-        # 4. Expose env vars for cjtrade_system_arenax.async_main()
-        os.environ["BROKER_TYPE"] = self.broker
-        os.environ["LAUNCH_MODE"] = self.mode
-        #   Load the cjsys file into env (override=False so explicit CLI vars win)
-        load_dotenv(cfg_file, override=False)
-
-        # 5. Hand off to the trading system
-        from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import async_main
+        # 4. Hand off to the trading system
+        from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import async_main, build_system_config
+        sys_cfg = build_system_config(self.broker, self.mode)
         try:
-            asyncio.run(async_main())
+            asyncio.run(async_main(cfg=sys_cfg, broker=self.broker))
         finally:
             if self.broker == "arenax":
                 self._stop_server()
@@ -325,7 +320,23 @@ def main() -> None:
         "--port", type=int, default=None,
         help="ArenaX server port (CLI > config > default 8801)",
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print resolved SystemConfig as JSON and exit without launching.",
+    )
     args = parser.parse_args()
+
+    if args.dry_run:
+        import logging
+        from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import build_system_config
+        prev_disable = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            cfg = build_system_config(args.broker, args.mode)
+        finally:
+            logging.disable(prev_disable)
+        print(cfg.dump_json())
+        sys.exit(0)
 
     runner = ArenaXRunner(
         mode=args.mode,
