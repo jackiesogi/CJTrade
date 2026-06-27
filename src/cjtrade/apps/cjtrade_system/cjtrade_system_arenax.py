@@ -374,11 +374,11 @@ class TradingSystem:
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
-        if self.launch_mode in ['backtest', 'demo']:
-            self.start_time = self.client.broker_api.get_system_time()['mock_current_time']
+        if self.is_backtest:
+            self.start_time = self.current_time()
             log.info(f"⏰ Using mock market start time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         else:
-            self.start_time = datetime.now()
+            self.start_time = self.current_time()
             log.info(f"⏰ Using real system time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         self.trade_log: List[Dict] = []
@@ -387,7 +387,7 @@ class TradingSystem:
 
         # Get playback speed from mock broker backend (for time-scaled delays)
         self.playback_speed = 1.0
-        if self.launch_mode in ['backtest', 'demo']:
+        if self.is_backtest:
             #self.playback_speed = self.client.broker_api.api.market.playback_speed
             self.playback_speed = self.client.broker_api.middleware.get_config()['internal_config']['playback_speed']
             log.info(f"⚡ Playback speed: {self.playback_speed}x (response from server, not set by user)")
@@ -433,6 +433,20 @@ class TradingSystem:
                 log.warning(f"Failed to initialize LLM client: {e}")
         else:
             log.warning("No LLM API keys found, using MockLLM")
+
+    # ── Mode helpers ──────────────────────────────────────────────────────────
+
+    @property
+    def is_backtest(self) -> bool:
+        """True for modes that use ArenaX virtual clock (backtest / demo).
+        paper/real use wall-clock time and do not have playback speed or duration limits."""
+        return self.launch_mode in ('backtest', 'demo')
+
+    def current_time(self) -> datetime:
+        """Current trading time for all modes.
+        ArenaX_RealMarket.mock_current_time returns datetime.now(), so this call
+        is valid for paper/real as well — no branching needed."""
+        return self.client.broker_api.get_system_time()['mock_current_time']
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""
@@ -628,14 +642,10 @@ class TradingSystem:
         - Day 0: 09:00 start, 13:30 close = 1 completed trading day
         - After 13:30, the day is considered complete
         """
-        if not self.launch_mode in ['backtest', 'demo']:
+        if not self.is_backtest:
             return False
 
-        # Use mock market time for backtest modes; paper mode uses real wall-clock time
-        if self.launch_mode in ['backtest', 'demo']:
-            current_time = self.client.broker_api.get_system_time()['mock_current_time']
-        else:
-            current_time = datetime.now()
+        current_time = self.current_time()
 
         # Calculate completed trading days
         start_date = self.start_time.date()
@@ -852,7 +862,7 @@ class TradingSystem:
             try:
                 symbols = list(self.price_history.keys())
                 log.debug(f"Analyzing {len(symbols)} symbols: {symbols}")  # debug: empty on first tick is normal
-                current_time = self.client.broker_api.get_system_time()['mock_current_time'] if self.launch_mode in ['backtest', 'demo'] else datetime.now()
+                current_time = self.current_time()
 
                 positions = self.client.get_positions() or []
                 pos_qty = {p.symbol: p.quantity for p in positions}
@@ -968,7 +978,7 @@ class TradingSystem:
             # an LLM is configured.  Must run before any `continue` so that the
             # backtest always starts progressing even when LLM keys are absent.
             global RESUME_TIME_AFTER_CLIENT_READY
-            if not RESUME_TIME_AFTER_CLIENT_READY and LAUNCH_MODE in ('backtest', 'demo'):
+            if not RESUME_TIME_AFTER_CLIENT_READY and self.is_backtest:
                 try:
                     self.client.broker_api.middleware.resume_time_progress()
                     log.info("▶ Mock time resumed (client ready)")
@@ -1015,7 +1025,7 @@ class TradingSystem:
         while not SHUTDOWN:
             try:
                 # Check if backtest period is over
-                if self.launch_mode in ['backtest', 'demo'] and self.should_exit_backtest():
+                if self.is_backtest and self.should_exit_backtest():
                     log.info("🏁 Backtest completed. Shutting down...")
                     SHUTDOWN = True
                     break
@@ -1032,8 +1042,8 @@ class TradingSystem:
                 result = signal_event['result']
                 price = result.price
 
-                if self.launch_mode in ['backtest', 'demo']:
-                    current_time = self.client.broker_api.get_system_time()['mock_current_time']
+                if self.is_backtest:
+                    current_time = self.current_time()
 
                     start_date = self.start_time.date()
                     current_date = current_time.date()
@@ -1048,7 +1058,7 @@ class TradingSystem:
                     remaining = BACKTEST_DURATION_DAYS - completed_trading_days
                     mode_prefix = f"[BACKTEST {remaining}d]"
                 else:
-                    mode_prefix = "[PAPER]"
+                    mode_prefix = f"[{self.launch_mode.upper()}]"
 
                 log.info(f"{mode_prefix} ⚡ Processing signal event: {symbol} {signal} @ {price:.2f}")
 
@@ -1076,10 +1086,7 @@ class TradingSystem:
                             )
 
                             # Get mock_current_time for backtest alignment
-                            if self.launch_mode in ('backtest', 'demo'):
-                                mock_time = self.client.broker_api.get_system_time()['mock_current_time']
-                            else:
-                                mock_time = datetime.now()
+                            mock_time = self.current_time()
 
                             trade_record = {
                                 'action': 'BUY',
@@ -1122,10 +1129,7 @@ class TradingSystem:
                             )
 
                             # Get mock_current_time for backtest alignment
-                            if self.launch_mode in ('backtest', 'demo'):
-                                mock_time = self.client.broker_api.get_system_time()['mock_current_time']
-                            else:
-                                mock_time = datetime.now()
+                            mock_time = self.current_time()
 
                             trade_record = {
                                 'action': 'SELL',
@@ -1152,12 +1156,7 @@ class TradingSystem:
         log.info("Time display started")
 
         while not SHUTDOWN:
-            if self.launch_mode in ('backtest', 'demo'):
-                # ArenaX: use mock time from server
-                ts = self.client.broker_api.get_system_time()['mock_current_time']
-            else:
-                # Real/paper: wall-clock time is ground truth
-                ts = datetime.now()
+            ts = self.current_time()
 
             time_str = ts.strftime('%Y-%m-%d %H:%M:%S')
             print(f"\n{'='*60}")
@@ -1457,7 +1456,8 @@ async def async_main():
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 """)
-    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in ['backtest', 'demo'] else LAUNCH_MODE}")
+    _sim_modes = ('backtest', 'demo')
+    log.info(f"Mode: {'BACKTEST (' + str(BACKTEST_DURATION_DAYS) + ' days)' if LAUNCH_MODE in _sim_modes else LAUNCH_MODE}")
     print("CJTrade System is about to launch", end=" ")
     countdown = 8
     for i in range(countdown, 0, -1):
