@@ -59,3 +59,13 @@ min = 1
 env_out = "CJSYS_BACKTEST_DURATION_DAYS"
 persist_key = "days"
 cli_arg = "--days"
+
+[[field]]
+name = "start_date"
+label = "Start Date (YYYY-MM-DD, leave blank = random)"
+type = "text"
+placeholder = "2024-01-01"
+optional = true
+env_out = "CJSYS_BACKTEST_START_DATE"
+persist_key = "start_date"
+cli_arg = "--start-date"

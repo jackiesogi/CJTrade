@@ -91,6 +91,7 @@ def _wait_for_server(host: str, port: int, timeout: int = SERVER_STARTUP_TIMEOUT
 _SERVER_KEY_MAP = {
     "CJSYS_BACKTEST_DURATION_DAYS":  "backtest_duration_days",
     "CJSYS_BACKTEST_PLAYBACK_SPEED": "playback_speed",
+    "CJSYS_BACKTEST_START_DATE":     "backtest_start_date",
     "CJSYS_SKIP_NON_TRADING_HOURS":  "skip_non_trading_hours",
     "CJSYS_STATE_FILE":              "state_file",
     "CJSYS_WATCH_LIST":              "watch_list",
@@ -126,6 +127,14 @@ def _build_server_overrides(user_cfg: dict, mode: str) -> dict:
         speed = float(overrides["playback_speed"])
         overrides["playback_speed"] = speed
         overrides["speed"]          = speed
+
+    if "backtest_start_date" in overrides:
+        from datetime import datetime as _dt
+        raw = str(overrides["backtest_start_date"]).strip()
+        if raw:
+            overrides["backtest_start_date"] = _dt.strptime(raw, "%Y-%m-%d")
+        else:
+            del overrides["backtest_start_date"]  # blank → random
 
     if "skip_non_trading_hours" in overrides:
         val = overrides["skip_non_trading_hours"]

@@ -17,9 +17,9 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
         playback_speed: float = 1.0,
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
+        backtest_start_date=None,   # datetime | None; None → random
         **kwargs
     ) -> None:
-        # print(f"playback_speed: {playback_speed}, num_days_preload: {num_days_preload}, skip_data_preload: {skip_data_preload}")
         super().__init__(
             state_file=state_file,
             real_account=real_account,
@@ -27,19 +27,36 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             num_days_preload=num_days_preload,
             skip_data_preload=skip_data_preload,
         )
+        self._backtest_start_date = backtest_start_date
         self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)
         if hasattr(self.market, "set_playback_speed"):
             self.market.set_playback_speed(playback_speed)
         self._initialize_market_time()
 
     def _initialize_market_time(self) -> None:
-        attempt, max_attempts = 0, 30
-        if self.real_account:
-            days_back = random.randint(self.num_days_preload, 1300)
-        else:
+        if not self.real_account:
             raise ValueError("Historical backend requires a real account to fetch historical data.")
-            exit(1)
 
+        # ── Fixed start_date path ─────────────────────────────────────
+        if self._backtest_start_date is not None:
+            start_dt = self._backtest_start_date
+            # Skip weekends
+            while start_dt.weekday() >= 5:
+                start_dt += timedelta(days=1)
+            start_dt = start_dt.replace(hour=9, minute=0, second=0, microsecond=0)
+            self.market.set_historical_time_abs(
+                real_init_time=datetime.now(),
+                mock_init_time=start_dt,
+            )
+            print(f"[ArenaX] Fixed start_date: {start_dt.date()}")
+            print(self.market.get_market_time())
+            self.market.pause_time_progress()
+            print("[ArenaX] Market time paused – waiting for client to call resume.")
+            return
+
+        # ── Random start_date path ────────────────────────────────────
+        attempt, max_attempts = 0, 30
+        days_back = random.randint(self.num_days_preload, 1300)
         dt = datetime.now() - timedelta(days=days_back)
         sleep(1)
 
@@ -54,7 +71,5 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             return
         self.market.set_historical_time(datetime.now(), days_back=days_back)
         print(self.market.get_market_time())
-        # Pause immediately so client initialisation lag does not consume mock time.
-        # Client must call POST /control/resume-time-progress once ready.
         self.market.pause_time_progress()
         print("[ArenaX] Market time paused – waiting for client to call resume.")
