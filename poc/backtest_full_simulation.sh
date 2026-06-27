@@ -11,6 +11,7 @@ DEFAULT_WATCH_LIST="1234"
 DEFAULT_FUND=500000
 DEFAULT_DAYS=5
 DEFAULT_MODE="backtest"
+DEFAULT_BROKER="arenax"
 
 # ------------------------
 # Load last used
@@ -26,6 +27,7 @@ WATCH_LIST=""
 INITIAL_FUND=""
 DURATION_DAYS=""
 ARENAX_MODE=""
+BROKER=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -45,11 +47,16 @@ while [[ $# -gt 0 ]]; do
             ARENAX_MODE="$2"
             shift 2
             ;;
+        --broker)
+            BROKER="$2"
+            shift 2
+            ;;
         --default)
             WATCH_LIST="$LAST_USED"
             INITIAL_FUND=$DEFAULT_FUND
             DURATION_DAYS=$DEFAULT_DAYS
             ARENAX_MODE=$DEFAULT_MODE
+            BROKER=$DEFAULT_BROKER
             shift
             ;;
         *)
@@ -150,4 +157,9 @@ LIMIT 30;
 USERNAME=CJ \
 CJSYS_STATE_FILE=arenax_CJ.json \
 CJSYS_BACKTEST_DURATION_DAYS="$DURATION_DAYS" \
-uv run system --broker=arenax --mode="$ARENAX_MODE"
+
+if [ "$BROKER" = "arenax" ]; then
+    uv run system --broker=arenax --mode="$ARENAX_MODE"
+else
+    uv run system --broker="$BROKER" --mode=real
+fi

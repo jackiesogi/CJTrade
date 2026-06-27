@@ -83,12 +83,6 @@ def load_cjsys(broker: str, mode: str):
     config_dir = pathlib.Path(__file__).parent / "configs"
     file_to_load = config_dir / f"{broker}_{mode}.cjsys"
 
-    if mode == 'paper' and broker == 'arenax':
-        pass
-        # log.error("Using paper mode for arenax broker does not make sense!"
-        #           " If you want to use paper mode, please switch to the 'realistic'!")
-        # exit(1)
-
     if not file_to_load.exists():
         log.warning(f"Config file {file_to_load} not found, create one based on the template in configs/ dir")
         return
@@ -108,10 +102,21 @@ def load_cjsys(broker: str, mode: str):
     config['launch_mode'] = mode
     config['remote_host'] = config.get('cjsys_remote_host', 'localhost')
     config['remote_port'] = int(config.get('cjsys_remote_port', 8801))
-    # Map to ArenaXBrokerAPI_v2 expected keys
-    config['arenax_host'] = config['remote_host']
-    config['arenax_port'] = config['remote_port']
-    config['backtest_duration_days'] = int(config.get('cjsys_backtest_duration_days', 7))
+
+    # ArenaX-specific key → 需要啟動獨立模擬券商 server，和其他 broker 的情況不同
+    if broker == "arenax":
+        config['arenax_host'] = config['remote_host']
+        config['arenax_port'] = config['remote_port']
+
+    # backtest_duration_days: 對 backtest/demo 是停止條件；對 real/paper/live 預設 inf（永遠不停）
+    _raw_duration = config.get('cjsys_backtest_duration_days', '').strip()
+    if _raw_duration:
+        config['backtest_duration_days'] = int(_raw_duration)
+    elif config.get('launch_mode') in ('backtest', 'demo'):
+        config['backtest_duration_days'] = 7    # fallback default for simulation modes
+    else:
+        config['backtest_duration_days'] = float('inf')  # real/paper: run until manually stopped
+
     _raw_wl = config.get('cjsys_watch_list', "").strip()
     _wl_tokens = [s.strip() for s in _raw_wl.split(',') if s.strip() and s.strip().lower() != 'none']
     config['watch_list'] = _wl_tokens
@@ -133,6 +138,7 @@ def print_config():
 # ==================== System Config ====================
 @dataclass
 class SystemConfig:
+    # ── Broker-agnostic fields (required) ─────────────────────────────
     watch_list: str
     analysis_interval: float
     check_fill_interval: float
@@ -143,10 +149,13 @@ class SystemConfig:
     bb_window_size: int
     risk_max_position_pct: float
     launch_mode: str
-    backtest_duration_days: float
-    remote_host: str = "localhost"      # Default for direct cjtrade_system launch (without runner)
-    remote_port: int = 8801             # Default for direct cjtrade_system launch (without runner)
-    # backtest_playback_speed: float
+    # ── Broker-agnostic fields (optional) ─────────────────────────────
+    # For real/live/paper mode, backtest_duration_days = inf (never stops by duration)
+    # For backtest/demo mode, set to the desired number of trading days
+    backtest_duration_days: float = float('inf')
+    # ── ArenaX-specific fields (only meaningful when broker == "arenax") ─
+    remote_host: str = "localhost"      # ArenaX server address
+    remote_port: int = 8801             # ArenaX server port
 
 
 def _apply_config(cfg: SystemConfig) -> None:
@@ -159,7 +168,6 @@ def _apply_config(cfg: SystemConfig) -> None:
     global RISK_MAX_POSITION_PCT
 
     BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
-    # BACKTEST_PLAYBACK_SPEED    = cfg.backtest_playback_speed
     LAUNCH_MODE                = cfg.launch_mode
     REMOTE_HOST                = cfg.remote_host
     REMOTE_PORT                = cfg.remote_port
@@ -1068,9 +1076,9 @@ class TradingSystem:
                             )
 
                             # Get mock_current_time for backtest alignment
-                            try:
+                            if self.launch_mode in ('backtest', 'demo'):
                                 mock_time = self.client.broker_api.get_system_time()['mock_current_time']
-                            except:
+                            else:
                                 mock_time = datetime.now()
 
                             trade_record = {
@@ -1114,9 +1122,9 @@ class TradingSystem:
                             )
 
                             # Get mock_current_time for backtest alignment
-                            try:
+                            if self.launch_mode in ('backtest', 'demo'):
                                 mock_time = self.client.broker_api.get_system_time()['mock_current_time']
-                            except:
+                            else:
                                 mock_time = datetime.now()
 
                             trade_record = {
@@ -1144,10 +1152,12 @@ class TradingSystem:
         log.info("Time display started")
 
         while not SHUTDOWN:
-            if "arenax" in self.client.get_broker_name():
+            if self.launch_mode in ('backtest', 'demo'):
+                # ArenaX: use mock time from server
                 ts = self.client.broker_api.get_system_time()['mock_current_time']
             else:
-                ts = self.client.broker_api.get_system_time()['real_current_time']
+                # Real/paper: wall-clock time is ground truth
+                ts = datetime.now()
 
             time_str = ts.strftime('%Y-%m-%d %H:%M:%S')
             print(f"\n{'='*60}")
@@ -1359,7 +1369,7 @@ async def async_main():
 
     # Create SystemConfig from loaded config dict
     cfg = SystemConfig(
-        backtest_duration_days=config['backtest_duration_days'],
+        backtest_duration_days=config.get('backtest_duration_days', float('inf')),
         watch_list=config['watch_list'],
         analysis_interval=config['analysis_interval'],
         check_fill_interval=config['check_fill_interval'],   # maybe not needed
@@ -1392,7 +1402,7 @@ async def async_main():
         config['api_key'] = "testkey123"
         client = AccountClient(BrokerType.ARENAX, **config)
     elif broker_type == 'sinopac':
-        pass    # pass for now since it is dangerous while developing and testing.
+        client = AccountClient(BrokerType.SINOPAC, **config)
     else:
         log.error(f"Unsupported broker type: {broker_type}")
         return

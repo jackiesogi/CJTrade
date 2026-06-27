@@ -717,6 +717,10 @@ class ArenaX_BrokerSideServer:
                 log.warning(f"[EOD] Could not cancel order {order.id}: {exc}")
 
     def _skip_to_trading_hours(self):
+        # adjust_time() only exists on ArenaX_Market (backtest/demo); real/paper mode
+        # uses wall-clock time and needs no artificial jump.
+        if not hasattr(self.backend.market, 'adjust_time'):
+            return
         if not self.backend.market.is_market_open():
             mock_time = self.backend.market.get_market_time()["mock_current_time"]
             # Find next weekday 9:00 AM

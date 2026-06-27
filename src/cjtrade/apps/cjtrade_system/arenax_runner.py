@@ -155,13 +155,19 @@ def _build_server_overrides(user_cfg: dict, mode: str) -> dict:
         overrides["playback_speed"] = speed
         overrides["speed"]          = speed           # backward-compat alias
 
-    # paper mode always real-time, never skip non-trading hours
-    if mode == "paper":
+    # Always parse skip_non_trading_hours to bool so 'n'/'y' strings don't become
+    # truthy values when passed directly into internal_config (bypassing load_cjsys).
+    if "skip_non_trading_hours" in overrides:
+        val = overrides["skip_non_trading_hours"]
+        overrides["skip_non_trading_hours"] = (
+            val if isinstance(val, bool) else str(val).strip().lower() in ('y', 'yes', 'true', '1')
+        )
+
+    # paper / real mode: never skip non-trading hours (time is wall-clock, not mock)
+    if mode in ("paper", "real"):
         overrides.setdefault("playback_speed", 1.0)
         overrides.setdefault("speed",          1.0)
-        overrides["skip_non_trading_hours"] = False   # At this point, backend has already
-                                                      # parse 'n'/'y' to False/True, so we
-                                                      # need to set it to a boolean value.
+        overrides["skip_non_trading_hours"] = False
 
     return overrides
 
@@ -213,12 +219,14 @@ class ArenaXRunner:
             if k not in ("host", "port"):
                 log.info(f"  server.{k} = {v}")
 
-        # 3. Kill stale server → start fresh
-        if _is_port_in_use(self.host, self.port):
-            log.info(f"Port {self.port} in use – killing existing server…")
-            _kill_on_port(self.port)
-
-        self._start_server(srv_overrides)
+        # 3. Kill stale server → start fresh  (ArenaX only)
+        if self.broker == "arenax":
+            if _is_port_in_use(self.host, self.port):
+                log.info(f"Port {self.port} in use – killing existing server…")
+                _kill_on_port(self.port)
+            self._start_server(srv_overrides)
+        else:
+            log.info(f"Broker '{self.broker}': skipping ArenaX server startup")
 
         # 4. Expose env vars for cjtrade_system_arenax.async_main()
         os.environ["BROKER_TYPE"] = self.broker
@@ -231,7 +239,8 @@ class ArenaXRunner:
         try:
             asyncio.run(async_main())
         finally:
-            self._stop_server()
+            if self.broker == "arenax":
+                self._stop_server()
 
     # ------------------------------------------------------------------
     def _start_server(self, srv_overrides: dict) -> None:
