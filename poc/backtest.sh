@@ -117,7 +117,7 @@ if [ -n "$START_DATE" ]; then
     CMD="$CMD --start $START_DATE"
 fi
 
-if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "true" || "$COMPARE_MODE" == "y" ]]; then
+if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "True" || "$COMPARE_MODE" == "y" ]]; then
   CMD="$CMD --compare"
 fi
 
@@ -126,4 +126,5 @@ if [ -n "$START_DATE" ]; then
 fi
 
 echo -e "${GREEN}Executing OneShot Backtest...${NC}"
+echo -e "${YELLOW}Command: $CMD${NC}"
 eval $CMD
