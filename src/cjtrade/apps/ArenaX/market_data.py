@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from datetime import datetime
@@ -9,6 +10,8 @@ from typing import List
 
 import pandas as pd
 import yfinance as yf
+
+log = logging.getLogger("cjtrade.arenax_market")
 from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
@@ -321,6 +324,7 @@ class ArenaX_Market:
         persist them to the local price DB, and record coverage.
 
         Fill-only: bars already present are *not* overwritten.
+        Long ranges are chunked automatically inside _fetch_from_real_account().
         """
         source = "yfinance"
         kbars: list = []
@@ -330,22 +334,30 @@ class ArenaX_Market:
             kbars = self._fetch_from_real_account(
                 symbol,
                 gap_start.strftime("%Y-%m-%d"),
-                gap_end.strftime("%Y-%m-%d")
+                gap_end.strftime("%Y-%m-%d"),
             )
 
         if not kbars:
+            log.warning(
+                f"[{symbol}] {'real_account not connected' if not (self.real_account and self.real_account.is_connected()) else source + ' returned no data'}"
+                f" for {gap_start.date()} – {gap_end.date()}, falling back to yfinance"
+            )
             source = "yfinance"
             kbars = self._fetch_from_yahoo_finance(
                 symbol,
                 gap_start.strftime("%Y-%m-%d"),
-                gap_end.strftime("%Y-%m-%d")
+                gap_end.strftime("%Y-%m-%d"),
             )
 
         if not kbars:
             print(f"[{symbol}] No data available for gap [{gap_start} – {gap_end}]")
             return
 
-        # Persist – fill only (overwrite=False keeps existing bars intact)
+        self._persist_kbars(symbol, kbars, gap_start, gap_end, source)
+
+    def _persist_kbars(self, symbol: str, kbars: list,
+                        gap_start: datetime, gap_end: datetime, source: str):
+        """Write kbars to the local price DB and record coverage."""
         if self.price_db:
             saved = self.price_db.insert_prices_batch(
                 symbol, kbars, timeframe="1m", source=source, overwrite=False
@@ -353,24 +365,50 @@ class ArenaX_Market:
             print(f"[{symbol}] Fetched and cached {saved}/{len(kbars)} bars "
                   f"({gap_start.date()} – {gap_end.date()}, source={source})")
 
-            # Record the covered range even if some bars already existed
-            if kbars:
-                actual_start = min(kb.timestamp for kb in kbars)
-                actual_end   = max(kb.timestamp for kb in kbars)
-                self.price_db.record_coverage(symbol, "1m", actual_start, actual_end, source)
+            actual_start = min(kb.timestamp for kb in kbars)
+            actual_end   = max(kb.timestamp for kb in kbars)
+            self.price_db.record_coverage(symbol, "1m", actual_start, actual_end, source)
 
     def _fetch_from_real_account(self, symbol: str,
                                   start: str, end: str,
                                   interval: str = "1m") -> list:
-        """Fetch kbars from real_account; returns List[Kbar] or [] on failure."""
-        try:
-            kbars = self.real_account.get_kbars(
-                Product(symbol=symbol), start=start, end=end, interval=interval
-            )
-            return kbars or []
-        except Exception as exc:
-            print(f"[{symbol}] real_account fetch failed ({start}–{end}): {exc}")
-            return []
+        """Fetch kbars from real_account, auto-chunking into ≤28-day windows
+        to stay within the Sinopac 30-day per-request limit.
+        Returns a combined List[Kbar] or [] on failure.
+        """
+        CHUNK_DAYS = 28
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt   = datetime.strptime(end,   "%Y-%m-%d")
+        total_days = (end_dt - start_dt).days
+
+        if total_days <= CHUNK_DAYS:
+            # Single request — no chunking needed
+            try:
+                kbars = self.real_account.get_kbars(
+                    Product(symbol=symbol), start=start, end=end, interval=interval
+                )
+                return kbars or []
+            except Exception as exc:
+                print(f"[{symbol}] real_account fetch failed ({start}–{end}): {exc}")
+                return []
+
+        # Multi-chunk fetch
+        all_kbars: list = []
+        chunk_start = start_dt
+        while chunk_start < end_dt:
+            chunk_end = min(chunk_start + timedelta(days=CHUNK_DAYS), end_dt)
+            cs = chunk_start.strftime("%Y-%m-%d")
+            ce = chunk_end.strftime("%Y-%m-%d")
+            try:
+                fetched = self.real_account.get_kbars(
+                    Product(symbol=symbol), start=cs, end=ce, interval=interval
+                )
+                if fetched:
+                    all_kbars.extend(fetched)
+            except Exception as exc:
+                print(f"[{symbol}] real_account fetch failed ({cs}–{ce}): {exc}")
+            chunk_start = chunk_end
+        return all_kbars
 
     def _fetch_from_yahoo_finance(self, symbol: str,
                                    start: str, end: str,

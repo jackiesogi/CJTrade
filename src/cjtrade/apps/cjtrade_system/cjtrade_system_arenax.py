@@ -544,7 +544,7 @@ class TradingSystem:
         """Get list of symbols to monitor from watch_list config, or from current positions if watch_list is empty"""
         symbols = []
         try:
-            symbols = list(config.get('watch_list', []))
+            symbols = list(WATCH_LIST) if WATCH_LIST else []
 
             # Only add current positions if watch_list is empty
             if len(symbols) == 0:

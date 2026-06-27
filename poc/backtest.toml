@@ -1,0 +1,86 @@
+title = "CJTrade OneShot Backtest"
+
+[[field]]
+name = "watch_list"
+label = "Watch List"
+type = "text"
+placeholder = "1234"
+env_in = "CJSYS_WATCH_LIST"
+env_out = "CJSYS_WATCH_LIST"
+persist_key = "watch_list"
+
+[[field]]
+name = "fund"
+label = "Initial Fund"
+type = "number"
+default = 500000
+min = 1000
+step = 1000
+env_out = "INITIAL_FUND"
+persist_key = "fund"
+
+[[field]]
+name = "start_date"
+label = "Start Date"
+type = "text"
+placeholder = "YYYY-MM-DD (empty = random)"
+env_out = "START_DATE"
+optional = true
+
+[[field]]
+name = "days"
+label = "Duration Days"
+type = "number"
+default = 365
+min = 1
+env_out = "DURATION_DAYS"
+persist_key = "days"
+
+[[field]]
+name = "interval"
+label = "Interval"
+type = "select"
+options = ["1m", "5m", "1h", "1d"]
+default = "1d"
+env_out = "INTERVAL"
+persist_key = "interval"
+
+[[field]]
+name = "mode"
+label = "Mode"
+type = "select"
+options = ["backtest", "paper", "demo"]
+default = "backtest"
+env_out = "ARENAX_MODE"
+persist_key = "mode"
+
+[[field]]
+name = "compare"
+label = "Compare Mode"
+type = "checkbox"
+default = false
+env_out = "COMPARE_MODE"
+
+[[field]]
+name = "broker"
+label = "Broker"
+type = "select"
+options = ["arenax"]
+default = "arenax"
+env_out = "BROKER"
+
+[[field]]
+name = "params"
+label = "Strategy Params (JSON)"
+type = "text"
+placeholder = '{"ma":20, "threshold":0.05}'
+optional = true
+env_out = "PARAMS"
+persist_key = "params"
+
+[[field]]
+name = "show_params"
+label = "Show Parameters Only"
+type = "checkbox"
+default = false
+env_out = "SHOW_PARAMS"

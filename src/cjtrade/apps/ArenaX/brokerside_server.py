@@ -163,6 +163,9 @@ class ArenaX_BrokerSideServer:
                 # Current default, ArenaX use sinopac backend for price feed.
                 # print(f"internal_config: {internal_config}")
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                self.real.connect()   # must connect before creating backend so that
+                                      # _initialize_market_time() / _fetch_and_cache_range()
+                                      # can use the real broker instead of falling back to yfinance
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
             elif backend_str == "paper":
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
