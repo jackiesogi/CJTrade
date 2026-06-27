@@ -147,13 +147,13 @@ class BacktestReport:
             except ImportError:
                 pass   # quantstats optional; basic stats already printed
 
-        # Round-trip analysis
+        # Round-trip analysis (summary only; full table via print_round_trips())
         try:
             rts = self.result.compute_round_trips()
             if rts:
-                wins  = [rt for rt in rts if rt.pnl > 0]
+                wins   = [rt for rt in rts if rt.pnl > 0]
                 losses = [rt for rt in rts if rt.pnl <= 0]
-                avg_pnl = sum(rt.pnl for rt in rts) / len(rts)
+                avg_pnl  = sum(rt.pnl for rt in rts) / len(rts)
                 avg_hold = sum(rt.holding_days for rt in rts) / len(rts)
                 win_rate = len(wins) / len(rts) * 100
                 print(f"  Round trips  : {len(rts)}  (win {len(wins)} / loss {len(losses)},  win rate {win_rate:.1f}%)")
@@ -163,6 +163,45 @@ class BacktestReport:
             pass
 
         print("=" * 50)
+
+    def print_round_trips(self) -> None:
+        """Print every round-trip (entry→exit) in a compact table.
+
+        Uses the same FIFO matching as BacktestResult.compute_round_trips().
+        Format mirrors the full-simulation trade history for easy comparison.
+        """
+        try:
+            rts = self.result.compute_round_trips()
+        except Exception as e:
+            print(f"  (round-trip computation failed: {e})")
+            return
+
+        if not rts:
+            print("  No round trips found.")
+            return
+
+        wins   = [rt for rt in rts if rt.pnl > 0]
+        losses = [rt for rt in rts if rt.pnl <= 0]
+        total_pnl = sum(rt.pnl for rt in rts)
+
+        print()
+        print("=" * 80)
+        print(f"  Round-Trip History  ({len(rts)} trades,  "
+              f"win {len(wins)} / loss {len(losses)},  "
+              f"total PnL {total_pnl:+,.2f})")
+        print("=" * 80)
+        print(f"  {'#':>3}  {'Symbol':<8}  {'Entry Date':<12}  {'Entry $':>9}  "
+              f"{'Exit Date':<12}  {'Exit $':>9}  {'Qty':>6}  {'PnL':>10}  {'Days':>5}")
+        print("  " + "-" * 76)
+        for i, rt in enumerate(rts, 1):
+            icon = "🟢" if rt.pnl > 0 else "🔴"
+            entry_date = rt.entry_time[:10] if rt.entry_time else "?"
+            exit_date  = rt.exit_time[:10]  if rt.exit_time  else "?"
+            print(f"  {i:>3}  {rt.symbol:<8}  {entry_date:<12}  {rt.entry_price:>9.2f}  "
+                  f"{exit_date:<12}  {rt.exit_price:>9.2f}  {rt.quantity:>6}  "
+                  f"{rt.pnl:>+10.2f}  {rt.holding_days:>4}d  {icon}")
+        print("=" * 80)
+        print()
 
     def metrics(self) -> dict:
         """Return key metrics as a plain dict (suitable for logging/JSON)."""

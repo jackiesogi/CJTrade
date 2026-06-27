@@ -89,7 +89,10 @@ class FormEngine:
         """
         Scan ``sys.argv[1:]`` for any ``cli_arg`` flags registered in the schema.
 
-        Supports both ``--flag value`` and ``--flag=value`` forms.
+        Supports:
+          - ``--flag value``   (value-bearing flags)
+          - ``--flag=value``   (inline assignment)
+          - ``--flag``         (bare flag for checkbox fields → True)
         Returns a dict of ``{field_name: coerced_value}`` for every flag found.
         """
         argv = sys.argv[1:]
@@ -99,10 +102,21 @@ class FormEngine:
                 continue
             flag = f.cli_arg
             for i, arg in enumerate(argv):
-                if arg == flag and i + 1 < len(argv):
-                    raw = argv[i + 1]
-                elif arg.startswith(flag + "="):
+                if arg.startswith(flag + "="):
                     raw = arg[len(flag) + 1:]
+                elif arg == flag:
+                    # Bare flag with a following non-flag value?
+                    next_is_value = (
+                        i + 1 < len(argv) and not argv[i + 1].startswith("-")
+                    )
+                    if f.type == "checkbox":
+                        # --compare → True, no value needed
+                        overrides[f.name] = True
+                        break
+                    elif next_is_value:
+                        raw = argv[i + 1]
+                    else:
+                        continue
                 else:
                     continue
                 try:

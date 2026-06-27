@@ -8,6 +8,7 @@ placeholder = "1234"
 env_in = "CJSYS_WATCH_LIST"
 env_out = "CJSYS_WATCH_LIST"
 persist_key = "watch_list"
+cli_arg = "--watch-list"
 
 [[field]]
 name = "fund"
@@ -18,14 +19,17 @@ min = 1000
 step = 1000
 env_out = "INITIAL_FUND"
 persist_key = "fund"
+cli_arg = "--fund"
 
 [[field]]
 name = "start_date"
-label = "Start Date"
+label = "Start Date (YYYY-MM-DD, leave blank = random)"
 type = "text"
 placeholder = "YYYY-MM-DD (empty = random)"
 env_out = "START_DATE"
 optional = true
+persist_key = "start_date"
+cli_arg = "--start"
 
 [[field]]
 name = "days"
@@ -35,6 +39,7 @@ default = 365
 min = 1
 env_out = "DURATION_DAYS"
 persist_key = "days"
+cli_arg = "--days"
 
 [[field]]
 name = "interval"
@@ -44,6 +49,7 @@ options = ["1m", "5m", "1h", "1d"]
 default = "1d"
 env_out = "INTERVAL"
 persist_key = "interval"
+cli_arg = "--interval"
 
 [[field]]
 name = "mode"
@@ -53,6 +59,7 @@ options = ["backtest", "paper", "demo"]
 default = "backtest"
 env_out = "ARENAX_MODE"
 persist_key = "mode"
+cli_arg = "--mode"
 
 [[field]]
 name = "compare"
@@ -60,14 +67,7 @@ label = "Compare Mode"
 type = "checkbox"
 default = false
 env_out = "COMPARE_MODE"
-
-[[field]]
-name = "broker"
-label = "Broker"
-type = "select"
-options = ["arenax"]
-default = "arenax"
-env_out = "BROKER"
+cli_arg = "--compare"
 
 [[field]]
 name = "params"
@@ -77,10 +77,4 @@ placeholder = '{"ma":20, "threshold":0.05}'
 optional = true
 env_out = "PARAMS"
 persist_key = "params"
-
-[[field]]
-name = "show_params"
-label = "Show Parameters Only"
-type = "checkbox"
-default = false
-env_out = "SHOW_PARAMS"
+cli_arg = "--params"
