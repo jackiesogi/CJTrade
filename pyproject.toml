@@ -28,6 +28,7 @@ dependencies = [
     "pyreadline3; platform_system == 'Windows'",
     "openai>=2.26.0",
     "quantstats>=0.0.81",
+    "toml>=0.10.2",
 ]
 
 [project.scripts]
