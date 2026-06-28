@@ -1,6 +1,6 @@
 # Source code in `apps`
 
-To be editted.
+See [Here](./apps/README.md)
 
 # Source code in `pkgs`
 
@@ -21,8 +21,6 @@ See [here](./pkgs/brokers/README.md) for more info.
 
 
 ## `chart/`
-
-(Probably will renamed to `ui` in the future)
 
 Provide method to draw, render, save kbar (K線) chart.
 
@@ -52,10 +50,3 @@ Common data types for this whole project, for example
 - `Quote` (報價).
 
 and more.
-
-
-## `tests/`
-
-Generic test scripts for integration test.
-
-Note that broker-specific tests here need to be specified clearly by their names. Otherwise, just consider to put it under `brokers/{broker_name}/tests/` to avoid ambiguity.
