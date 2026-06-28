@@ -37,6 +37,7 @@ class FormField:
     name: str
     label: str
     type: str  # "text" | "number" | "select" | "checkbox"
+    sublabel: str | None = None              # for type="text" (used by some renderers)
 
     default: Any = None
     env_in: str | None = None            # env var read as default (input direction)
@@ -94,6 +95,7 @@ class FormSchema:
                 name=fd["name"],
                 label=fd["label"],
                 type=fd["type"],
+                sublabel=fd.get("sublabel"),
                 default=fd.get("default"),
                 env_in=fd.get("env_in"),
                 env_out=fd.get("env_out"),

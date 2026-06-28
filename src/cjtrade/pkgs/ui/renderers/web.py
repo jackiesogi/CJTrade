@@ -82,6 +82,17 @@ def _field_html(f: FormField) -> str:
   <select name="{name}" id="{name}" class="{input_cls}">{opts}</select>
 </div>"""
 
+    if f.type == "sublabel":
+        sublabel_html = (
+            f'<div class="text-sm text-slate-500 ml-1">'
+            f'{html.escape(f.sublabel or "")}'
+            f'</div>'
+        )
+        return f"""<div>
+      {label_html}
+      {sublabel_html}
+    </div>"""
+
     input_type = "number" if f.type == "number" else "text"
     val = html.escape(str(default)) if default is not None else ""
     placeholder = html.escape(f.placeholder or "")

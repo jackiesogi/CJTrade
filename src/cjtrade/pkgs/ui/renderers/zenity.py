@@ -48,6 +48,8 @@ class ZenityRenderer(FormRenderer):
                 return self._select(f, default)
             case "number":
                 return self._number(f, default)
+            case "sublabel":
+                return self._sublabel(f, default)
             case _:  # text
                 return self._text(f, default)
 
@@ -67,6 +69,15 @@ class ZenityRenderer(FormRenderer):
             sys.exit(0)
         val = result.stdout.strip()
         return val if val else default
+
+    # ------------------------------------------------------------------
+    def _sublabel(self, f: FormField, default: Any) -> str | None:
+        result = _zenity(
+            "--info",
+            f"--title={f.label}",
+            f"--text={f.sublabel}",
+        )
+        return True
 
     # ------------------------------------------------------------------
     def _number(self, f: FormField, default: Any) -> int | float | None:

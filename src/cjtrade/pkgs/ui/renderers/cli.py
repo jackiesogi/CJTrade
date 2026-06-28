@@ -119,6 +119,8 @@ class CLIRenderer(FormRenderer):
             return self._prompt_select(f, default)
         if f.type == "checkbox":
             return self._prompt_checkbox(f, default)
+        if f.type == "sublabel":
+            return self._prompt_sublabel(f, default)
         return self._prompt_text(f, default)
 
     # ------------------------------------------------------------------
@@ -184,6 +186,17 @@ class CLIRenderer(FormRenderer):
             if raw in ("n", "no", "false", "0"):
                 return False
             print(f"  {_DIM}  Please enter y or n.{_RESET}", file=sys.stderr)
+
+    # ------------------------------------------------------------------
+    # Use when you want to display some info without expecting user input.
+    def _prompt_sublabel(self, f: FormField, default: Any) -> Any:
+        while True:
+            try:
+                if f.sublabel:
+                    print(f"  {_DIM}{f.sublabel}{_RESET}", file=sys.stderr)
+                return default
+            except EOFError:
+                return default
 
     # ------------------------------------------------------------------
     def _prompt_text(self, f: FormField, default: Any) -> Any:
