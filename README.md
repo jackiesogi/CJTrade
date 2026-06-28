@@ -1,8 +1,11 @@
 # CJ Trade
 
+[TOC]
+
 ![CJTrade](./img/combined.png)
 
-## Introduction
+## 1. Introduction
+:warning: Note that this is a python-based project, theoretically they (SDK and apps) can run on different platform. However, in current project status, the scripts and apps are still primarily designed for unix-based (Linux / macOS) system. You might have to do some hacking in order to let it run on Windows stably. 
 
 CJ Trade is a trading system development framework for `TWSE`.
 You can write your trading strategy using the CJTrade API and integrate it with any supported securities broker (證券商).
@@ -62,10 +65,7 @@ Paper trading (模擬交易) and backtesting (回測) environment for strategy t
 
 </details>
 
-
-## Run CJTrade Interactive Shell
-The CJTrade interactive shell (`cjtrade_shell`), is built mainly for users to explore CJTrade API functionalities.
-As for automatic smart trading system, refer to `cjtrade_system` on the next section ("Run CJTrade System").
+## 2. Clone the project and start your quant journey
 
 To run interactive shell, please install `uv` on your os first.
 [https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
@@ -76,14 +76,17 @@ cd CJTrade
 uv python install 3.12
 uv venv --python 3.12
 uv sync
-
 source .venv/bin/activate # For Linux / macOS
-.\.venv\Scripts\activate  # For Windows
-
 mkdir data
 ```
 
-### Play around using ArenaX broker (Built-in simulation environment)
+
+### Run CJTrade Interactive Shell
+The CJTrade interactive shell (`cjtrade_shell`), is built mainly for users to explore CJTrade API functionalities.
+As for automatic smart trading system, refer to `cjtrade_system` on the next section ("Run CJTrade System").
+
+
+#### Play around using ArenaX broker (Built-in simulation environment)
 
 ```sh
 # For those who don't have a securities account but still want to try it out,
@@ -91,9 +94,6 @@ mkdir data
 
 # generate simulation environment config template (Linux)
 bash scripts/gen_config.sh arenax
-
-# generate simulation environment config template (Windows)
-.\scripts\gen_config.bat arenax
 
 # start the simulation backend ArenaX
 uv run arenaxd > /dev/null 2>&1 &
@@ -105,11 +105,11 @@ uv run cjtrade --broker=arenax
 uv run atest  # stands for 'A'renax 'TEST'
 ```
 
-### Sinopac users
+#### Sinopac users
 
 ```sh
 # Get your required api keys from https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4:
-bash scripts/gen_config.sh sinopac # or .\scripts\gen_config.bat sinopac on Windows
+bash scripts/gen_config.sh sinopac
 echo "# -------- Overwritten part --------" >> sinopac_system.cjconf
 echo "API_KEY=${YOUR_SINOPAC_API_KEY}" >> sinopac_system.cjconf
 echo "SECRET_KEY=${YOUR_SINOPAC_SECRET_KEY}" >> sinopac_system.cjconf
@@ -123,7 +123,7 @@ uv run cjtrade --broker=sinopac
 uv run test --broker=sinopac
 ```
 
-## Run CJTrade System
+### Run CJTrade System
 CJTrade System is an automatic smart trading system, it continuously monitor your positions and stock price in real time,
 uses Bollinger Bands (布林通道) strategy to automatically place order for you.
 
@@ -138,7 +138,7 @@ export CJSYS_WATCH_LIST=0050,2330,2357,2454,3443,3231  # your price watch list
 uv run system --broker=arenax --mode=demo
 ```
 
-## Backtesting
+### Backtesting
 We currently provide two ways for backtest your trading strategy: `oneshot` and `full_sim`.
 
 - `full_sim`: It is basically CJTrade System (in the previous section), it will replay historical price data in high speed (e.g. 30,000x), and do real time price monitoring and analyzing.
@@ -168,7 +168,7 @@ After the backtest is finish, it will generate a insightful report for evaluatin
 
 ![backtest-result](./img/quantstats.png)
 
-## Test
+### Test
 1. Run basic tests: all command in cjtrade shell
 ```sh
 uv run test --broker=sinopac --group=all
@@ -184,7 +184,7 @@ bash tests/run_broker_stability_tests.sh --broker=arenax
 uv run pytest tests/unit
 ```
 
-## Start develop your trading strategy using CJTrade API
+## 3. Start develop your trading strategy using CJTrade API
 
 :warning: The API is not stable now!
 
