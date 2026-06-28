@@ -85,15 +85,10 @@ class FormSchema:
     title: str
     fields: list[FormField]
 
-    # ------------------------------------------------------------------
     @classmethod
-    def load(cls, path: str | Path) -> "FormSchema":
-        """Parse a TOML file into a FormSchema."""
-        path = Path(path)
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh)
+    def from_dict(cls, data: dict[str, Any]) -> "FormSchema":
+        title = data.get("title", "Form")
 
-        title = data.get("title", path.stem)
         fields = [
             FormField(
                 name=fd["name"],
@@ -112,7 +107,25 @@ class FormSchema:
             )
             for fd in data.get("field", [])
         ]
+
         return cls(title=title, fields=fields)
+
+    @classmethod
+    def loads(cls, toml_str: str) -> "FormSchema":
+        return cls.from_dict(tomllib.loads(toml_str))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "FormSchema":
+        path = Path(path)
+        with open(path, "rb") as fh:
+            data = tomllib.load(fh)
+
+        schema = cls.from_dict(data)
+
+        if "title" not in data:
+            schema.title = path.stem
+
+        return schema
 
     # ------------------------------------------------------------------
     def defaults(self) -> dict[str, Any]:

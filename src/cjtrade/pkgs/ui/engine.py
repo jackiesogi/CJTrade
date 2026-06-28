@@ -46,14 +46,27 @@ class FormEngine:
 
     def __init__(
         self,
-        schema_path: str | Path,
+        schema_path: str | Path | None = None,
+        toml_str: str | None = None,
         renderer: str | FormRenderer = "auto",
         web_port: int = 9876,
     ) -> None:
-        self.schema = FormSchema.load(schema_path)
+       # 必須提供其中一個，而且只能提供一個
+        if (schema_path is None) == (toml_str is None):
+            raise ValueError(
+                "Provide exactly one of schema_path or toml_str."
+            )
+
+        if schema_path is not None:
+            self.schema = FormSchema.load(schema_path)
+            state_name = Path(schema_path).stem
+        else:
+            self.schema = FormSchema.loads(toml_str)
+            state_name = "inline"
+
         self._renderer = self._resolve(renderer, web_port)
-        # Per-schema local state file (only used when fields have persist_key)
-        self._state = UserState(Path(schema_path).stem)
+        self._state = UserState(state_name)
+
         # Build persist_map: {field_name → persist_key} for fields that opt in
         self._persist_map: dict[str, str] = {
             f.name: f.persist_key
@@ -162,6 +175,7 @@ class FormEngine:
 
         if self._persist_map:
             self._state.save(merged, self._persist_map)
+        #print(merged, file=sys.stderr)
         return merged
 
     # ------------------------------------------------------------------
