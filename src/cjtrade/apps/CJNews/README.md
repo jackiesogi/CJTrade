@@ -1,6 +1,6 @@
 # CJNews
 
-A financial news search engine built using CJTrade SDK.
+>A financial news search engine built using CJTrade SDK.
 
 Only 72 lines of code are used.
 
@@ -12,8 +12,8 @@ Only 72 lines of code are used.
 
 - Search engine interface
 
-![search_interface](./img/search_interface.png)
+    ![search_interface](./img/search_interface.png)
 
 - Search result
 
-![search_result](./img/search_result.png)
+    ![search_result](./img/search_result.png)
