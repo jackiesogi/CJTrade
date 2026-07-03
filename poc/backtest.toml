@@ -65,19 +65,20 @@ cli_arg     = "--mode"
 options = ["backtest", "paper", "demo"]
 
 [[field]]
+name        = "strategy"
+label       = "Strategy"
+type        = "select"
+default     = "BollingerStrategy"
+env_out     = "STRATEGY"
+persist_key = "strategy"
+cli_arg     = "--strategy"
+[field.config]
+options = ["BollingerStrategy", "SupportResistanceStrategy", "DCA_Monthly", "DonchianBreakoutStrategy", "ADXAdaptiveStrategy", "BaselineStrategy"]
+
+[[field]]
 name = "compare"
 label = "Compare Mode"
 type = "checkbox"
 default = false
 env_out = "COMPARE_MODE"
 cli_arg = "--compare"
-
-[[field]]
-name = "params"
-label = "Strategy Params (JSON)"
-type = "text"
-placeholder = '{"ma":20, "threshold":0.05}'
-optional = true
-env_out = "PARAMS"
-persist_key = "params"
-cli_arg = "--params"

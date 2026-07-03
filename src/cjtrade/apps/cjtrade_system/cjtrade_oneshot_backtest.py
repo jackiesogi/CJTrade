@@ -358,6 +358,10 @@ def main():
     ap.add_argument("--interval",     choices=["1m", "5m", "1h", "1d"], default="1d",
                     help="Kbar interval (default: 1d)")
     ap.add_argument("--balance",      type=float, default=1_000_000.0, help="Initial balance (default: 1,000,000)")
+    ap.add_argument("--strategy",     default="BollingerStrategy",
+                    choices=["BollingerStrategy", "SupportResistanceStrategy", "DCA_Monthly",
+                             "DonchianBreakoutStrategy", "ADXAdaptiveStrategy", "BaselineStrategy"],
+                    help="Strategy to run (default: BollingerStrategy)")
     ap.add_argument("--params",       default=None,
                     help="Parameter overrides (format: 'key1:val1,key2:val2', e.g. 'bb__window_size:30,risk__max_position_pct:0.1')")
     ap.add_argument("--show-params",  action="store_true", help="Show parameter configuration and exit")
@@ -373,6 +377,16 @@ def main():
             user_overrides=args.params
         ))
         exit(0)
+
+    _STRATEGY_MAP = {
+        "BollingerStrategy":          BollingerStrategy,
+        "SupportResistanceStrategy":  SupportResistanceStrategy,
+        "DCA_Monthly":                DCA_Monthly,
+        "DonchianBreakoutStrategy":   DonchianBreakoutStrategy,
+        "ADXAdaptiveStrategy":        ADXAdaptiveStrategy,
+        "BaselineStrategy":           BaselineStrategy,
+    }
+    strategy_instance = _STRATEGY_MAP.get(args.strategy, BollingerStrategy)()
 
     if args.compare:
         run_compare_strategies(
@@ -399,6 +413,7 @@ def main():
             duration_days=args.duration,
             interval=args.interval,
             initial_balance=args.balance,
+            strategy=strategy_instance,
             params=args.params,
             open_browser=not args.no_browser,
         )

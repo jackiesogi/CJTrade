@@ -23,9 +23,15 @@ done
 # ------------------------
 eval "$(uv run python -c '
 from cjtrade.pkgs.ui import FormEngine
-e = FormEngine("poc/backtest.toml", renderer="cli")
+e = FormEngine("poc/backtest.toml", renderer="web")
 e.print_exports(e.run())
 ' "$@")"
+
+# Step 2: dynamically prompt for the selected strategy's parameters
+eval "$(uv run python poc/strategy_params.py \
+    --strategy "$STRATEGY" \
+    --interval "$INTERVAL" \
+    ${PARAMS:+--params "$PARAMS"})"
 
 # Export port so Python modules pick up the correct server port
 case "$ARENAX_MODE" in
@@ -107,7 +113,8 @@ CMD="uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
   --symbol $CJSYS_WATCH_LIST \
   --interval $INTERVAL \
   --balance $INITIAL_FUND \
-  --duration $DURATION_DAYS"
+  --duration $DURATION_DAYS \
+  --strategy $STRATEGY"
 
 if [ -n "$PARAMS" ]; then
     CMD="$CMD --params \"$PARAMS\""
