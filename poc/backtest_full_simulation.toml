@@ -1,33 +1,36 @@
 title = "CJTrade System 啟動設定"
 
 [[field]]
-name = "broker"
-label = "Broker"
-type = "select"
-options = ["arenax", "sinopac"]
+name    = "broker"
+label   = "Broker"
+type    = "select"
 default = "arenax"
 env_out = "BROKER"
 cli_arg = "--broker"
+[field.config]
+options = ["arenax", "sinopac"]
 
 [[field]]
-name = "mode"
-label = "Mode"
-type = "select"
-options = ["backtest", "paper", "demo"]
-default = "backtest"
-env_out = "ARENAX_MODE"
+name        = "mode"
+label       = "Mode"
+type        = "select"
+default     = "backtest"
+env_out     = "ARENAX_MODE"
 persist_key = "mode"
-cli_arg = "--mode"
+cli_arg     = "--mode"
+[field.config]
+options = ["backtest", "paper", "demo"]
 
 [[field]]
-name = "playback_speed"
-label = "Playback Speed (Ignore this if you choose paper mode)"
-type = "select"
-options = [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
-default = 1200.0
-env_out = "CJSYS_BACKTEST_PLAYBACK_SPEED"
+name        = "playback_speed"
+label       = "Playback Speed (Ignore this if you choose paper mode)"
+type        = "select"
+default     = 1200.0
+env_out     = "CJSYS_BACKTEST_PLAYBACK_SPEED"
 persist_key = "playback_speed"
-cli_arg = "--speed"
+cli_arg     = "--speed"
+[field.config]
+options = [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
 
 [[field]]
 name = "watch_list"
@@ -40,32 +43,33 @@ persist_key = "watch_list"
 cli_arg = "--watch-list"
 
 [[field]]
-name = "fund"
-label = "Initial Fund"
-type = "number"
-default = 500000
-min = 1000
-step = 1000
-env_out = "INITIAL_FUND"
+name        = "fund"
+label       = "Initial Fund"
+type        = "number"
+default     = 500000
+env_out     = "INITIAL_FUND"
 persist_key = "fund"
-cli_arg = "--fund"
+cli_arg     = "--fund"
+[field.config]
+min  = 1000
+step = 1000
 
 [[field]]
-name = "days"
-label = "Duration Days"
-type = "number"
-default = 365
-min = 1
-env_out = "CJSYS_BACKTEST_DURATION_DAYS"
+name        = "days"
+label       = "Duration Days"
+type        = "number"
+default     = 365
+env_out     = "CJSYS_BACKTEST_DURATION_DAYS"
 persist_key = "days"
-cli_arg = "--days"
+cli_arg     = "--days"
+[field.config]
+min = 1
 
 [[field]]
-name = "start_date"
-label = "Start Date (YYYY-MM-DD, leave blank = random)"
-type = "text"
-placeholder = "2024-01-01"
-optional = true
-env_out = "CJSYS_BACKTEST_START_DATE"
+name        = "start_date"
+label       = "Start Date (leave blank = random)"
+type        = "date"
+optional    = true
+env_out     = "CJSYS_BACKTEST_START_DATE"
 persist_key = "start_date"
-cli_arg = "--start-date"
+cli_arg     = "--start-date"

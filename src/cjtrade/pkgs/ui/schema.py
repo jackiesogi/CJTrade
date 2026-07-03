@@ -3,20 +3,25 @@ FormField dataclass and FormSchema TOML loader.
 
 TOML DSL spec
 -------------
-Each ``[[field]]`` block maps directly to a FormField:
+Each ``[[field]]`` block maps directly to a FormField.
+Type-specific options live in a ``[field.config]`` sub-table:
 
     [[field]]
-    name             = "fund"          # required – result dict key
-    label            = "Initial Fund"  # required – display label
-    type             = "number"        # text | number | select | checkbox
-    default          = 500000          # hardcoded default
-    env_in           = "MY_ENV_VAR"   # env var read as default (beats `default`)
-    env_out          = "INITIAL_FUND"  # env var the result is exported into
-    placeholder      = "500000"        # hint shown in prompt
-    options          = ["a","b","c"]   # select only
-    min              = 1000            # number only
-    step             = 1000            # number only (hint; not enforced by all renderers)
-    optional         = true            # if true, empty input is accepted
+    name        = "fund"          # required – result dict key
+    label       = "Initial Fund"  # required – display label
+    type        = "number"        # text | number | select | multiselect | checkbox | date | file
+    default     = 500000          # hardcoded default
+    env_in      = "MY_ENV_VAR"    # env var read as default (beats `default`)
+    env_out     = "INITIAL_FUND"  # env var the result is exported into
+    placeholder = "500000"        # hint shown in prompt
+    optional    = true            # if true, empty input is accepted
+    [field.config]
+    min      = 1000               # number: lower bound
+    max      = 9999               # number: upper bound
+    step     = 1000               # number: increment hint
+    options  = ["a","b","c"]      # select / multiselect: choices
+    filter   = "*.toml"           # file: extension filter hint
+    multiple = false              # file: allow selecting multiple files
 """
 from __future__ import annotations
 
@@ -43,39 +48,34 @@ class FormField:
     env_in: str | None = None            # env var read as default (input direction)
     env_out: str | None = None           # env var the result is exported into (output direction)
     placeholder: str | None = None
-    options: list[str] | None = None     # for type="select" (legacy flat; prefer [field.config])
-    min: float | None = None             # for type="number" (legacy flat; prefer [field.config])
-    max: float | None = None             # for type="number"
-    step: float | None = None            # for type="number" (legacy flat; prefer [field.config])
     optional: bool = False
     persist_key: str | None = None       # key used in the per-schema state file
     cli_arg: str | None = None           # CLI flag, e.g. "--watch-list" (skips prompt if provided)
 
-    # Type-specific options block — mirrors [field.config] in TOML.
-    # Config values take precedence over the legacy flat fields above.
+    # Type-specific options — set via [field.config] in TOML.
     config: dict = field(default_factory=dict)
 
     # ------------------------------------------------------------------
-    # Effective accessors (config block wins over legacy flat fields)
+    # Config accessors (typed convenience wrappers around self.config)
     # ------------------------------------------------------------------
     @property
     def eff_min(self) -> float | None:
         v = self.config.get("min")
-        return float(v) if v is not None else self.min
+        return float(v) if v is not None else None
 
     @property
     def eff_max(self) -> float | None:
         v = self.config.get("max")
-        return float(v) if v is not None else self.max
+        return float(v) if v is not None else None
 
     @property
     def eff_step(self) -> float | None:
         v = self.config.get("step")
-        return float(v) if v is not None else self.step
+        return float(v) if v is not None else None
 
     @property
     def eff_options(self) -> list | None:
-        return self.config.get("options", self.options)
+        return self.config.get("options")
 
     @property
     def eff_filter(self) -> str | None:
@@ -150,10 +150,6 @@ class FormSchema:
                 env_in=fd.get("env_in"),
                 env_out=fd.get("env_out"),
                 placeholder=fd.get("placeholder"),
-                options=fd.get("options"),
-                min=float(fd["min"]) if "min" in fd else None,
-                max=float(fd["max"]) if "max" in fd else None,
-                step=float(fd["step"]) if "step" in fd else None,
                 optional=fd.get("optional", False),
                 persist_key=fd.get("persist_key"),
                 cli_arg=fd.get("cli_arg"),

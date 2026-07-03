@@ -11,55 +11,58 @@ persist_key = "watch_list"
 cli_arg = "--watch-list"
 
 [[field]]
-name = "fund"
-label = "Initial Fund"
-type = "number"
-default = 500000
-min = 1000
-step = 1000
-env_out = "INITIAL_FUND"
+name        = "fund"
+label       = "Initial Fund"
+type        = "number"
+default     = 500000
+env_out     = "INITIAL_FUND"
 persist_key = "fund"
-cli_arg = "--fund"
+cli_arg     = "--fund"
+[field.config]
+min  = 1000
+step = 1000
 
 [[field]]
-name = "start_date"
-label = "Start Date (YYYY-MM-DD, leave blank = random)"
-type = "text"
-placeholder = "YYYY-MM-DD (empty = random)"
-env_out = "START_DATE"
-optional = true
+name        = "start_date"
+label       = "Start Date (leave blank = random)"
+type        = "date"
+optional    = true
+env_out     = "START_DATE"
 persist_key = "start_date"
-cli_arg = "--start"
+cli_arg     = "--start"
 
 [[field]]
-name = "days"
-label = "Duration Days"
-type = "number"
-default = 365
-min = 1
-env_out = "DURATION_DAYS"
+name        = "days"
+label       = "Duration Days"
+type        = "number"
+default     = 365
+env_out     = "DURATION_DAYS"
 persist_key = "days"
-cli_arg = "--days"
+cli_arg     = "--days"
+[field.config]
+min = 1
 
 [[field]]
-name = "interval"
-label = "Interval"
-type = "select"
-options = ["1m", "5m", "1h", "1d"]
-default = "1d"
-env_out = "INTERVAL"
+name        = "interval"
+label       = "Interval"
+type        = "select"
+default     = "1d"
+env_out     = "INTERVAL"
 persist_key = "interval"
-cli_arg = "--interval"
+cli_arg     = "--interval"
+[field.config]
+options = ["1m", "5m", "1h", "1d"]
 
 [[field]]
-name = "mode"
-label = "Mode"
-type = "select"
-options = ["backtest", "paper", "demo"]
-default = "backtest"
-env_out = "ARENAX_MODE"
+name        = "mode"
+label       = "Mode"
+type        = "select"
+default     = "backtest"
+env_out     = "ARENAX_MODE"
 persist_key = "mode"
-cli_arg = "--mode"
+cli_arg     = "--mode"
+[field.config]
+options = ["backtest", "paper", "demo"]
 
 [[field]]
 name = "compare"

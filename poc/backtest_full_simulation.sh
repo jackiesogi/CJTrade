@@ -6,11 +6,7 @@ set -e
 # Form: collect params + export env
 # (Zenity / Web / CLI — auto-selected; persist handled by FormEngine)
 # ------------------------
-eval "$(uv run python -c '
-from cjtrade.pkgs.ui import FormEngine
-e = FormEngine("poc/backtest_full_simulation.toml", renderer="web")
-e.print_exports(e.run())
-' "$@")"
+eval "$(uv run python -m cjtrade.pkgs.ui poc/backtest_full_simulation.toml --renderer=web "$@")"
 
 # ------------------------
 # Clean up
