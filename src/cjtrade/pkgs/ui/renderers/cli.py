@@ -41,30 +41,36 @@ def _rl_safe(prompt: str) -> str:
 
 
 def _prefill_input(prompt: str, prefill: str) -> str:
-    """Write prompt to stderr (so it's visible under eval $(...)), then read from stdin."""
-    # Write the prompt to stderr — it won't be captured by $()
+    """Write *prompt* and pre-fill the edit buffer with *prefill* via readline.
+
+    Two code paths:
+
+    * **stdout is a real tty** (direct execution): pass the prompt through
+      ``input()`` with readline's non-printing ANSI markers so readline
+      tracks the full line width.  Without this, readline treats the line as
+      starting at column 0 (empty prompt ""), meaning backspace can erase
+      the prompt text itself.
+    * **stdout is captured** (e.g. inside ``eval "$()"``): write the prompt
+      to stderr so it's visible on the terminal but not captured; call bare
+      ``input("")``.  CPython skips readline when stdout is not a tty, so
+      prefill has no effect and the plain cooked-mode input is used instead.
+    """
+    if sys.stdout.isatty():
+        # readline sees the full prompt → cursor tracking is correct →
+        # backspace stops at the prompt boundary.
+        rl_prompt = _rl_safe(prompt) if _HAS_READLINE else prompt
+        if _HAS_READLINE and prefill:
+            _rl.set_startup_hook(lambda: _rl.insert_text(str(prefill)))
+            try:
+                return input(rl_prompt)
+            finally:
+                _rl.set_startup_hook(None)
+        return input(rl_prompt)
+
+    # stdout is captured — keep the prompt on the terminal via stderr.
     sys.stderr.write(prompt)
     sys.stderr.flush()
-    if _HAS_READLINE and prefill:
-        _inserted = [False]
-
-        def _startup():
-            _rl.insert_text(str(prefill))
-
-        def _pre_input():
-            if not _inserted[0]:
-                _inserted[0] = True
-                _rl.insert_text(str(prefill))
-                _rl.redisplay()
-
-        _rl.set_startup_hook(_startup)
-        _rl.set_pre_input_hook(_pre_input)
-        try:
-            return input("")   # empty prompt: already written to stderr
-        finally:
-            _rl.set_startup_hook(None)
-            _rl.set_pre_input_hook(None)
-    return input("")   # empty prompt: already written to stderr
+    return input("")
 
 
 def _hr(char: str = "─", width: int = 56) -> str:
@@ -103,6 +109,10 @@ class CLIRenderer(FormRenderer):
 
     # ------------------------------------------------------------------
     def _prompt_field(self, f: FormField) -> Any:
+        # Display-only fields: just print content, no prompt infrastructure.
+        if f.type == "display":
+            return self._render_display(f)
+
         default = f.resolved_default()
 
         # Hard-reset terminal attributes before every field so _DIM from the
@@ -117,8 +127,6 @@ class CLIRenderer(FormRenderer):
         print(f"  {_BOLD}{f.label}{required_marker}{_RESET}{hint_str}", file=sys.stderr)
 
         # ── dispatch ──────────────────────────────────────────────────
-        if f.type == "display":
-            return self._render_display(f)
         if f.type == "select":
             return self._prompt_select(f, default)
         if f.type == "multiselect":
