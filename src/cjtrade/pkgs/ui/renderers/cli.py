@@ -117,21 +117,31 @@ class CLIRenderer(FormRenderer):
         # ── dispatch ──────────────────────────────────────────────────
         if f.type == "select":
             return self._prompt_select(f, default)
+        if f.type == "multiselect":
+            return self._prompt_multiselect(f, default)
         if f.type == "checkbox":
             return self._prompt_checkbox(f, default)
+        if f.type == "date":
+            return self._prompt_date(f, default)
         if f.type == "sublabel":
             return self._prompt_sublabel(f, default)
-        return self._prompt_text(f, default)
+        return self._prompt_text(f, default)  # text | number | file
 
     # ------------------------------------------------------------------
     @staticmethod
     def _build_hints(f: FormField, default: Any) -> str:
         parts: list[str] = []
         if f.type == "number":
-            if f.min is not None:
-                parts.append(f"min={f.min:g}")
-            if f.step is not None:
-                parts.append(f"step={f.step:g}")
+            if f.eff_min is not None:
+                parts.append(f"min={f.eff_min:g}")
+            if f.eff_max is not None:
+                parts.append(f"max={f.eff_max:g}")
+            if f.eff_step is not None:
+                parts.append(f"step={f.eff_step:g}")
+        if f.type == "date":
+            parts.append("YYYY-MM-DD")
+        if f.type == "file" and f.eff_filter:
+            parts.append(f.eff_filter)
         if f.placeholder and (default is None or str(default) != f.placeholder):
             parts.append(f.placeholder)
         if f.env_in:
@@ -140,7 +150,7 @@ class CLIRenderer(FormRenderer):
 
     # ------------------------------------------------------------------
     def _prompt_select(self, f: FormField, default: Any) -> Any:
-        options = f.options or []
+        options = f.eff_options or []
         default_str = str(default) if default is not None else ""
         default_idx: int | None = None
         for i, opt in enumerate(options, 1):
@@ -188,6 +198,72 @@ class CLIRenderer(FormRenderer):
             print(f"  {_DIM}  Please enter y or n.{_RESET}", file=sys.stderr)
 
     # ------------------------------------------------------------------
+    def _prompt_multiselect(self, f: FormField, default: Any) -> list[str]:
+        options = f.eff_options or []
+        selected = {str(o) for o in default} if isinstance(default, list) else set()
+        for i, opt in enumerate(options, 1):
+            marker = f" {_GREEN}←{_RESET}" if str(opt) in selected else ""
+            print(f"    {_DIM}{i}){_RESET} {opt}{marker}", file=sys.stderr)
+        print(f"  {_DIM}  Space or comma-separated numbers (e.g. 1 3){_RESET}", file=sys.stderr)
+        default_hint = ",".join(
+            str(i) for i, o in enumerate(options, 1) if str(o) in selected
+        )
+        hint = f"[{default_hint}]" if default_hint else ""
+        while True:
+            try:
+                sys.stderr.write(_rl_safe(f"  {_CYAN}▸ {hint} {_RESET}"))
+                sys.stderr.flush()
+                raw = input("").strip()
+            except EOFError:
+                raw = ""
+            if raw == "" and selected:
+                return list(selected)
+            if not raw:
+                if f.optional:
+                    return []
+                print(f"  {_DIM}  At least one selection required.{_RESET}", file=sys.stderr)
+                continue
+            tokens = [t for t in raw.replace(",", " ").split() if t]
+            result: list[str] = []
+            valid = True
+            for token in tokens:
+                try:
+                    idx = int(token)
+                    if 1 <= idx <= len(options):
+                        result.append(str(options[idx - 1]))
+                    else:
+                        print(f"  {_DIM}  {idx} is out of range 1–{len(options)}.{_RESET}", file=sys.stderr)
+                        valid = False
+                        break
+                except ValueError:
+                    if str(token) in [str(o) for o in options]:
+                        result.append(str(token))
+                    else:
+                        print(f"  {_DIM}  '{token}' is not a valid option.{_RESET}", file=sys.stderr)
+                        valid = False
+                        break
+            if valid and result:
+                return result
+
+    # ------------------------------------------------------------------
+    def _prompt_date(self, f: FormField, default: Any) -> str | None:
+        import re as _re
+        _DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        entry_text = str(default) if default is not None else ""
+        bracket = f"{_DIM}[{entry_text}]{_RESET}" if entry_text else ""
+        prompt = f"  {_CYAN}▸ {_RESET}{bracket}{_CYAN}: {_RESET}"
+        while True:
+            try:
+                raw = _prefill_input(prompt, entry_text).strip()
+            except EOFError:
+                raw = entry_text
+            if not raw:
+                return default
+            if _DATE_RE.match(raw):
+                return raw
+            print(f"  {_RED}  ✗ Expected YYYY-MM-DD (e.g. 2026-01-15).{_RESET}", file=sys.stderr)
+
+    # ------------------------------------------------------------------
     # Use when you want to display some info without expecting user input.
     def _prompt_sublabel(self, f: FormField, default: Any) -> Any:
         while True:
@@ -225,8 +301,11 @@ class CLIRenderer(FormRenderer):
                 except ValueError:
                     print(f"  {_DIM}  Please enter a valid number.{_RESET}", file=sys.stderr)
                     continue
-                if f.min is not None and val < f.min:
-                    print(f"  {_DIM}  Minimum value is {f.min:g}.{_RESET}", file=sys.stderr)
+                if f.eff_min is not None and val < f.eff_min:
+                    print(f"  {_DIM}  Minimum value is {f.eff_min:g}.{_RESET}", file=sys.stderr)
+                    continue
+                if f.eff_max is not None and val > f.eff_max:
+                    print(f"  {_DIM}  Maximum value is {f.eff_max:g}.{_RESET}", file=sys.stderr)
                     continue
                 return val
 

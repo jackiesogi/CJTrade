@@ -255,14 +255,19 @@ class FormEngine:
         """
         Print ``export VAR=value`` lines for all fields that have an ``env_out`` key.
         Pipe this into a shell ``eval`` to inject values into the calling process.
+        List values (multiselect) are serialised as comma-separated strings.
         """
         for f in self.schema.fields:
             if f.env_out and f.name in results:
                 val = results[f.name]
                 if val is None:
                     continue
-                # Shell-safe quoting for simple values
-                escaped = str(val).replace("'", "'\\''")
+                # Serialise lists (multiselect) as comma-separated strings
+                if isinstance(val, list):
+                    raw = ",".join(str(v) for v in val)
+                else:
+                    raw = str(val)
+                escaped = raw.replace("'", "'\\''")
                 print(f"export {f.env_out}='{escaped}'")
 
     # ------------------------------------------------------------------

@@ -46,8 +46,14 @@ class ZenityRenderer(FormRenderer):
                 return self._checkbox(f, default)
             case "select":
                 return self._select(f, default)
+            case "multiselect":
+                return self._multiselect(f, default)
             case "number":
                 return self._number(f, default)
+            case "date":
+                return self._date(f, default)
+            case "file":
+                return self._file(f, default)
             case "sublabel":
                 return self._sublabel(f, default)
             case _:  # text
@@ -83,10 +89,12 @@ class ZenityRenderer(FormRenderer):
     def _number(self, f: FormField, default: Any) -> int | float | None:
         entry_text = str(default) if default is not None else ""
         hints = []
-        if f.min is not None:
-            hints.append(f"min={f.min:g}")
-        if f.step is not None:
-            hints.append(f"step={f.step:g}")
+        if f.eff_min is not None:
+            hints.append(f"min={f.eff_min:g}")
+        if f.eff_max is not None:
+            hints.append(f"max={f.eff_max:g}")
+        if f.eff_step is not None:
+            hints.append(f"step={f.eff_step:g}")
         label_text = f.label + (f"\n({', '.join(hints)})" if hints else "")
 
         while True:
@@ -105,8 +113,11 @@ class ZenityRenderer(FormRenderer):
                 return default
             try:
                 val = int(raw) if "." not in raw else float(raw)
-                if f.min is not None and val < f.min:
-                    _zenity("--error", f"--text=Minimum value is {f.min:g}.")
+                if f.eff_min is not None and val < f.eff_min:
+                    _zenity("--error", f"--text=Minimum value is {f.eff_min:g}.")
+                    continue
+                if f.eff_max is not None and val > f.eff_max:
+                    _zenity("--error", f"--text=Maximum value is {f.eff_max:g}.")
                     continue
                 return val
             except ValueError:
@@ -114,7 +125,7 @@ class ZenityRenderer(FormRenderer):
 
     # ------------------------------------------------------------------
     def _select(self, f: FormField, default: Any) -> str:
-        options = f.options or []
+        options = f.eff_options or []
         default_str = str(default) if default is not None else ""
         result = _zenity(
             "--list",
@@ -127,6 +138,63 @@ class ZenityRenderer(FormRenderer):
             return default_str
         val = result.stdout.strip()
         return val if val in options else default_str
+
+    # ------------------------------------------------------------------
+    def _multiselect(self, f: FormField, default: Any) -> list[str]:
+        options = f.eff_options or []
+        selected = set(default) if isinstance(default, list) else set()
+        checklist_args: list[str] = []
+        for opt in options:
+            checklist_args.extend(["TRUE" if str(opt) in selected else "FALSE", str(opt)])
+        result = _zenity(
+            "--list",
+            "--checklist",
+            "--column=\u2713",
+            "--column=Option",
+            f"--title={f.label}",
+            f"--text=Choose {f.label}:",
+            "--separator=,",
+            *checklist_args,
+        )
+        if result.returncode != 0:
+            if f.optional:
+                return list(selected)
+            sys.exit(0)
+        raw = result.stdout.strip()
+        if not raw:
+            return list(selected)
+        return [x.strip() for x in raw.split(",") if x.strip()]
+
+    # ------------------------------------------------------------------
+    def _date(self, f: FormField, default: Any) -> str | None:
+        result = _zenity(
+            "--calendar",
+            f"--title={f.label}",
+            f"--text=Select {f.label}:",
+            "--date-format=%Y-%m-%d",
+        )
+        if result.returncode != 0:
+            if f.optional:
+                return str(default) if default is not None else None
+            sys.exit(0)
+        return result.stdout.strip()
+
+    # ------------------------------------------------------------------
+    def _file(self, f: FormField, default: Any) -> str | None:
+        args = ["--file-selection", f"--title={f.label}"]
+        if f.eff_filter:
+            ext = f.eff_filter
+            args.append(f"--file-filter={ext} | {ext}")
+        if f.eff_multiple:
+            args.extend(["--multiple", "--separator=,"])
+        if default:
+            args.append(f"--filename={default}")
+        result = _zenity(*args)
+        if result.returncode != 0:
+            if f.optional:
+                return str(default) if default is not None else None
+            sys.exit(0)
+        return result.stdout.strip()
 
     # ------------------------------------------------------------------
     def _checkbox(self, f: FormField, default: Any) -> bool:

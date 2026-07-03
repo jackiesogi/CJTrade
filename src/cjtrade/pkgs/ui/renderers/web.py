@@ -32,10 +32,16 @@ def _field_html(f: FormField) -> str:
     # hint line (min/step/placeholder)
     hints: list[str] = []
     if f.type == "number":
-        if f.min is not None:
-            hints.append(f"min {f.min:g}")
-        if f.step is not None:
-            hints.append(f"step {f.step:g}")
+        if f.eff_min is not None:
+            hints.append(f"min {f.eff_min:g}")
+        if f.eff_max is not None:
+            hints.append(f"max {f.eff_max:g}")
+        if f.eff_step is not None:
+            hints.append(f"step {f.eff_step:g}")
+    if f.type == "date":
+        hints.append("YYYY-MM-DD")
+    if f.type == "file" and f.eff_filter:
+        hints.append(html.escape(f.eff_filter))
     if f.placeholder and (default is None or str(default) != f.placeholder):
         hints.append(html.escape(f.placeholder))
     hint_html = (
@@ -75,11 +81,46 @@ def _field_html(f: FormField) -> str:
             f'<option value="{html.escape(str(o))}"'
             + (" selected" if str(o) == str(default) else "")
             + f">{html.escape(str(o))}</option>"
-            for o in (f.options or [])
+            for o in (f.eff_options or [])
         )
         return f"""<div>
   {label_html}
   <select name="{name}" id="{name}" class="{input_cls}">{opts}</select>
+</div>"""
+
+    if f.type == "multiselect":
+        options = f.eff_options or []
+        default_set = {str(o) for o in default} if isinstance(default, list) else set()
+        opts = "".join(
+            f'<option value="{html.escape(str(o))}"'
+            + (" selected" if str(o) in default_set else "")
+            + f">{html.escape(str(o))}</option>"
+            for o in options
+        )
+        size = min(max(len(options), 2), 7)
+        return f"""<div>
+  {label_html}
+  <select name="{name}" id="{name}" multiple size="{size}" class="{input_cls}">{opts}</select>
+  <p class="text-[10px] text-slate-400 mt-1 ml-1">Hold Ctrl / Cmd to select multiple.</p>
+</div>"""
+
+    if f.type == "date":
+        val = html.escape(str(default)) if default is not None else ""
+        return f"""<div>
+  {label_html}
+  <input type="date" name="{name}" id="{name}" value="{val}"
+    class="{input_cls}">
+</div>"""
+
+    if f.type == "file":
+        val = html.escape(str(default)) if default is not None else ""
+        flt = f.eff_filter or ""
+        ph = html.escape(f.placeholder or (f"{flt} file path" if flt else "File path"))
+        return f"""<div>
+  {label_html}
+  <input type="text" name="{name}" id="{name}"
+    value="{val}" placeholder="{ph}"
+    class="{input_cls}">
 </div>"""
 
     if f.type == "sublabel":
@@ -98,10 +139,12 @@ def _field_html(f: FormField) -> str:
     placeholder = html.escape(f.placeholder or "")
     extra = ""
     if f.type == "number":
-        if f.min is not None:
-            extra += f' min="{f.min:g}"'
-        if f.step is not None:
-            extra += f' step="{f.step:g}"'
+        if f.eff_min is not None:
+            extra += f' min="{f.eff_min:g}"'
+        if f.eff_max is not None:
+            extra += f' max="{f.eff_max:g}"'
+        if f.eff_step is not None:
+            extra += f' step="{f.eff_step:g}"'
     required = "" if f.optional else " required"
 
     return f"""<div>
@@ -179,6 +222,9 @@ class _Handler(BaseHTTPRequestHandler):
         for f in self.schema.fields:
             if f.type == "checkbox":
                 result[f.name] = f.name in raw
+            elif f.type == "multiselect":
+                vals = raw.get(f.name, [])
+                result[f.name] = vals if vals else (f.resolved_default() or [])
             else:
                 vals = raw.get(f.name, [None])
                 raw_val = vals[0] if vals else None
