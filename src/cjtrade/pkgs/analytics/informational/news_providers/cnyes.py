@@ -1,5 +1,6 @@
 # 鉅亨網 CNYES: No official API, so we do web scraping
 import asyncio
+import html as _html
 import random
 import re
 import time
@@ -115,11 +116,13 @@ class CnyesProvider(NewsInterface):
     def _clean_html_content(self, html_content: str) -> str:
         if not html_content:
             return ""
-        # Remove HTML tags, replace entities, clean up whitespace
-        clean_content = re.sub(r'<[^>]+>', '', html_content)
-        clean_content = clean_content.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-        clean_content = ' '.join(clean_content.split())
-        return clean_content
+        # Decode entities first (e.g. &lt;p&gt; → <p>, &quot; → ", &#39; → ')
+        # so that entity-encoded tags are normalised before the regex runs.
+        text = _html.unescape(html_content)
+        # Strip all HTML/XML tags
+        text = re.sub(r'<[^>]*>', '', text)
+        # Normalise whitespace
+        return ' '.join(text.split())
 
 
     def _convert_to_news_list(self, newslist_info, n: int = 10) -> List[News]:
@@ -146,9 +149,11 @@ class CnyesProvider(NewsInterface):
                 continue
 
             title = item.get('title', 'No Title')
-            # Use summary as content, fallback to cleaned HTML content
-            summary = item.get('summary', '')
-            content = summary or self._clean_html_content(item.get('content', ''))[:500]
+            # Prefer full article content; fall back to summary if content is absent.
+            content = (
+                self._clean_html_content(item.get('content', ''))
+                or self._clean_html_content(item.get('summary', ''))
+            )
 
             if title and content:  # Only add if both title and content exist
                 news_list.append(News(title=title, content=content))
@@ -211,7 +216,10 @@ class CnyesProvider(NewsInterface):
                     keyword.lower() in summary_lower or
                     keyword.lower() in keyword_str_lower):
 
-                    content = summary or self._clean_html_content(item.get('content', ''))[:500]
+                    content = (
+                        self._clean_html_content(item.get('content', ''))
+                        or self._clean_html_content(summary)
+                    )
                     filtered_news.append(News(title=title, content=content))
 
                     if len(filtered_news) >= n:
