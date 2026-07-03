@@ -37,6 +37,7 @@ from typing import List
 from typing import Optional
 
 from cjtrade.pkgs.models.backtest import BacktestResult
+from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
@@ -64,26 +65,7 @@ class _TaggedKbar:
         self.volume    = kbar.volume
         self.symbol    = symbol
 
-# Taiwan stock exchange commission constants
-_COMMISSION_RATE   = 0.001425   # 0.1425% per side
-_TRANSACTION_TAX   = 0.003      # 0.3% on sell only
-_MIN_COMMISSION    = 20.0       # TWD minimum commission
 
-
-# qty unit is SHARE
-def _calc_buy_cost(price: float, qty: int) -> float:
-    """Total cash needed to buy qty shares at price (including commission)."""
-    value = price * qty
-    commission = max(value * _COMMISSION_RATE, _MIN_COMMISSION)
-    return round(value + commission, 0)
-
-
-def _calc_sell_proceeds(price: float, qty: int) -> float:
-    """Net cash received from selling qty shares at price (after tax + commission)."""
-    value = price * qty
-    commission = max(value * _COMMISSION_RATE, _MIN_COMMISSION)
-    tax = value * _TRANSACTION_TAX
-    return round(value - commission - tax, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -93,9 +75,10 @@ def _calc_sell_proceeds(price: float, qty: int) -> float:
 class _SimAccount:
     """Minimal simulated brokerage account used by the engine."""
 
-    def __init__(self, initial_balance: float) -> None:
+    def __init__(self, initial_balance: float, cost_model: CostModel) -> None:
         self.balance = float(initial_balance)
         self.initial_balance = float(initial_balance)
+        self._cost_model = cost_model
         # {symbol: {'quantity': int, 'avg_cost': float}}
         self._positions: Dict[str, Dict] = {}
         self.fill_history: List[Dict] = []
@@ -139,7 +122,8 @@ class _SimAccount:
         # print(f"Attempting to BUY {qty} shares of {symbol} at {price} TWD/share")
         if qty <= 0:
             return None
-        cost = _calc_buy_cost(price, qty)
+        adj_price, notional, commission, tax = self._cost_model.buy_total(price, qty, symbol)
+        cost = round(notional + commission, 0)
         if cost > self.balance:
             log.debug(f"[Engine] BUY rejected – insufficient balance "
                       f"({self.balance:,.0f} < {cost:,.0f})")
@@ -150,14 +134,14 @@ class _SimAccount:
         pos = self._positions.setdefault(symbol, {"quantity": 0, "avg_cost": 0.0})
         # quantity is stored as SHARES
         total_shares = pos["quantity"] + qty
-        total_cost = pos["quantity"] * pos["avg_cost"] + qty * price
+        total_cost = pos["quantity"] * pos["avg_cost"] + qty * adj_price
         pos["quantity"] += qty
         pos["avg_cost"] = round(total_cost / total_shares, 2) if total_shares > 0 else 0.0
 
-        commission = round(max(price * qty * _COMMISSION_RATE, _MIN_COMMISSION), 2)
+        slippage_cost = round(abs(adj_price - price) * qty, 2)
         fill = Fill(symbol=symbol, action="BUY", quantity=qty,
-                    price=price, timestamp=timestamp, reason=reason,
-                    commission=commission)
+                    price=adj_price, timestamp=timestamp, reason=reason,
+                    commission=commission, tax=0.0, slippage_cost=slippage_cost)
         self._record_fill(fill)
         return fill
 
@@ -167,29 +151,32 @@ class _SimAccount:
         if not pos or pos["quantity"] < qty or qty <= 0:
             log.debug(f"[Engine] SELL rejected – no / insufficient position in {symbol}")
             return None
-        proceeds = _calc_sell_proceeds(price, qty)
+        adj_price, notional, commission, tax = self._cost_model.sell_total(price, qty, symbol)
+        proceeds = round(notional - commission - tax, 0)
         self.balance += proceeds
         pos["quantity"] -= qty
         if pos["quantity"] == 0:
             pos["avg_cost"] = 0.0
 
-        commission = round(max(price * qty * _COMMISSION_RATE, _MIN_COMMISSION), 2)
+        slippage_cost = round(abs(adj_price - price) * qty, 2)
         fill = Fill(symbol=symbol, action="SELL", quantity=qty,
-                    price=price, timestamp=timestamp, reason=reason,
-                    commission=commission)
+                    price=adj_price, timestamp=timestamp, reason=reason,
+                    commission=commission, tax=tax, slippage_cost=slippage_cost)
         # print("SIM account receive SELL order")
         self._record_fill(fill)
         return fill
 
     def _record_fill(self, fill: Fill) -> None:
         self.fill_history.append({
-            "time":       fill.timestamp.isoformat(),
-            "symbol":     fill.symbol,
-            "action":     fill.action,
-            "quantity":   fill.quantity,
-            "price":      fill.price,
-            "commission": fill.commission,
-            "reason":     fill.reason,
+            "time":          fill.timestamp.isoformat(),
+            "symbol":        fill.symbol,
+            "action":        fill.action,
+            "quantity":      fill.quantity,
+            "price":         fill.price,
+            "commission":    fill.commission,
+            "tax":           fill.tax,
+            "slippage_cost": fill.slippage_cost,
+            "reason":        fill.reason,
         })
 
 
@@ -223,6 +210,7 @@ class BacktestEngine:
         initial_balance: float = 1_000_000.0,
         params: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
+        cost_model: Optional[CostModel] = None,
     ) -> None:
         # Kbar doesn't carry a symbol field; we attach one via a thin wrapper
         # so the engine and strategy can always read bar.symbol.
@@ -239,7 +227,7 @@ class BacktestEngine:
         self.initial_balance = initial_balance
         self.params = params or {}
         self.session_id = session_id
-        self._account = _SimAccount(initial_balance)
+        self._account = _SimAccount(initial_balance, cost_model or CostModel())
 
     # ------------------------------------------------------------------
     # Main entry point

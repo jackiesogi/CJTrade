@@ -21,6 +21,21 @@ AX_REAL_ACCOUNT_BROKER_TYPE = sinopac  # Bind to launch mode
 # ===========================================================================================================
 
 
+# ============================================   Cost Model   ===============================================
+# Transaction costs applied to simulated fills.
+#
+# Commission (手續費): rate × discount, minimum NT$20
+#   AX_COMMISSION_DISCOUNT = 1.0    # 1.0 = no discount; 0.6 = typical online broker 六折
+#
+# Transaction tax (證交稅): applied on SELL only
+#   Stocks: 0.3% (hardcoded), ETFs (symbol starts with "0"): 0.1% (hardcoded)
+#
+# Slippage: simulates market impact by adjusting the fill price adversely
+#   AX_SLIPPAGE_MODEL = none        # none | fixed_pct | fixed_tick
+#   AX_SLIPPAGE_PCT   = 0.0005      # 0.05% per side (used only when model = fixed_pct)
+# ===========================================================================================================
+
+
 # =========================================   General Configuration   =======================================
 AX_HOST_ADDRESS = 127.0.0.1
 AX_HOST_PORT = 8803

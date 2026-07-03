@@ -26,6 +26,7 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             playback_speed=playback_speed,
             num_days_preload=num_days_preload,
             skip_data_preload=skip_data_preload,
+            **kwargs
         )
         self._backtest_start_date = backtest_start_date
         self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)

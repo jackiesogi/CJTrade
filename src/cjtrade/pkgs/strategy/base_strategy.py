@@ -148,6 +148,8 @@ class Fill:
     price: float
     timestamp: datetime
     commission: float = 0.0
+    tax: float = 0.0
+    slippage_cost: float = 0.0
     reason: str = ""
 
 

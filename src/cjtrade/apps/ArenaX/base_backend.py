@@ -21,6 +21,7 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_BALANCE
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_STOCK
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
@@ -81,6 +82,8 @@ class ArenaX_BackendBase:
         skip_data_preload: bool = False,
         initial_balance: float = 0.0,
         price_db_path: str = "data/arenax_price.db",
+        cost_model: Optional[CostModel] = None,
+        **kwargs,
     ) -> None:
         # print(f"num_days_preload: {num_days_preload}")
         self.account_state_default_file = state_file
@@ -94,6 +97,7 @@ class ArenaX_BackendBase:
         self._initial_balance_override = initial_balance  # stored for use in login()
         self.account_state = ArenaX_AccountState()
         self.price_db_path = price_db_path
+        self._cost_model = cost_model if cost_model is not None else CostModel()
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
     def login(self) -> bool:
@@ -760,7 +764,9 @@ class ArenaX_BackendBase:
         return data
 
     def _is_sufficient_account_balance(self, order: Order) -> bool:
-        required_amount = order.price * order.quantity
+        value = order.price * order.quantity
+        commission = self._cost_model.calc_commission(value)
+        required_amount = value + commission
         return self.account_state.balance >= required_amount
 
     def _is_sufficient_account_inventory(self, order: Order) -> bool:
@@ -834,16 +840,23 @@ class ArenaX_BackendBase:
                     self.account_state.all_order_status[order.id] = OrderStatus.FILLED
 
                     fill_time = self.market.start_date + timedelta(minutes=price_filled)
-                    qty_signed = order.quantity if order.action == OrderAction.BUY else -order.quantity
-                    self.account_state.balance -= (qty_signed * order.price)
+                    value = order.price * order.quantity
+                    commission = self._cost_model.calc_commission(value)
+                    tax = self._cost_model.calc_tax(value, order.action.value, order.product.symbol)
+                    if order.action == OrderAction.BUY:
+                        self.account_state.balance -= (value + commission)
+                    else:
+                        self.account_state.balance += (value - commission - tax)
 
                     self.account_state.fill_history.append({
                         "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
                         "order_id": order.id,
                         "symbol": order.product.symbol,
                         "action": order.action.value,
-                        "quantity": qty_signed,
+                        "quantity": order.quantity if order.action == OrderAction.BUY else -order.quantity,
                         "price": order.price,
+                        "commission": round(commission, 2),
+                        "tax": round(tax, 2),
                         "time": fill_time.isoformat(),
                         # Propagate session_id from the order so the client can
                         # filter fill_history by session after the backtest ends.

@@ -29,6 +29,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 			playback_speed=playback_speed,
 			num_days_preload=0,
 			skip_data_preload=True,
+			**kwargs
 		)
 		if real_account:
 			self.market = ArenaX_RealMarket(real_account=real_account)

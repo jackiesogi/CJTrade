@@ -129,6 +129,16 @@ class BacktestReport:
         print(f"  rPnL         : {realized_pnl:>+15,.2f}")
         print(f"  uPnL         : {unrealized_pnl:>+15,.2f}  ({unrealized_pnl_pct:+.2f}%)")
         print(f"  Total fills  : {len(r.fill_history)}")
+        total_commission = sum(f.get("commission", 0.0) for f in r.fill_history)
+        total_tax        = sum(f.get("tax", 0.0)        for f in r.fill_history)
+        total_slippage   = sum(f.get("slippage_cost", 0.0) for f in r.fill_history)
+        total_cost       = total_commission + total_tax + total_slippage
+        if total_cost > 0:
+            print(f"  Commission   : {total_commission:>15,.2f}")
+            print(f"  Tax (證交稅)  : {total_tax:>15,.2f}")
+            if total_slippage > 0:
+                print(f"  Slippage     : {total_slippage:>15,.2f}")
+            print(f"  Total cost   : {total_cost:>15,.2f}")
         print(f"  Equity pts   : {len(r.equity_curve)}")
 
         if not self.returns.empty:

@@ -25,6 +25,7 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 			playback_speed=playback_speed,
 			num_days_preload=num_days_preload,
 			skip_data_preload=skip_data_preload,
+			**kwargs
 		)
 		self.market = ArenaX_Market(real_account=None, price_db_path=self.price_db_path)
 		if hasattr(self.market, "set_playback_speed"):

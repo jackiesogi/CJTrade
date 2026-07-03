@@ -22,6 +22,7 @@ from cjtrade.apps.ArenaX.backtest_backend import ArenaX_Backend_Historical
 from cjtrade.apps.ArenaX.paper_backend import ArenaX_Backend_PaperTrade
 from cjtrade.apps.ArenaX.real_backend import ArenaX_Backend_RealTrade
 from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
+from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from dotenv import load_dotenv
@@ -104,7 +105,8 @@ def load_cjsys(backend_str: str = "demo"):
     load_dotenv(file_to_load, override=False)
     keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
-            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL']
+            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL',
+            'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -159,6 +161,11 @@ class ArenaX_BrokerSideServer:
             print(internal_config)
             print(external_config)
             # time.sleep(30)
+            cost_model = CostModel(
+                commission_discount=float(internal_config.get('commission_discount', 1.0)),
+                slippage_model=internal_config.get('slippage_model', 'none'),
+                slippage_pct=float(internal_config.get('slippage_pct', 0.0005)),
+            )
             if backend_str == "backtest":
                 # Current default, ArenaX use sinopac backend for price feed.
                 # print(f"internal_config: {internal_config}")
@@ -166,19 +173,19 @@ class ArenaX_BrokerSideServer:
                 self.real.connect()   # must connect before creating backend so that
                                       # _initialize_market_time() / _fetch_and_cache_range()
                                       # can use the real broker instead of falling back to yfinance
-                self.backend = ArenaX_Backend_Historical(real_account=self.real, **internal_config)
+                self.backend = ArenaX_Backend_Historical(real_account=self.real, cost_model=cost_model, **internal_config)
             elif backend_str == "paper":
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **internal_config)
+                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, cost_model=cost_model, **internal_config)
             elif backend_str == "demo":
                 self.real = None
-                self.backend = ArenaX_Backend_None(**internal_config)
+                self.backend = ArenaX_Backend_None(cost_model=cost_model, **internal_config)
             elif backend_str == "real":
                 # TODO: Add this environment variable also into the external config
                 if not os.environ.get("I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
                     raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
                 self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, **internal_config)
+                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, cost_model=cost_model, **internal_config)
             else:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
 
