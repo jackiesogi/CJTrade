@@ -27,23 +27,26 @@ if __name__ == "__main__":
         [[field]]
         name = "keyword"
         label = "搜尋關鍵字"
-        type = "text"
         default = "台積電"
+        type = "text"
 
         [[field]]
         name = "source"
         label = "新聞來源"
-        type = "select"
-        options = ["CNYES 鉅亨網", "NewsAPI", "財報狗"]
         default = "CNYES 鉅亨網"
+        type = "select"
+        [field.config]
+        options = ["CNYES 鉅亨網", "NewsAPI", "財報狗"]
 
         [[field]]
         name = "num"
         label = "結果筆數"
+        default = 5
         type = "number"
+        [field.config]
         min = 1
         step = 1
-        default = 5
+        max = 20
     """)
 
     form = FormEngine(toml_str=spec, renderer="web").run()
