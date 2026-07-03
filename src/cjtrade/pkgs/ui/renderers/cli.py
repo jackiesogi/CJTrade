@@ -94,7 +94,9 @@ class CLIRenderer(FormRenderer):
 
         results: dict[str, Any] = {}
         for f in schema.fields:
-            results[f.name] = self._prompt_field(f)
+            val = self._prompt_field(f)
+            if f.type != "display":
+                results[f.name] = val
 
         print(f"\n{_GREEN}✓ All fields collected.{_RESET}\n", file=sys.stderr)
         return results
@@ -115,6 +117,8 @@ class CLIRenderer(FormRenderer):
         print(f"  {_BOLD}{f.label}{required_marker}{_RESET}{hint_str}", file=sys.stderr)
 
         # ── dispatch ──────────────────────────────────────────────────
+        if f.type == "display":
+            return self._render_display(f)
         if f.type == "select":
             return self._prompt_select(f, default)
         if f.type == "multiselect":
@@ -123,8 +127,6 @@ class CLIRenderer(FormRenderer):
             return self._prompt_checkbox(f, default)
         if f.type == "date":
             return self._prompt_date(f, default)
-        if f.type == "sublabel":
-            return self._prompt_sublabel(f, default)
         return self._prompt_text(f, default)  # text | number | file
 
     # ------------------------------------------------------------------
@@ -265,14 +267,14 @@ class CLIRenderer(FormRenderer):
 
     # ------------------------------------------------------------------
     # Use when you want to display some info without expecting user input.
-    def _prompt_sublabel(self, f: FormField, default: Any) -> Any:
-        while True:
-            try:
-                if f.sublabel:
-                    print(f"  {_DIM}{f.sublabel}{_RESET}", file=sys.stderr)
-                return default
-            except EOFError:
-                return default
+    def _render_display(self, f: FormField) -> None:
+        heading = f.config.get("heading", f.label)
+        body = f.config.get("body", "")
+        if heading:
+            print(f"  {_BOLD}{heading}{_RESET}", file=sys.stderr)
+        if body:
+            print(f"  {_DIM}{body}{_RESET}", file=sys.stderr)
+        print(file=sys.stderr)
 
     # ------------------------------------------------------------------
     def _prompt_text(self, f: FormField, default: Any) -> Any:

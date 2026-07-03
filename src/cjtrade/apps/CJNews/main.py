@@ -10,13 +10,13 @@ def generate_news_search_form(news_list):
         "title": "CJNews search result",
         "field": [
             {
-                "name": f"result_{i}",
-                "label": news.title,
-                "type": "sublabel",
-                "optional": True,
-                "sublabel": news.content,
+                "type": "display",
+                "config": {
+                    "heading": news.title,
+                    "body": news.content,
+                },
             }
-            for i, news in enumerate(news_list)
+            for news in news_list
         ],
     })
 

@@ -34,7 +34,8 @@ class ZenityRenderer(FormRenderer):
         results: dict[str, Any] = {}
         for f in schema.fields:
             value = self._render_field(f)
-            results[f.name] = value
+            if f.type != "display":
+                results[f.name] = value
         return results
 
     # ------------------------------------------------------------------
@@ -54,8 +55,8 @@ class ZenityRenderer(FormRenderer):
                 return self._date(f, default)
             case "file":
                 return self._file(f, default)
-            case "sublabel":
-                return self._sublabel(f, default)
+            case "display":
+                return self._display(f)
             case _:  # text
                 return self._text(f, default)
 
@@ -77,13 +78,16 @@ class ZenityRenderer(FormRenderer):
         return val if val else default
 
     # ------------------------------------------------------------------
-    def _sublabel(self, f: FormField, default: Any) -> str | None:
-        result = _zenity(
+    def _display(self, f: FormField) -> None:
+        heading = f.config.get("heading", f.label)
+        body = f.config.get("body", "")
+        text = heading + (f"\n\n{body}" if body else "")
+        _zenity(
             "--info",
-            f"--title={f.label}",
-            f"--text={f.sublabel}",
+            f"--title={heading}",
+            f"--text={text}",
+            "--no-markup",
         )
-        return True
 
     # ------------------------------------------------------------------
     def _number(self, f: FormField, default: Any) -> int | float | None:

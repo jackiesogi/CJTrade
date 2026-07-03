@@ -7,9 +7,9 @@ Each ``[[field]]`` block maps directly to a FormField.
 Type-specific options live in a ``[field.config]`` sub-table:
 
     [[field]]
-    name        = "fund"          # required – result dict key
+    name        = "fund"          # required – result dict key (optional for type="display")
     label       = "Initial Fund"  # required – display label
-    type        = "number"        # text | number | select | multiselect | checkbox | date | file
+    type        = "number"        # text | number | select | multiselect | checkbox | date | file | display
     default     = 500000          # hardcoded default
     env_in      = "MY_ENV_VAR"    # env var read as default (beats `default`)
     env_out     = "INITIAL_FUND"  # env var the result is exported into
@@ -22,6 +22,8 @@ Type-specific options live in a ``[field.config]`` sub-table:
     options  = ["a","b","c"]      # select / multiselect: choices
     filter   = "*.toml"           # file: extension filter hint
     multiple = false              # file: allow selecting multiple files
+    heading  = "Title"            # display: heading text
+    body     = "Body paragraph"   # display: body / description text
 """
 from __future__ import annotations
 
@@ -41,8 +43,7 @@ from typing import Any
 class FormField:
     name: str
     label: str
-    type: str  # "text" | "number" | "select" | "multiselect" | "checkbox" | "date" | "file"
-    sublabel: str | None = None              # for type="text" (used by some renderers)
+    type: str  # "text" | "number" | "select" | "multiselect" | "checkbox" | "date" | "file" | "display"
 
     default: Any = None
     env_in: str | None = None            # env var read as default (input direction)
@@ -142,10 +143,9 @@ class FormSchema:
 
         fields = [
             FormField(
-                name=fd["name"],
-                label=fd["label"],
+                name=fd.get("name", f"_display_{i}"),
+                label=fd.get("label", ""),
                 type=fd["type"],
-                sublabel=fd.get("sublabel"),
                 default=fd.get("default"),
                 env_in=fd.get("env_in"),
                 env_out=fd.get("env_out"),
@@ -155,7 +155,7 @@ class FormSchema:
                 cli_arg=fd.get("cli_arg"),
                 config=fd.get("config", {}),
             )
-            for fd in data.get("field", [])
+            for i, fd in enumerate(data.get("field", []))
         ]
 
         return cls(title=title, fields=fields)

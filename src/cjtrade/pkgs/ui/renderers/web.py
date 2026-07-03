@@ -123,16 +123,17 @@ def _field_html(f: FormField) -> str:
     class="{input_cls}">
 </div>"""
 
-    if f.type == "sublabel":
-        sublabel_html = (
-            f'<div class="text-sm text-slate-500 ml-1">'
-            f'{html.escape(f.sublabel or "")}'
-            f'</div>'
+    if f.type == "display":
+        heading = html.escape(f.config.get("heading", f.label))
+        body = html.escape(f.config.get("body", ""))
+        body_html = (
+            f'<p class="text-sm text-slate-600 leading-relaxed mt-1">{body}</p>'
+            if body else ""
         )
-        return f"""<div>
-      {label_html}
-      {sublabel_html}
-    </div>"""
+        return f"""<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+  <p class="text-sm font-semibold text-slate-800">{heading}</p>
+  {body_html}
+</div>"""
 
     input_type = "number" if f.type == "number" else "text"
     val = html.escape(str(default)) if default is not None else ""
@@ -220,6 +221,8 @@ class _Handler(BaseHTTPRequestHandler):
 
         result: dict[str, Any] = {}
         for f in self.schema.fields:
+            if f.type == "display":
+                continue
             if f.type == "checkbox":
                 result[f.name] = f.name in raw
             elif f.type == "multiselect":

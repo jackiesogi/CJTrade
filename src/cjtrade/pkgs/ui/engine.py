@@ -173,6 +173,10 @@ class FormEngine:
         # Merge: CLI-provided values win; renderer fills the rest
         merged = {**result, **cli_overrides}
 
+        # Strip display-only fields — they carry no user input
+        display_names = {f.name for f in self.schema.fields if f.type == "display"}
+        merged = {k: v for k, v in merged.items() if k not in display_names}
+
         if self._persist_map:
             self._state.save(merged, self._persist_map)
         #print(merged, file=sys.stderr)
