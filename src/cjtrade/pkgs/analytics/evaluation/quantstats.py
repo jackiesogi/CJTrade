@@ -263,6 +263,17 @@ class BacktestReport:
             sid = (self.result.session_id or "result")[:8]
             path = f"backtest_{sid}.html"
 
+        # No fills → quantstats would operate on a flat returns series and emit
+        # a flood of numpy divide-by-zero / empty-slice warnings.  Write a
+        # minimal "no trades" HTML instead.
+        if not self.result.fill_history:
+            _write_no_trades_html(path, title or "Strategy Tearsheet", self.result)
+            abs_path = os.path.abspath(path)
+            print(f"[BacktestReport] HTML saved → {abs_path}  (no trades executed)")
+            if open_browser:
+                webbrowser.open(f"file://{abs_path}")
+            return abs_path
+
         # Use provided title or default
         report_title = title or "Strategy Tearsheet"
 
@@ -377,3 +388,49 @@ class BacktestReport:
         df = self.result.daily_summary()
         df.to_csv(path, index=False)
         print(f"[BacktestReport] CSV saved → {path}")
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _write_no_trades_html(path: str, title: str, result: "BacktestResult") -> None:
+    """Write a minimal HTML page when a backtest produced zero fills."""
+    sid = result.session_id or "N/A"
+    t0  = result.start_time or "N/A"
+    bal = f"{result.final_balance:,.2f}"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{title}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; display: flex; justify-content: center;
+            align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }}
+    .card {{ background: #fff; border-radius: 8px; padding: 40px 60px;
+             box-shadow: 0 2px 12px rgba(0,0,0,.12); text-align: center; max-width: 480px; }}
+    h1 {{ font-size: 1.4rem; color: #333; margin-bottom: 8px; }}
+    .badge {{ display: inline-block; background: #e0e0e0; color: #555;
+              border-radius: 20px; padding: 4px 16px; font-size: .9rem; margin-bottom: 24px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: .9rem; text-align: left; }}
+    td {{ padding: 6px 8px; border-bottom: 1px solid #eee; }}
+    td:first-child {{ color: #888; width: 50%; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>{title}</h1>
+    <div class="badge">No trades executed</div>
+    <table>
+      <tr><td>Session</td><td>{sid}</td></tr>
+      <tr><td>Start time</td><td>{t0}</td></tr>
+      <tr><td>Initial balance</td><td>{result.initial_balance:,.2f}</td></tr>
+      <tr><td>Final balance</td><td>{bal}</td></tr>
+      <tr><td>Equity points</td><td>{len(result.equity_curve)}</td></tr>
+    </table>
+  </div>
+</body>
+</html>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
