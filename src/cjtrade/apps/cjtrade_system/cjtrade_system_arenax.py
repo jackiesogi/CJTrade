@@ -260,9 +260,10 @@ class DCAStrategy(SignalStrategy):
     regardless of what is already held.
     """
 
-    def __init__(self, period_days: int = 30) -> None:
+    def __init__(self, period_days: int = 30, target_quantity: int = 100) -> None:
         self._period = timedelta(days=period_days)
         self._last_trigger: Dict[str, datetime] = {}
+        self.target_quantity = target_quantity
 
     def calculate(
         self,
@@ -285,6 +286,7 @@ class DCAStrategy(SignalStrategy):
                 timestamp=current_time,
                 reason=f"DCA: {self._period.days}-day period elapsed",
                 meta={'period_days': self._period.days, 'last_trigger_time': current_time.isoformat()},
+                target_quantity=self.target_quantity
             )
 
         days_since = (current_time - last).days
@@ -294,6 +296,7 @@ class DCAStrategy(SignalStrategy):
             timestamp=current_time,
             reason=f"DCA: waiting ({days_since}/{self._period.days} days)",
             meta={'period_days': self._period.days, 'last_trigger_time': last.isoformat()},
+            target_quantity=0
         )
 
 
@@ -384,8 +387,8 @@ class TradingSystem:
         self.client = client
         self.price_history: Dict[str, List[float]] = {}
         self.analysis_results: Dict[str, SignalResult] = {}
-        # self.strategy: SignalStrategy = DCAStrategy(period_days=30)
-        self.strategy: SignalStrategy = BollingerBandsStrategy(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
+        self.strategy: SignalStrategy = DCAStrategy(period_days=30, target_quantity=5)  # small qty for safety
+        # self.strategy: SignalStrategy = BollingerBandsStrategy(window=BB_WINDOW_SIZE, min_width_pct=BB_MIN_WIDTH_PCT)
         self.llm_pool: Optional[List] = None
         self.launch_mode = LAUNCH_MODE
 
@@ -461,7 +464,10 @@ class TradingSystem:
         """Current trading time for all modes.
         ArenaX_RealMarket.mock_current_time returns datetime.now(), so this call
         is valid for paper/real as well — no branching needed."""
-        return self.client.broker_api.get_system_time()['mock_current_time']
+        if 'arenax' in self.client.get_broker_name():
+            return self.client.broker_api.get_system_time()['mock_current_time']
+        else:
+            return self.client.broker_api.get_system_time()['real_current_time']
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""
@@ -1055,6 +1061,7 @@ class TradingSystem:
                 symbol = signal_event['symbol']
                 signal = signal_event['signal']
                 result = signal_event['result']
+                reason = result.reason
                 price = result.price
 
                 if self.is_backtest:
@@ -1087,7 +1094,6 @@ class TradingSystem:
 
                     if quantity > 0:
                         lower_band = result.meta.get('lower', 0)
-                        reason = f"price {price:.2f} <= lower band {lower_band:.2f}"
 
                         log.info(f"{mode_prefix} 🟢 BUY Signal: {symbol} {quantity} shares @ ${price:.2f}")
 
