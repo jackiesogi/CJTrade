@@ -495,7 +495,17 @@ class SinopacBrokerAPI(BrokerAPIBase):
         )
 
         temp = self.place_order(order)
-        return self.sync_state()
+        state = next(
+            (s for s in self.sync_state() if s.linked_order == order.id),
+            None
+        )
+
+        if state is not None:
+            temp.status = state.status
+        else:
+            print(f"Warning: Failed to sync order state for order {order.id}, using local result.")
+
+        return temp
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
@@ -515,7 +525,17 @@ class SinopacBrokerAPI(BrokerAPIBase):
             order_lot=OrderLot.IntraDayOdd if intraday_odd else OrderLot.Common
         )
         temp = self.place_order(order)
-        return self.sync_state()
+        state = next(
+            (s for s in self.sync_state() if s.linked_order == order.id),
+            None
+        )
+
+        if state is not None:
+            temp.status = state.status
+        else:
+            print(f"Warning: Failed to sync order state for order {order.id}, using local result.")
+
+        return temp
     ##### SIMPLE HIGH-LEVEL METHODS (END) #####
 
     ##### INTERNAL METHODS (START) #####
