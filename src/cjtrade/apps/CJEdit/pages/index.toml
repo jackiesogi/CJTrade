@@ -1,0 +1,35 @@
+title = "CJEditor - Your Quick Strategy Editor"
+
+[[field]]
+name = "app"
+label = "Choose your preferred editor:"
+default = "vscode"
+type = "select"
+[field.config]
+options = ["gedit", "nano", "vim", "vscode", "sublime"]
+
+[[field]]
+name = "broker"
+label = "Which broker will your strategy being deployed?"
+default = "sinopac"
+type = "select"
+optional = true
+[field.config]
+options = ["arenax", "sinopac", "cathay (Not Available)", "fubon (Not available)"]
+
+[[field]]
+name = "backend_selection"
+label = "ArenaX backend (Only available when arenax broker is used)"
+default = "--"
+type = "select"
+[field.config]
+options = ["--", "demo", "backtest", "paper"]
+
+[[field]]
+name = "project_type"
+label = "Project Type (Not available for now)"
+type = "select"
+default = "--"
+optional = true
+[field.config]
+options = ["--", "Pure strategy test (oneshot)", "Pure strategy test (bot)", "UI demonstration"]
