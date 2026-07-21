@@ -1,8 +1,10 @@
+:warning: The content on this page is deprecated!
+
 # Getting Started with CJTrade
 
 CJTrade is a trading framework for Taiwan securities. Write strategies in a simple, Pine Script-like syntax and run them against real or mock brokers.
 
-## Quick Start (Mock Broker)
+## Quick Start (ArenaX Broker)
 
 ### 1. Clone and Setup
 
@@ -16,7 +18,7 @@ source .venv/bin/activate  # Linux/macOS
 ### 2. Generate Config
 
 ```bash
-bash scripts/gen_config.sh mock
+bash scripts/gen_config.sh arenax
 ```
 
 ### 3. Write Your First Strategy

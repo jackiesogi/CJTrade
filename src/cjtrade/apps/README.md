@@ -8,3 +8,4 @@ Here are some built-in apps in CJTrade, they're all built using CJTrade SDK.
 | CJTrade System | [README](./cjtrade_system/README.md) |
 | ArenaX | [README](./ArenaX/README.md) |
 | CJNews | [README](./CJNews/README.md) |
+| CJEdit | [README](./CJEdit/README.md) |

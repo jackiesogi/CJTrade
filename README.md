@@ -5,7 +5,7 @@
 ![CJTrade](./img/combined.png)
 
 ## 1. Introduction
-:warning: Note that this is a python-based project, theoretically they (SDK and apps) can run on different platform. However, in current project status, the scripts and apps are still primarily designed for unix-based (Linux / macOS) system. You might have to do some hacking in order to let it run on Windows stably. 
+:warning: Note that this is a python-based project, theoretically they (SDK and apps) can run on different platform. However, in current project status, the scripts and apps are still primarily designed for unix-based (Linux / macOS) system. You might have to do some tweaking in order to let it run on Windows stably. 
 
 CJ Trade is a trading system development framework for `TWSE`.
 You can write your trading strategy using the CJTrade API and integrate it with any supported securities broker (證券商).
@@ -24,17 +24,7 @@ It comes with two main components: `apps` and `pkgs`.
 
 ### Available apps in [`apps`](https://github.com/jackiesogi/CJTrade/tree/master/src/cjtrade/apps)
 
->#### 1. CJTrade Interactive Shell
-
-A demonstration shell that showcases most of the capabilities provided by the CJTrade APIs.
-
->#### 2. CJTrade System
-
-A 24/7 service that monitors prices, calculates Bollinger Bands (布林通道), generates AI-driven financial advice and account summaries, and places orders automatically so you don't have to trade manually.
-
->#### 3. ArenaX
-
-A complete simulated execution environment using real historical price data. It supports order submission, time progression, and order matching, making it suitable for researchers who need to perform backtesting (回測) in a sandbox environment.
+See [here](./src/cjtrade/apps/README.md)
 
 <details>
 <summary><b>Supported Brokers</b></summary>
@@ -89,20 +79,24 @@ As for automatic smart trading system, refer to `cjtrade_system` on the next sec
 #### Play around using ArenaX broker (Built-in simulation environment)
 
 ```sh
-# For those who don't have a securities account but still want to try it out,
-# try adding --broker=mock to use the mock environment (no login required):
-
 # generate simulation environment config template (Linux)
 bash scripts/gen_config.sh arenax
 
 # start the simulation backend ArenaX
 uv run arenaxd > /dev/null 2>&1 &
 
+# record the background process id
+PID=$!
+sleep 15
+
 # then, connect to ArenaX broker
 uv run cjtrade --broker=arenax
 
 # For testing all the features in cjtrade shell (Linux)
 uv run atest  # stands for 'A'renax 'TEST'
+
+# kill the server
+kill ${PID}
 ```
 
 #### Sinopac users
@@ -171,7 +165,7 @@ After the backtest is finish, it will generate a insightful report for evaluatin
 ### Test
 1. Run basic tests: all command in cjtrade shell
 ```sh
-uv run test --broker=sinopac --group=all
+uv run atest --broker=sinopac --group=all
 ```
 
 2. Run full tests: test hotpaths (normal input / edge cases / stress tests)
