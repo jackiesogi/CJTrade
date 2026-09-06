@@ -376,6 +376,7 @@ class ArenaX_BrokerSideServer:
             quantity = payload.get("quantity")
             price_type = payload.get("price_type")
             order_type = payload.get("order_type")
+            created_at = payload.get("created_at")
             order_lot = payload.get("order_lot")
             opt_field = payload.get("opt_field")
             id = payload.get("id")   # <-- REALLY IMPORTANT bcuz we don't want to let factory method generate a new ID
@@ -401,6 +402,7 @@ class ArenaX_BrokerSideServer:
                     price_type=PriceType(price_type),
                     order_type=OrderType(order_type),
                     order_lot=order_lot_enum,
+                    created_at=datetime.fromisoformat(created_at),
                     id=id,
                     opt_field=opt_field,
                 )
