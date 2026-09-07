@@ -3,6 +3,10 @@ import sys
 import msgpack
 import zmq
 
+# Config
+CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
+CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
+
 def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
     # 假設這個機器人只關心 BTCUSDT
@@ -13,13 +17,13 @@ def main():
 
     # 1. 訂閱行情 - 精準訂閱特定商品 (Topic)
     sub_socket = context.socket(zmq.SUB)
-    sub_socket.connect("tcp://127.0.0.1:5555")
+    sub_socket.connect(CJ_ENGINE_SOCKET_SUB_PRICE)
     # 關鍵：只接收開頭為商品名稱的字節流
     sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
 
     # 2. 回報狀態
     push_socket = context.socket(zmq.PUSH)
-    push_socket.connect("tcp://127.0.0.1:5556")
+    push_socket.connect(CJ_ENGINE_SOCKET_PUSH_STATE)
 
     try:
         while True:
