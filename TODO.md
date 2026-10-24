@@ -44,3 +44,21 @@ Sinopac API 目前這樣封裝在獨立檔案作place_order測試的時候其實
 否則程式結束之後這個 id 就消失了（當然使用者還是可以利用 sinopac native api 來撈訂單資料
 但這不應該是CJTrade User自己需要去做的 這樣就違反了abstraction的哲理）
 應該要有一個方式在 place_order 之後不管使用者有沒有自行紀錄下來 電腦上的 local file 都要有紀錄一份 mapping？
+
+# ArenaXMiddleWare 每次請求都會開一條新的 HTTP connection
+`src/cjtrade/pkgs/brokers/arenax/arenax_middleware.py` 的 `_get()`/`_post()` 是用
+`requests.get(url, ...)` / `requests.post(url, ...)` 這種 module-level 便利函式打 API，
+沒有共用 `requests.Session()`。這兩個函式的實作本質上是
+`with sessions.Session() as session: return session.request(...)`，
+所以每呼叫一次就會建立一個全新的 Session、打完立刻關掉，底層 TCP connection 完全沒有
+keep-alive、沒有被 pool 重用（在 poc/trading_engine 測試 EventHub 的 `_snapshot` 時，
+從 log 可以看到 urllib3 對每一次 `/market/snapshot` 查詢都印出
+"Starting new HTTP connection"，證實了這點）。
+
+現在是打 `http://localhost:8802`（無 TLS、本機），成本還不明顯，但之後 symbol 數量變多、
+polling 頻率變高，或 server 換到真的網路環境時，這個開銷會被放大。
+
+修法：在 `ArenaXMiddleWare.__init__` 存一個 `self._session = requests.Session()`，
+`_get`/`_post` 改成呼叫 `self._session.get(...)/self._session.post(...)`，對外介面不變，
+純粹讓底層連線可以重用。這是共用的 broker 程式碼，會影響整個 app 用 ArenaX 的地方，
+不只是 poc/trading_engine，所以需要另外評估影響範圍再動手。

@@ -1,7 +1,14 @@
+import logging
 import sys
 
 import msgpack
 import zmq
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)-8s: %(message)s"
+)
+log = logging.getLogger("poc.bot_a")
 
 # Config
 CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
@@ -11,7 +18,7 @@ def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
     # 假設這個機器人只關心 BTCUSDT
     target_symbol = "BTCUSDT"
-    print(f"[{bot_id}] started! ({target_symbol})")
+    log.info(f"[{bot_id}] started! ({target_symbol})")
 
     context = zmq.Context()
 
@@ -35,11 +42,14 @@ def main():
             price = data["p"] # 建議欄位名稱縮寫 (p=price, v=volume) 減少 Tick 帶寬
 
             if price > 105.0:
-                report = {"b_id": bot_id, "type": "BUY", "p": price, "t": data["t"]}
-                push_socket.send(msgpack.packb(report))
+                # Order intent, not an already-executed report — master's
+                # ExecutionEngine is the one that actually fills/records it.
+                order = {"b_id": bot_id, "action": "BUY", "symbol": target_symbol,
+                         "qty": 1, "price": price, "reason": "price>105", "t": data["t"]}
+                push_socket.send(msgpack.packb(order))
 
     except KeyboardInterrupt:
-        print(f"[{bot_id}] exited without error")
+        log.info(f"[{bot_id}] exited without error")
 
 if __name__ == "__main__":
     main()
