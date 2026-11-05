@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
@@ -72,10 +73,19 @@ class ArenaX_AccountState:
         self.fill_history = self.fill_history or []
 
 
+# Starting cash when no snapshot is resumed and the caller passed no
+# initial_balance. Only a last resort: the launch form's "Initial Fund" is
+# plumbed through as initial_balance and wins over this.
+DEFAULT_INITIAL_BALANCE = 100_000.0
+
+
 class ArenaX_BackendBase:
     def __init__(
         self,
-        state_file: str = "mock_account_state.json",
+        state_file: Optional[str] = None,
+        state_dir: str = "data/account_states",
+        session_id: Optional[str] = None,
+        seed_from_live: bool = False,
         real_account: Optional[AccountClient] = None,
         playback_speed: float = 1.0,
         num_days_preload: int = 3,
@@ -85,8 +95,27 @@ class ArenaX_BackendBase:
         cost_model: Optional[CostModel] = None,
         **kwargs,
     ) -> None:
-        # print(f"num_days_preload: {num_days_preload}")
-        self.account_state_default_file = state_file
+        # ── Account state: snapshots in, a new snapshot out ───────────────────
+        # state_file is the snapshot to RESUME FROM, and None (the default) means
+        # a fresh account. It used to be a fixed path that login() read and
+        # logout() overwrote, which made every run start where the previous one
+        # ended -- so the same backtest produced different numbers each time,
+        # silently.
+        #
+        # Output always goes to a new uuid-named file and never touches
+        # state_in, so a snapshot you resumed from stays reusable and two runs
+        # from the same snapshot are comparable.
+        #
+        # Identical for backtest / paper / demo / real: which mode you are in
+        # does not change whether state should carry over.
+        self.state_in = state_file or None
+        self.session_id = session_id or uuid.uuid4().hex
+        self.state_dir = state_dir
+        self.state_out = os.path.join(state_dir, f"{self.session_id}.json")
+        # Reading the live account is a deliberate, non-reproducible choice, so
+        # it has to be asked for. It used to happen whenever the state file
+        # merely did not exist yet.
+        self.seed_from_live = seed_from_live
         self.real_account = real_account
         if self.real_account and not self.real_account.is_connected():
             self.real_account.connect()  # Early connection for fetching data
@@ -104,12 +133,17 @@ class ArenaX_BackendBase:
         try:
             self._connected = True
 
-            if self.real_account and not os.path.exists(self.account_state_default_file):
-                print('sync with real account')
+            if self.state_in:
+                print(f"[state] resuming from snapshot: {self.state_in}")
+                self._load_state_from(self.state_in)
+            elif self.seed_from_live and self.real_account:
+                print("[state] seeding from live account — this run is NOT reproducible")
                 self._sync_with_real_account()
             else:
-                print('sync with mock account file')
-                self._sync_with_mock_account_file()
+                print("[state] fresh account")
+                self._init_fresh_state()
+            print(f"[state] session {self.session_id} — "
+                  f"snapshot will be written to {self.state_out}")
 
             # Stamp initial_balance once per session (after state is loaded so we
             # can fall back to the loaded balance when no explicit override is given).
@@ -129,11 +163,53 @@ class ArenaX_BackendBase:
     def logout(self) -> None:
         if self.real_account:
             self.real_account.disconnect()
-        with open(self.account_state_default_file, 'w') as f:
-            data = self._serialize_state_to_json()
-            json.dump(data, f, indent=4)
+        self._write_state_snapshot()
         self._connected = False
         print("Simulation environment stopped")
+
+    def _write_state_snapshot(self) -> None:
+        """Persist the final state to this session's own file.
+
+        Never writes back to state_in: a snapshot is immutable once produced, so
+        resuming from it twice gives the same starting point both times. The
+        metadata records where this run came from, which gives the snapshots a
+        traceable lineage.
+        """
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            data = self._serialize_state_to_json()
+            data["_meta"] = {
+                "session_id": self.session_id,
+                "parent_session": self.state_in,
+                "created_at": datetime.now().isoformat(),
+                "backend": type(self).__name__,
+                "initial_balance": self.account_state.initial_balance,
+                "seeded_from_live": bool(self.seed_from_live and self.real_account),
+            }
+            with open(self.state_out, "w") as f:
+                json.dump(data, f, indent=4)
+            print(f"[state] snapshot written: {self.state_out}")
+        except Exception as exc:
+            print(f"[state] failed to write snapshot {self.state_out}: {exc}")
+
+    def _init_fresh_state(self) -> None:
+        """Start from an empty account. Touches no disk.
+
+        Uses the caller's initial_balance when given, so the number the user
+        typed into the launch form is the number the run actually starts with.
+        """
+        self.account_state.balance = (
+            self._initial_balance_override
+            if self._initial_balance_override > 0
+            else DEFAULT_INITIAL_BALANCE
+        )
+        self.account_state.positions = []
+        self.account_state.orders_placed = []
+        self.account_state.orders_committed = []
+        self.account_state.orders_filled = []
+        self.account_state.orders_cancelled = []
+        self.account_state.all_order_status = {}
+        self.account_state.fill_history = []
 
     def is_connected(self) -> bool:
         return self._connected
@@ -593,27 +669,25 @@ class ArenaX_BackendBase:
         except Exception as exc:
             print(f"Error syncing with real account: {exc}")
 
-    def _sync_with_mock_account_file(self) -> None:
-        """Load account state from JSON file and update prices from simulation."""
+    def _load_state_from(self, path: str) -> None:
+        """Resume from an existing snapshot. Read-only: never writes `path`.
+
+        Does not create the file when missing. A requested snapshot that is not
+        there is a caller mistake worth surfacing, not something to paper over
+        with defaults -- the run would otherwise start from a balance nobody
+        asked for and still look successful.
+        """
         import json
 
-        if not os.path.exists(self.account_state_default_file):
-            default_data = {
-                "balance": 100_000.0,
-                "positions": [],
-                "orders_placed": [],
-                "orders_committed": [],
-                "orders_filled": [],
-                "orders_cancelled": [],
-                "all_order_status": {},
-                "fill_history": [],
-            }
-            with open(self.account_state_default_file, "w") as f:
-                json.dump(default_data, f, indent=4)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"account state snapshot not found: {path}. "
+                f"Omit it to start from a fresh account."
+            )
 
-        with open(self.account_state_default_file, "r") as f:
+        with open(path, "r") as f:
             data = json.load(f)
-            self.account_state.balance = data.get("balance", 100_000.0)
+            self.account_state.balance = data.get("balance", DEFAULT_INITIAL_BALANCE)
             self.account_state.fill_history = data.get("fill_history", [])
 
             self._reconstruct_positions_from_history()

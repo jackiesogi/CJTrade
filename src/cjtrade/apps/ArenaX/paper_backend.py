@@ -18,7 +18,7 @@ from cjtrade.pkgs.models.quote import Snapshot
 class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 	def __init__(
 		self,
-		state_file: str = "paper_account_state.json",
+		state_file: Optional[str] = None,   # snapshot to resume from; None = fresh
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
 		**kwargs
@@ -72,8 +72,8 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		except Exception as exc:
 			print(f"[PaperTrade] Error syncing with real account: {exc}")
 
-	def _sync_with_mock_account_file(self) -> None:
-		super()._sync_with_mock_account_file()
+	def _load_state_from(self, path: str) -> None:
+		super()._load_state_from(path)
 		if self.account_state.positions:
 			self._update_position_prices()
 
