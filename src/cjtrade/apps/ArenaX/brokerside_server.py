@@ -265,8 +265,41 @@ class ArenaX_BrokerSideServer:
             if not anchor_time:
                 return jsonify({"ok": False, "error": "anchor_time is required"}), 400
             parsed_time = datetime.fromisoformat(anchor_time)
-            success = self.set_system_time(parsed_time)
+            # Forward both flags. They used to be dropped here (and commented out
+            # in the middleware payload), so a caller asking to set the start date
+            # without starting the clock or refetching data silently got both.
+            # Defaults stay True, so existing callers are unaffected.
+            success = self.set_system_time(
+                parsed_time,
+                auto_start_progress=bool(payload.get("auto_start_progress", True)),
+                auto_preload_data=bool(payload.get("auto_preload_data", True)),
+            )
             return jsonify({"ok": success})
+
+        @app.post("/control/set-market-time")
+        def control_set_market_time():
+            """Step the frozen clock to an exact timestamp. Repeatable.
+
+            Separate from /control/set-time: that one establishes the start of
+            the timeline (and snaps to 09:00), this one moves the current moment
+            within it and leaves the data cache alone.
+            """
+            payload = request.get_json(silent=True) or {}
+            raw = payload.get("t")
+            if not raw:
+                return jsonify({"ok": False, "error": "t is required"}), 400
+            try:
+                parsed = datetime.fromisoformat(raw)
+            except (TypeError, ValueError) as exc:
+                return jsonify({"ok": False, "error": f"bad t: {exc}"}), 400
+            if not hasattr(self.backend, "market") or \
+               not hasattr(self.backend.market, "set_market_time"):
+                return jsonify({"ok": False, "error": "steppable clock not supported"}), 400
+            try:
+                frozen = self.backend.market.set_market_time(parsed)
+                return jsonify({"ok": True, "mock_current_time": frozen.isoformat()}), 200
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/control/get-time")
         def control_get_time():
