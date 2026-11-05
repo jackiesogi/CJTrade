@@ -42,6 +42,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import msgpack
@@ -228,11 +229,39 @@ def _bar_timestamps(mw, symbols, start, end, interval) -> list[datetime]:
         # get_kbars returns list[dict] with a "timestamp" key -- raw JSON, not
         # Kbar objects (arenax_middleware.py:188).
         for row in mw.get_kbars(sym, start, end, interval):
-            raw = row.get("timestamp")
-            if raw is None:
-                continue
-            seen.add(raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw)))
+            ts = _parse_server_datetime(row.get("timestamp"))
+            if ts is not None:
+                seen.add(ts)
     return sorted(seen)
+
+
+def _parse_server_datetime(raw) -> datetime | None:
+    """Parse a datetime the ArenaX server put in a JSON body.
+
+    Two formats turn up, because the server does not serialise consistently:
+    hand-written handlers call .isoformat() (so "2025-09-01T09:01:00"), while
+    anything handed straight to flask.jsonify comes back as an HTTP date
+    ("Mon, 01 Sep 2025 09:01:00 GMT") -- that is Flask's default encoder for
+    datetime, and /market/kbars goes through it.
+
+    The "GMT" is a fiction: every datetime in this codebase is a naive
+    Asia/Taipei value, so the tzinfo parsedate_to_datetime attaches is dropped
+    rather than converted, which would shift every bar by 8 hours.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    text = str(raw)
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(text).replace(tzinfo=None)
+    except (TypeError, ValueError) as exc:
+        log.warning(f"[Clock] unparseable timestamp from server: {text!r} ({exc})")
+        return None
 
 
 class EventHub:
