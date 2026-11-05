@@ -92,11 +92,11 @@ start_res=$(post_json "${BASE_URL}/control/start" "{}")
 assert_json_eq "start.ok" "$(echo "${start_res}" | jq -r .ok)" "true"
 assert_json_eq "start.running" "$(echo "${start_res}" | jq -r .running)" "true"
 
-time_res=$(curl -s "${BASE_URL}/control/get-time")
+time_res=$(curl -s "${BASE_URL}/control/get-market-time")
 assert_json_eq "get-time.playback_speed" "$(echo "${time_res}" | jq -r .playback_speed)" "12000"
 
 anchor_time=$(date -u +"%Y-%m-%dT%H:%M:%S")
-set_time_res=$(post_json "${BASE_URL}/control/set-time" "{\"anchor_time\": \"${anchor_time}\", \"days_back\": 5}")
+set_time_res=$(post_json "${BASE_URL}/control/set-timeline-origin" "{\"anchor_time\": \"${anchor_time}\", \"days_back\": 5}")
 assert_json_eq "set-time.ok" "$(echo "${set_time_res}" | jq -r .ok)" "true"
 
 config_res=$(curl -s "${BASE_URL}/control/get-config")

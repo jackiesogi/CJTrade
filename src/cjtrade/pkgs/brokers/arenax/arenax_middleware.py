@@ -81,7 +81,7 @@ class ArenaXMiddleWare:
 
     def get_market_time(self, **kwargs) -> dict:
         """Raw clock dict from the server. See BrokerAPIBase.get_market_time."""
-        t = self._get("control/get-time")
+        t = self._get("control/get-market-time")
         if t:
             return t
         else:
@@ -117,20 +117,35 @@ class ArenaXMiddleWare:
     def resume_time_progress(self, **kwargs):
         return self._post("control/resume-time-progress", headers=kwargs.get("headers"))
 
-    def set_system_time(self, mock_init_time: str, real_init_time: str = None, auto_start_progress: bool = True, auto_preload_data: bool = True, **kwargs):
+    def set_timeline_origin(self, mock_init_time: str, real_init_time: str = None, auto_start_progress: bool = True, auto_preload_data: bool = True, **kwargs):
+        """Set where the simulated timeline BEGINS — not the current moment.
+
+        Snaps to 09:00 server-side and, unless both flags are turned off, also
+        starts the clock and clears + refetches the price cache. To move the
+        current moment within an existing timeline, use set_market_time().
+        """
         data = {
             "anchor_time": mock_init_time,
             # "real_init_time": real_init_time,
             "auto_start_progress": auto_start_progress,
             "auto_preload_data": auto_preload_data,
         }
-        return self._post("control/set-time", data, headers=kwargs.get("headers"))
+        return self._post("control/set-timeline-origin", data, headers=kwargs.get("headers"))
+
+    def set_system_time(self, *args, **kwargs):
+        """Deprecated alias for set_timeline_origin().
+
+        The old name read as the setter-partner of get_system_time(), which it
+        never was: that one reads the current moment, this one writes the
+        timeline's start.
+        """
+        return self.set_timeline_origin(*args, **kwargs)
 
     def set_market_time(self, t, **kwargs):
         """Step the server's frozen clock to `t`. Repeatable and idempotent.
 
-        Unlike set_system_time(), this neither snaps to 09:00 nor touches the
-        preloaded data, so it is safe to call once per replayed bar.
+        Unlike set_timeline_origin(), this neither snaps to 09:00 nor touches
+        the preloaded data, so it is safe to call once per replayed bar.
         """
         iso = t.isoformat() if hasattr(t, "isoformat") else str(t)
         return self._post("control/set-market-time", {"t": iso},
@@ -334,7 +349,7 @@ if __name__ == "__main__":
     dt = datetime(2021, 10, 1, 9, 30, tzinfo=ZoneInfo("Asia/Taipei"))
     iso_time = dt.isoformat()
     print(f"Testing is_market_open() with mock time {iso_time}...")
-    print(a.set_system_time(iso_time))
+    print(a.set_timeline_origin(iso_time))
     print(f"Market open status: {a.is_market_open()}")
 
     exit(0)

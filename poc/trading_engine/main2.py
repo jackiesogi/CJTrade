@@ -132,7 +132,7 @@ class ScaledClock:
     def for_server(cls, mw) -> "ScaledClock":
         t = mw.get_market_time()
         if not t:
-            raise RuntimeError("ArenaX /control/get-time returned nothing — is the server up?")
+            raise RuntimeError("ArenaX /control/get-market-time returned nothing — is the server up?")
         speed = float(t["playback_speed"])
         log.info(f"[Clock] scaled: server playback_speed={speed}x")
         return cls(speed)
@@ -208,7 +208,7 @@ class ReplayClock:
             raise ValueError(f"ArenaX returned no kbars for {symbols} in [{start}, {end})")
 
         # Set ArenaX server time.
-        mw.set_system_time(mock_init_time=timestamps[0].isoformat(),
+        mw.set_timeline_origin(mock_init_time=timestamps[0].isoformat(),
                            auto_start_progress=False, auto_preload_data=False)
 
         log.info(f"[Clock] replay: {len(timestamps)} bars, "
