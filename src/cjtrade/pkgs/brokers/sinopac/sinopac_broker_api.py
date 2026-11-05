@@ -42,6 +42,10 @@ class SinopacBrokerAPI(BrokerAPIBase):
         self.ca_password = config['ca_passwd']
         self.simulation = config.get('simulation', True)
         self._connected = False
+        # Baseline for get_system_time()'s *_init_time. A live broker has no
+        # "start of a simulated timeline", so the session start is the closest
+        # honest answer.
+        self._session_start = datetime.now()
 
         self._cached_closed_prices: dict = {}
 
@@ -461,12 +465,23 @@ class SinopacBrokerAPI(BrokerAPIBase):
         return market_open_time <= now <= market_close_time
 
     def get_system_time(self) -> dict:
-        # TODO: Delete unused fields.
+        """Live broker: mock time IS real time, at 1x, never paused.
+
+        The mock_* keys mirror the real ones rather than saying "not a mock
+        broker": callers that ask what time the market is at should get a
+        datetime from every broker, so they can stay broker-agnostic instead of
+        branching on the broker name. Reporting the live case as the 1x,
+        never-paused instance of the same contract is what lets a caller scale
+        its own sleeps uniformly.
+        """
+        now = datetime.now()
         return {
-            "mock_current_time": "not a mock broker",
-            "real_current_time": datetime.now(),
-            "mock_init_time": "not a mock broker",
-            "real_init_time": "not a mock broker",
+            "mock_current_time": now,
+            "real_current_time": now,
+            "mock_init_time": self._session_start,
+            "real_init_time": self._session_start,
+            "playback_speed": 1.0,
+            "paused": False,
         }
 
 

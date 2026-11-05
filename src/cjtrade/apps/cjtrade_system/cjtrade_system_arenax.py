@@ -407,7 +407,7 @@ class TradingSystem:
         self.playback_speed = 1.0
         if self.is_backtest:
             #self.playback_speed = self.client.broker_api.api.market.playback_speed
-            self.playback_speed = self.client.broker_api.middleware.get_config()['internal_config']['playback_speed']
+            self.playback_speed = self.client.playback_speed
             log.info(f"⚡ Playback speed: {self.playback_speed}x (response from server, not set by user)")
 
         self.initial_balance = self.client.get_balance()
@@ -462,12 +462,10 @@ class TradingSystem:
 
     def current_time(self) -> datetime:
         """Current trading time for all modes.
-        ArenaX_RealMarket.mock_current_time returns datetime.now(), so this call
-        is valid for paper/real as well — no branching needed."""
-        if 'arenax' in self.client.get_broker_name():
-            return self.client.broker_api.get_system_time()['mock_current_time']
-        else:
-            return self.client.broker_api.get_system_time()['real_current_time']
+        No branch on broker name: every adapter reports mock_current_time, and a
+        live broker reports its real clock there (SinopacBrokerAPI.get_system_time),
+        so the simulated case is just the scaled instance of one contract."""
+        return self.client.get_system_time()['mock_current_time']
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""
@@ -615,8 +613,11 @@ class TradingSystem:
         Call this immediately after the backtest loop exits, before client.disconnect().
         """
         try:
-            middleware = self.client.broker_api.middleware
-            raw = middleware.get_backtest_state(session_id=self.session_id)
+            ctrl = self.client.control_plane
+            if ctrl is None:
+                log.warning("Broker has no control plane – BacktestResult not built")
+                return None
+            raw = ctrl.get_backtest_state(session_id=self.session_id)
             if raw is None:
                 log.warning("get_backtest_state() returned None – BacktestResult not built")
                 return None
@@ -1001,7 +1002,7 @@ class TradingSystem:
             global RESUME_TIME_AFTER_CLIENT_READY
             if not RESUME_TIME_AFTER_CLIENT_READY and self.is_backtest:
                 try:
-                    self.client.broker_api.middleware.resume_time_progress()
+                    self.client.control_plane.resume_time_progress()
                     log.info("▶ Mock time resumed (client ready)")
                 except Exception as e:
                     log.warning(f"Could not resume time progress: {e}")
@@ -1296,8 +1297,8 @@ async def run_api_server(system: 'TradingSystem') -> None:
         try:
             # Use fill_history from broker server as ground truth.
             # Every entry here is already confirmed FILLED; no status ambiguity.
-            middleware = system.client.broker_api.middleware
-            raw = middleware.get_backtest_state(session_id=system.session_id)
+            ctrl = system.client.control_plane
+            raw = ctrl.get_backtest_state(session_id=system.session_id) if ctrl else None
             fills = raw.get("fill_history", []) if raw else []
 
             trades = []

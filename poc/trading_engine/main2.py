@@ -82,26 +82,11 @@ class RealtimeClock:
 
 
 class ScaledClock:
-    """ArenaX advances its own clock at `speed`x; we only pace our sampling.
-
-    This is main.py's behaviour with two defects fixed, both invisible to the
-    engine:
-
-    1. `speed` is read from the server (see for_server below), not configured
-       separately. In main.py the engine's `60 / playback_speed` and ArenaX's own
-       playback_speed are two numbers that have to be set equal by hand; when
-       they differ, the real sampling gap becomes `arenax_speed / engine_speed`
-       market seconds and every bar in between is simply never seen.
-
-    2. Sleeps until an absolute deadline rather than for a fixed duration.
-       Market time keeps moving while we fetch snapshots, so a plain
-       sleep(interval) makes each cycle take `interval + work` and overshoot by
-       `work * speed` market seconds, every cycle, forever.
-
-    Both only help while work < interval. Past that the machine cannot keep up
-    and bars really are skipped -- so it says so, instead of quietly thinning
-    the series. That warning is the point: it tells you whether this clock is
-    good enough for your speed, or whether you need ReplayClock.
+    """
+    ArenaX advances its own clock at `speed`x; we only pace our sampling.
+    #   How?
+    #     1. Ask ArenaX config: playback speed
+    #     2. Set scaled speed for this clock
     """
 
     finished = False
@@ -140,15 +125,13 @@ class ScaledClock:
 
 
 class ReplayClock:
-    """Logical time is `timestamps[cursor]`, and only sleep() moves the cursor.
-
-    Nothing else advances time -- not the wall clock, not the server -- so the
-    engine cannot be outrun and no bar can be skipped. A slow bot or a 10-second
-    LLM call costs real seconds and zero market seconds. Two runs over the same
-    data produce the same bars, in the same order, every time.
-
-    sleep() costs no real time when speed is None (backtest, flat out), or
-    `market_seconds / speed` when you want to watch it go by (demo).
+    """
+    Logical time is `timestamps[cursor]`, and only sleep() moves the cursor.
+    #   How?
+    #     1. Engine finish broadcasting prices at this ts.
+    #     2. Call ArenaX mw api.
+    #     3. ArenaX server time advances.
+    #   auto_preload_data=False is REQUIRED -- True clears historical_data
     """
 
     def __init__(self, mw, timestamps: list[datetime], speed: float | None = None):
@@ -167,13 +150,12 @@ class ReplayClock:
         return self.timestamps[self.i]
 
     async def sleep(self, market_seconds: float) -> None:
-        # Advance to the first real bar at or after now + market_seconds. Asking
-        # for 60 on 1m data moves exactly one bar; asking for 300 moves five.
+        # Advance to the first real bar at or after now + market_seconds.
         target = self.now + timedelta(seconds=market_seconds)
         while not self.finished and self.timestamps[self.i] < target:
             self.i += 1
-        # Blocking HTTP, so keep it off the event loop. The engine never sees
-        # this call -- stepping the server is the clock's private business.
+
+        # Blocking wait
         await asyncio.to_thread(self.mw.set_market_time, self.now)
         if self.speed is not None:
             await asyncio.sleep(market_seconds / self.speed)
@@ -192,14 +174,7 @@ class ReplayClock:
         if not timestamps:
             raise ValueError(f"ArenaX returned no kbars for {symbols} in [{start}, {end})")
 
-        # Align the server's start_date with our timeline origin before stepping.
-        # The fill path measures minute offsets from start_date
-        # (base_backend.py:890) and derives fill_time from it (line 842), so a
-        # mismatched start_date corrupts fills even while snapshot() stays right
-        # (it binary-searches instead). set_system_time is the correct tool here:
-        # setting the start date is literally its job.
-        #   auto_preload_data=False is REQUIRED -- True clears historical_data
-        #   and refetches it (brokerside_server.py:618).
+        # Set ArenaX server time.
         mw.set_system_time(mock_init_time=timestamps[0].isoformat(),
                            auto_start_progress=False, auto_preload_data=False)
 
@@ -226,10 +201,6 @@ def _bar_timestamps(mw, symbols, start, end, interval) -> list[datetime]:
             seen.add(raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw)))
     return sorted(seen)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  EventHub — same as main.py apart from the clock.
-# ══════════════════════════════════════════════════════════════════════════════
 
 class EventHub:
     def __init__(self, account_client: AccountClient, clock):
@@ -425,7 +396,10 @@ def build_clock(client: AccountClient, mode: str, symbols: list[str]):
     if mode == "realtime":
         return RealtimeClock()           # note: never touches `client`
 
-    mw = client.broker_api.middleware    # public attr, arenax_broker_api.py:49
+    mw = client.control_plane            # None for a live broker
+    if mw is None:
+        raise RuntimeError(f"broker {client.get_broker_name()!r} has no control "
+                           f"plane — mode={mode!r} needs a simulated exchange")
 
     if mode == "scaled":
         return ScaledClock.for_server(mw)
