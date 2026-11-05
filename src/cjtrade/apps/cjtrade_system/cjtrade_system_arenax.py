@@ -463,9 +463,9 @@ class TradingSystem:
     def current_time(self) -> datetime:
         """Current trading time for all modes.
         No branch on broker name: every adapter reports mock_current_time, and a
-        live broker reports its real clock there (SinopacBrokerAPI.get_system_time),
+        live broker reports its real clock there (SinopacBrokerAPI.get_market_time),
         so the simulated case is just the scaled instance of one contract."""
-        return self.client.get_system_time()['mock_current_time']
+        return self.client.get_market_time()['mock_current_time']
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""

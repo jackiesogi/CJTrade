@@ -196,7 +196,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             raise NotImplementedError("GTC orders are not yet supported in ArenaX")
 
         # Overwrite created_at (place ts is much more important than create ts)
-        order.created_at = self.get_system_time()["mock_current_time"]
+        order.created_at = self.get_market_time()["mock_current_time"]
 
         res = self.middleware.place_order(order)
 
@@ -209,7 +209,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def cancel_order(self, order_id: str) -> OrderResult:
         res = self.middleware.cancel_order(order_id=order_id)
 
-        update_at = self.get_system_time()["mock_current_time"]
+        update_at = self.get_market_time()["mock_current_time"]
 
         if res.status == OrderStatus.CANCELLED:
             update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED", updated_at=update_at)
@@ -229,7 +229,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             try:
                 refreshed = self.middleware.sync_state(order_id)
                 if refreshed:
-                    update_at = self.get_system_time()["mock_current_time"]
+                    update_at = self.get_market_time()["mock_current_time"]
                     update_order_status_to_db(conn=self.db, oid=order_id, status=refreshed.status.value, updated_at=update_at)
                     res.append(refreshed)
             except Exception as e:
@@ -250,23 +250,24 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return f"arenax ({self.port})"
 
 
-    def get_market_time(self) -> dict:
-        return self.get_system_time()
+    def get_system_time(self) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time()
 
 
     # 所有 datetime 在 JSON 邊界都用 .isoformat() 序列化
     # 接收方用 fromisoformat() 反序列化 任何地方不做 timezone 轉換!!
     # 所有 datetime 都是 隱性台北時間的 naive datetime
-    def get_system_time(self) -> dict:
+    def get_market_time(self) -> dict:
         # Server emits all datetime fields as ISO 8601 (naive Asia/Taipei).
         # Parse with fromisoformat(); no timezone conversion needed.
         #
         # playback_speed and paused are forwarded, not dropped: the server
-        # already reports both on /control/get-time, and a caller that wants to
-        # scale its own waiting needs the speed. Dropping them here is what
-        # forced callers to reach through to
+        # already reports both, and a caller that wants to scale its own
+        # waiting needs the speed. Dropping them here is what forced callers to
+        # reach through to
         # middleware.get_config()['internal_config']['playback_speed'] instead.
-        t = self.middleware.get_system_time()
+        t = self.middleware.get_market_time()
         return {
             "mock_current_time": datetime.fromisoformat(t['mock_current_time']),
             "real_current_time": datetime.fromisoformat(t['real_current_time']),

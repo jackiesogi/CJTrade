@@ -187,7 +187,7 @@ class ShowTimeCommand(CommandBase):
         self.params = []
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
-        res = client.get_system_time(headers={"X-Client": "admin-shell"})
+        res = client.get_market_time(headers={"X-Client": "admin-shell"})
         print(f"System time: {res}")
 
 

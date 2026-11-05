@@ -143,17 +143,18 @@ class AccountClient:
         return self.broker_api.is_market_open()
 
     def get_market_time(self) -> dict:
-        """Deprecated alias for get_system_time()."""
-        return self.get_system_time()
+        """What time it is on the market now. Same keys for every broker.
 
-    def get_system_time(self) -> dict:
-        """Broker-side clock. Same keys for every broker — see BrokerAPIBase.
-
-        Includes playback_speed and paused, so a caller can pace itself against
-        a simulated clock without knowing which broker it is talking to. A live
+        See BrokerAPIBase.get_market_time for the key list. Includes
+        playback_speed and paused, so a caller can pace itself against a
+        simulated clock without knowing which broker it is talking to; a live
         broker reports 1.0 / False.
         """
-        return self.broker_api.get_system_time()
+        return self.broker_api.get_market_time()
+
+    def get_system_time(self) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time()
 
     @property
     def playback_speed(self) -> float:
@@ -164,7 +165,7 @@ class AccountClient:
         authority on how fast its own clock runs, so asking it is the only way
         the two cannot disagree.
         """
-        return float(self.get_system_time().get("playback_speed", 1.0))
+        return float(self.get_market_time().get("playback_speed", 1.0))
 
     @property
     def control_plane(self):

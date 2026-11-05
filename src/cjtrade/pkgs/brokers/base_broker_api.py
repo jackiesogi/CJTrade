@@ -146,27 +146,46 @@ class BrokerAPIBase(ABC):
         pass
 
     def get_market_time(self) -> dict:
-        """Deprecated alias for get_system_time(). Prefer get_system_time()."""
-        return self.get_system_time()
+        """What time it is **on the market** right now. Every broker answers this.
 
-    def get_system_time(self) -> dict:
-        """Broker-side clock, as a dict. Every broker must answer this.
+        This is the canonical name. "Market time" is the question callers
+        actually have -- in a replay it is simulated time, live it is the wall
+        clock -- and it matches ArenaX_Market.get_market_time() on the server
+        side, so the same words mean the same thing at both ends.
 
         Required keys:
-            mock_current_time / real_current_time / mock_init_time / real_init_time
+            mock_current_time   market time now
+            real_current_time   the broker host's wall clock, for diagnostics
+            mock_init_time      where the simulated timeline starts
+            real_init_time      wall clock when that timeline was anchored
 
-        Simulated brokers must additionally report how their clock is running,
-        so callers can scale their own waiting without reaching into the
-        broker's internals:
+        Simulated brokers must also report how their clock is running, so a
+        caller can pace itself without reaching into broker internals:
             playback_speed  float  market seconds per real second (1.0 = live)
             paused          bool   True when the clock is frozen
 
-        A live broker reports playback_speed=1.0 and paused=False: its clock is
-        real time, which is the degenerate case of the same contract.
+        A live broker reports mock == real, playback_speed=1.0 and paused=False:
+        real time is the degenerate case of the same contract, so callers never
+        branch on the broker name.
+
+        Note there is deliberately no "system time" concept: the broker host's
+        clock is just the real_* fields above, and a caller wanting its own
+        machine's clock should call datetime.now() rather than ask the broker --
+        the two are different machines in general.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} does not implement get_system_time()"
+            f"{type(self).__name__} does not implement get_market_time()"
         )
+
+    def get_system_time(self) -> dict:
+        """Deprecated alias for get_market_time(). Prefer get_market_time().
+
+        Kept because "system time" was the original name here, but it reads as
+        the setter-partner of set_system_time() -- which writes the timeline
+        origin, not the current moment -- and that false pairing is what made
+        the two easy to confuse.
+        """
+        return self.get_market_time()
 
     @abstractmethod
     def get_broker_name(self) -> str:
