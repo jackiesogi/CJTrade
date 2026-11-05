@@ -181,7 +181,7 @@ class BrokerAPIBase(ABC):
         """Deprecated alias for get_market_time(). Prefer get_market_time().
 
         Kept because "system time" was the original name here, but it reads as
-        the setter-partner of set_system_time() -- which writes the timeline
+        the setter-partner of set_timeline_origin() -- which writes the timeline
         origin, not the current moment -- and that false pairing is what made
         the two easy to confuse.
         """

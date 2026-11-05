@@ -258,8 +258,15 @@ class ArenaX_BrokerSideServer:
         #   1. Only stop time progress (mock current time would stop at a specific point)
         #   2. Kill the backend (endpoint `/control/stop` do this)
         #   3. Stop the whole server (kill the process at OS-level, there will be a systemd service file for this in the future)
-        @app.post("/control/set-time")
-        def control_set_time():
+        @app.post("/control/set-timeline-origin")
+        @app.post("/control/set-time")          # deprecated name, kept for older clients
+        def control_set_timeline_origin():
+            """Set where the simulated timeline BEGINS (not the current moment).
+
+            Snaps to 09:00 and, unless told otherwise, also starts the clock and
+            refetches the data cache. To move the current moment instead, use
+            /control/set-market-time.
+            """
             payload = request.get_json(silent=True) or {}
             anchor_time = payload.get("anchor_time")
             if not anchor_time:
@@ -269,7 +276,7 @@ class ArenaX_BrokerSideServer:
             # in the middleware payload), so a caller asking to set the start date
             # without starting the clock or refetching data silently got both.
             # Defaults stay True, so existing callers are unaffected.
-            success = self.set_system_time(
+            success = self.set_timeline_origin(
                 parsed_time,
                 auto_start_progress=bool(payload.get("auto_start_progress", True)),
                 auto_preload_data=bool(payload.get("auto_preload_data", True)),
@@ -280,9 +287,9 @@ class ArenaX_BrokerSideServer:
         def control_set_market_time():
             """Step the frozen clock to an exact timestamp. Repeatable.
 
-            Separate from /control/set-time: that one establishes the start of
-            the timeline (and snaps to 09:00), this one moves the current moment
-            within it and leaves the data cache alone.
+            Separate from /control/set-timeline-origin: that one establishes
+            where the timeline starts (and snaps to 09:00), this one moves the
+            current moment within it and leaves the data cache alone.
             """
             payload = request.get_json(silent=True) or {}
             raw = payload.get("t")
@@ -301,8 +308,9 @@ class ArenaX_BrokerSideServer:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.get("/control/get-time")
-        def control_get_time():
+        @app.get("/control/get-market-time")
+        @app.get("/control/get-time")           # deprecated name, kept for older clients
+        def control_get_market_time():
             t = self.backend.market.get_market_time()
 
             if self._skip_non_trading_hours:
@@ -614,7 +622,7 @@ class ArenaX_BrokerSideServer:
         if self._http_thread:
             self._http_thread.join()
 
-    # NOTE: What if we call set_system_time when backend is not running? (haven't triggered backend.login())
+    # NOTE: What if we call set_timeline_origin() when backend is not running? (haven't triggered backend.login())
     #   ANS: The system time start to progress once the `ArenaX_Backend_Historical`
     #        calls `_initialize_market_time()` in its `__init__`.
     #        and the `ArenaX_Backend_Historical` instance is created when
@@ -624,7 +632,7 @@ class ArenaX_BrokerSideServer:
     #        whether account state is synced, and all the functions in `ArenaX_BackendBase`
     #        that required `_connected` flag set.
     #
-    # NOTE: What if set_system_time is called and the `auto_preload_data` is set when backend is not running?
+    # NOTE: What if set_timeline_origin() is called and the `auto_preload_data` is set when backend is not running?
     #   ANS: Because the price data preload process requires account info (e.g. positions),
     #        and the `real_account` is connected when the `ArenaX_BackendBase` is initialized,
     #        and then `ArenaX_Backend_Historical` passes the `real_account` to `ArenaX_Market`,
@@ -632,8 +640,7 @@ class ArenaX_BrokerSideServer:
     #        However, this is only for current behavior of `ArenaX_BackendBase`, so this is not
     #        guaranteed that setting `auto_preload_data` will always work as expected.
     #
-    # Only set system mock_init_time and real_init_time without side-effect
-    def set_system_time(
+    def set_timeline_origin(
         self,
         mock_init_time: datetime,
         real_init_time: Optional[datetime] = None,
@@ -657,12 +664,12 @@ class ArenaX_BrokerSideServer:
                 self._data_readiness = DataReadiness.ALL_SET
             return True
         except Exception as e:
-            print(f"Error in set_system_time: {e}")
+            print(f"Error in set_timeline_origin: {e}")
             return False
 
     # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
     # NOTE: What if in the future `start_backend()` will not be automatically called when `start_http()`,
-    #       and especially when `playback_speed` is really high, and then user call `set_system_time()`
+    #       and especially when `playback_speed` is really high, and then user call `set_timeline_origin()`
     #       with `auto_preload_data=True` but backend is not running, will the preloaded data still be
     #       available when backend is started? (Currently, when data is not enough, the `ArenaX_BackendBase`
     #       will circularly reuse the existing data, so on the surface it does not really matter, but from
