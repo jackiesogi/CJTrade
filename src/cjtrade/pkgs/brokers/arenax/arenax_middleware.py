@@ -116,11 +116,20 @@ class ArenaXMiddleWare:
         data = {
             "anchor_time": mock_init_time,
             # "real_init_time": real_init_time,
-            # "auto_start_progress": auto_start_progress,
-            # "auto_preload_data": auto_preload_data,
+            "auto_start_progress": auto_start_progress,
+            "auto_preload_data": auto_preload_data,
         }
         return self._post("control/set-time", data, headers=kwargs.get("headers"))
-        # return self._post("control/set-time", data, headers=kwargs.get("headers"))
+
+    def set_market_time(self, t, **kwargs):
+        """Step the server's frozen clock to `t`. Repeatable and idempotent.
+
+        Unlike set_system_time(), this neither snaps to 09:00 nor touches the
+        preloaded data, so it is safe to call once per replayed bar.
+        """
+        iso = t.isoformat() if hasattr(t, "isoformat") else str(t)
+        return self._post("control/set-market-time", {"t": iso},
+                          headers=kwargs.get("headers"))
 
     def get_price_from_exchange(self, symbol: str, **kwargs):
         # server exposes GET /control/get-price?symbol=<symbol>

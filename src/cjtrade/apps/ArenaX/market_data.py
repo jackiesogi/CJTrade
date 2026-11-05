@@ -182,6 +182,27 @@ class ArenaX_Market:
         self.paused = False
         return baseline
 
+    def set_market_time(self, t: datetime) -> datetime:
+        """Force logical time to `t` and keep it frozen.
+
+        Unlike pause_time_progress(), this is repeatable: calling it again with a
+        later `t` moves frozen time forward. pause_time_progress() returns the
+        existing paused_time untouched once self.paused is set, which makes it
+        useless as a stepping primitive.
+
+        Unlike set_historical_time_abs(), it does not snap to 09:00, so an
+        intraday timestamp survives.
+
+        Used by a replay driver that owns the timeline and advances it
+        explicitly instead of deriving it from the wall clock. get_market_time()
+        already returns paused_time while paused, so nothing else needs to know.
+
+        Returns the newly frozen mock time.
+        """
+        self.paused = True
+        self.paused_time = t
+        return t
+
     def adjust_to_market_hours(self, mock_current_time: datetime) -> datetime:
         """Adjust mock time to market hours (9:00-13:30).
 

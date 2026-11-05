@@ -97,7 +97,7 @@ FORM_SCHEMA = Path(__file__).resolve().parents[1] / "backtest_full_simulation.to
 # is a question about the market being simulated. This is a question about the
 # engine, and "replay" additionally needs a server that implements
 # set_market_time, so it cannot be derived from the backend mode alone.
-CLOCK = "scaled"             # "scaled" | "replay" | "realtime"
+CLOCK = "replay"             # "scaled" | "replay" | "realtime"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
