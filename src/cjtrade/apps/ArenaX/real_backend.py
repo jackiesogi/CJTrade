@@ -41,7 +41,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
 
     def __init__(
         self,
-        state_file: str = "real_account_state.json",   # kept for interface compat, not persisted
+        state_file: Optional[str] = None,   # snapshot to resume from; None = fresh
         real_account: Optional[AccountClient] = None,
         playback_speed: float = 1.0,
         **kwargs,

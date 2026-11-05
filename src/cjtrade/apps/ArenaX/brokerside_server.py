@@ -243,7 +243,13 @@ class ArenaX_BrokerSideServer:
 
         @app.post("/control/start-backend")
         def control_start():
-            self.start_backend()
+            try:
+                self.start_backend()
+            except Exception as e:
+                # start_backend now refuses to come up on a failed login, so
+                # answer with the reason instead of a bare 500 traceback.
+                return jsonify({"ok": False, "running": self._running,
+                                "error": str(e)}), 500
             return jsonify({"ok": True, "running": self._running})
 
         @app.post("/control/stop-backend")
@@ -569,7 +575,17 @@ class ArenaX_BrokerSideServer:
     def start_backend(self) -> None:
         if self._running:
             return
-        self.backend.login()
+        # login() reports failure by returning False, and that used to be
+        # ignored: the server would mark itself running and serve a backend
+        # whose account state was never loaded. It became reachable once
+        # state_file started meaning "snapshot to resume from", since naming a
+        # snapshot that does not exist is now a real error rather than a cue to
+        # create one. Refuse to come up instead.
+        if not self.backend.login():
+            raise RuntimeError(
+                "backend login failed — refusing to start. See the error above; "
+                "a missing account-state snapshot is the usual cause."
+            )
         self._stop_event.clear()
         # In backtest mode the Sinopac connection is only needed for the initial
         # data preload (done in __init__).  Starting the keepalive loop would
