@@ -8,6 +8,7 @@ from typing import Dict
 from typing import List
 
 import shioaji as sj
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.base_broker_api import *
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_bidask
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_kbar
@@ -51,7 +52,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         # db connection
         self.username = config.get('username', 'user999')
-        self.db_path = config.get('mirror_db_path', f'./data/sinopac.db')
+        self.db_path = config.get('mirror_db_path') or str(paths.mirror_db_path('sinopac'))
         self.db = None
 
         self.api = sj.Shioaji(simulation=self.simulation)

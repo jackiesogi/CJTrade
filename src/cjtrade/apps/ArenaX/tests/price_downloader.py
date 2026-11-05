@@ -6,6 +6,7 @@
 import argparse
 import os
 
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.db.db_api import *
@@ -77,7 +78,7 @@ def main():
     try:
         a = AccountClient(broker_type=broker_type, **config)
         a.connect()
-        c = connect_sqlite(database="data/arenax_price.db")
+        c = connect_sqlite(database=str(paths.price_db_path()))
         prepare_arenax_local_price_db_tables(conn=c)
         download_price(a, c, symbols=args.symbols,
                        start=args.start_date, end=args.end_date)

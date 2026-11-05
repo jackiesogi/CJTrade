@@ -10,6 +10,7 @@ from typing import Optional
 
 import pandas as pd
 import yfinance as yf
+from cjtrade.pkgs import paths
 from cjtrade.apps.ArenaX.oder_result_helper import CANCELLED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import COMMITTED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import PLACED_ORDER_STANDARD
@@ -83,7 +84,7 @@ class ArenaX_BackendBase:
     def __init__(
         self,
         state_file: Optional[str] = None,
-        state_dir: str = "data/account_states",
+        state_dir: Optional[str] = None,
         session_id: Optional[str] = None,
         seed_from_live: bool = False,
         real_account: Optional[AccountClient] = None,
@@ -91,7 +92,7 @@ class ArenaX_BackendBase:
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
         initial_balance: float = 0.0,
-        price_db_path: str = "data/arenax_price.db",
+        price_db_path: Optional[str] = None,
         cost_model: Optional[CostModel] = None,
         **kwargs,
     ) -> None:
@@ -110,8 +111,10 @@ class ArenaX_BackendBase:
         # does not change whether state should carry over.
         self.state_in = state_file or None
         self.session_id = session_id or uuid.uuid4().hex
-        self.state_dir = state_dir
-        self.state_out = os.path.join(state_dir, f"{self.session_id}.json")
+        # Resolved here, not as a default argument: paths.* creates the
+        # directory, and a default argument would do that at import time.
+        self.state_dir = str(state_dir) if state_dir else str(paths.account_states_dir())
+        self.state_out = os.path.join(self.state_dir, f"{self.session_id}.json")
         # Reading the live account is a deliberate, non-reproducible choice, so
         # it has to be asked for. It used to happen whenever the state file
         # merely did not exist yet.
@@ -125,7 +128,7 @@ class ArenaX_BackendBase:
         self._connected = False
         self._initial_balance_override = initial_balance  # stored for use in login()
         self.account_state = ArenaX_AccountState()
-        self.price_db_path = price_db_path
+        self.price_db_path = str(price_db_path) if price_db_path else str(paths.price_db_path())
         self._cost_model = cost_model if cost_model is not None else CostModel()
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.

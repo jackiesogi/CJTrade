@@ -3,6 +3,7 @@
 
 GeneralImport = """\
 import os
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.fundamental import *
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.analytics.technical.models import *
@@ -35,7 +36,7 @@ def get_general_import_str(broker, arenax_backend):
     if broker == "sinopac":
         result += """
 config["state_file"] = f"./sinopac_{config['username']}.json"
-config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
+config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
 
 ######## YOUR STRATEGY STARTS HERE ########
 client = AccountClient(BrokerType.SINOPAC, **config)

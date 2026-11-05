@@ -806,6 +806,14 @@ class ArenaX_BrokerSideServer:
 
 def main():
     import argparse
+
+    # Where this instance keeps its data, so a bug report can say so instead of
+    # guessing, and so CJTRADE_HOME being set (or not) is visible immediately.
+    log.info("Storage locations:\n%s", paths.describe())
+    _legacy = paths.legacy_data_warning()
+    if _legacy:
+        log.warning(_legacy)
+
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
     parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")

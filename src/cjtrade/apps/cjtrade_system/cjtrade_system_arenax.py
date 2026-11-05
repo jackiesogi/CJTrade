@@ -22,6 +22,7 @@ from typing import Optional
 
 import numpy as np
 from aiohttp import web as _aiohttp_web
+from cjtrade.pkgs import paths
 from cjtrade.apps.cjtrade_system.extensions.ntfy_sh import push_to_ntfy_sh
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
@@ -43,7 +44,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)-8s: %(message)s",
     handlers=[
-        logging.FileHandler("cjtrade_system.log", encoding="utf-8"),
+        logging.FileHandler(paths.log_path("cjtrade_system.log"), encoding="utf-8"),
         logging.StreamHandler(sys.stdout)
     ],
     force=True
@@ -1032,7 +1033,7 @@ class TradingSystem:
 
                 log.info(f"\n{'='*60}\n🤖 LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
                 # also print to file for record
-                with open("llm_report.txt", "a") as f:
+                with open(paths.data_dir() / "llm_report.txt", "a") as f:
                     f.write(f"\n{'='*60}\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
                 time.sleep(10)
             except Exception as e:
@@ -1390,7 +1391,7 @@ async def async_main(cfg: SystemConfig, broker: str):
     # Prepare broker client — merge API keys (from config) with connection params (from cfg)
     username = config.get('username', 'user000')
     config["state_file"] = f"./{broker}_{username}.json"
-    config["mirror_db_path"] = f"./data/{broker}_{username}.db"
+    config["mirror_db_path"] = str(paths.mirror_db_path(broker, username))
 
     # Create broker client based on type
     if broker == 'arenax':
