@@ -108,6 +108,31 @@ env      直接設定的環境變數                    最高
 2. 確認現有的 `.cjsys` 預設值不會蓋掉使用者的 `.cjconf`
 3. `config_loader.py:_default_config_paths()` 的 docstring 有記錄這個已知落差
 
+#### 更該優先修的：CWD 內多檔之間順序未定義
+實測目前的優先序（`override=False` → 最先設定某 key 的來源贏）：
+```
+1 已存在的環境變數   ← 最高，打敗所有檔案
+2 ./.env
+3 ./**/*.cjconf      ← 這一層內部的順序是「未定義」的
+4 <user config>/*.cjconf
+5 套件內建 *.cjsys   ← 最低（load_cjsys 在 load_cjconf 之後跑）
+```
+
+第 3 層的問題：`load_supported_config_files()` 對 CWD 用 `p.rglob(pattern)`，而
+`rglob` 的回傳順序是檔案系統的 `readdir` 順序 —— 不是字母序也不是深度序。實測：
+```
+root.cjconf
+portoverride.cjconf
+_backup.cjconf
+sub/nested.cjconf
+```
+所以 tree 裡有兩個 `.cjconf` 設同一個 key 時，**誰贏跨機器可能不同**，甚至同一台機器
+上檔案重建後就變了。
+
+這比「優先序方向跟 git 相反」更嚴重 —— 後者只是不直覺，前者是同一份 repo 在不同
+機器上行為不同。至少要先 `sorted(p.rglob(...))` 讓它可預測，理想上淺層優先於深層
+（跟 git 的 local 比 parent 強一致）。
+
 #### 另外
 `CJTradeConfiguration` 這個空 class 和它上面那條
 「Implement a hierarchical configuration structure (e.g. `simulation.playback_speed`)」
