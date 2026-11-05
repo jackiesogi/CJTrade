@@ -50,11 +50,32 @@ from cjtrade.pkgs.brokers.account_client import BrokerType
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Two independent knobs, because the two kinds of noise have nothing to do with
+# each other and lumping them under one level forces a bad trade: INFO hides the
+# price feed, DEBUG buries everything under urllib3.
+LOG_LEVEL = logging.DEBUG        # the engine's own chatter
+FEED_LOG_LEVEL = logging.DEBUG   # one line per symbol per bar; raise to INFO to mute
+
 logging.basicConfig(
-    level=logging.INFO,      # DEBUG drowns the drift warnings in urllib3 noise
+    level=LOG_LEVEL,
     format="[%(asctime)s] %(levelname)-8s: %(message)s"
 )
+
+# urllib3 emits two DEBUG lines per HTTP call ("Starting new HTTP connection"
+# plus the request line). Replay mode makes 5 calls per bar, so at DEBUG these
+# outnumber our own output roughly 10:1 and hide the drift warnings entirely.
+# Silence the transport, not ourselves.
+for _noisy in ("urllib3", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
 log = logging.getLogger("poc.trading_engine2")
+
+# Separate logger for the per-tick feed so it can be muted on its own: at high
+# playback speed this is thousands of lines a second, which is useful when
+# eyeballing one bar and useless when watching a two-month replay.
+log_feed = logging.getLogger("poc.trading_engine2.feed")
+log_feed.setLevel(FEED_LOG_LEVEL)
 
 CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
 CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
@@ -214,7 +235,7 @@ class EventHub:
     async def _broadcast(self, tick: dict):
         symbol = tick["s"]
         await self.pub_socket.send_multipart([symbol.encode('utf-8'), msgpack.packb(tick)])
-        log.debug(f"[Master] Broadcasting {symbol} at {tick['p']}...")
+        log_feed.debug(f"[Master] Broadcasting {symbol} at {tick['p']}...")
 
     def _snapshot(self, symbol: str) -> dict:
         if self.client is not None:
