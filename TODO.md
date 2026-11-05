@@ -62,3 +62,53 @@ polling 頻率變高，或 server 換到真的網路環境時，這個開銷會�
 `_get`/`_post` 改成呼叫 `self._session.get(...)/self._session.post(...)`，對外介面不變，
 純粹讓底層連線可以重用。這是共用的 broker 程式碼，會影響整個 app 用 ArenaX 的地方，
 不只是 poc/trading_engine，所以需要另外評估影響範圍再動手。
+
+### Config provenance（效法 `git config --show-origin`）
+目前 `config_loader.load_supported_config_files()` 把每個檔案 `load_dotenv()` 進
+`os.environ`，**provenance 在那一刻就丟掉了**。之後 `os.environ.get('API_KEY')` 無法
+知道這個值是哪個檔案設的、有沒有被其他檔案覆蓋過。config 一多就很難 debug。
+
+希望做到像 git 那樣可以問：
+```sh
+cjtrade config --show-origin --show-scope CJSYS_BACKTEST_PLAYBACK_SPEED
+#   local   ./backtest.cjconf:12   30000.0      ← 生效
+#   global  ~/.../cjtrade/system.cjconf:8  1200.0
+#   system  <package>/configs/backtest.cjsys:41  1200.0
+```
+
+#### 兩種實作路線
+- **(a) 包一層 registry**：自己 parse 每個 `.cjconf` / `.cjsys`，記錄
+  `{key: [(value, source_file, line_no, scope), ...]}`，然後才寫進 environ。
+  可以完整回答「這個 key 有幾個來源、誰贏了、被誰蓋掉」。比較貼近
+  `git config --get-all` 的效果。
+- **(b) 只記錄最後贏家**：每次 `load_dotenv` 前後 diff `os.environ`，把新增／變更的
+  key 歸給該檔案。改動極小，但看不到被覆蓋掉的那些。
+
+傾向 (a)。
+
+#### 連帶要解決的：scope 階層
+現在 `load_dotenv(override=False)` 是**先載入的贏**，而 git 是**後面的 scope 贏**
+（local > global > system）。兩者方向相反。而且原本 `SUPPORTED_CONFIG_PATHS` 只有
+`.env` 和 CWD，沒有 user 層級（已補上 `paths.config_dir()`，但順序仍是「先載入的贏」
+以維持相容）。
+
+希望收斂成跟 git 一致的階層，後者覆蓋前者：
+```
+system   套件內建預設（<package>/apps/*/configs/*.cjsys）
+  ↓
+global   paths.config_dir()/*.cjconf          使用者層級
+  ↓
+local    ./*.cjconf、./.env                   專案層級
+  ↓
+env      直接設定的環境變數                    最高
+```
+
+注意這會**反轉現有的優先序**，所以要一起處理：
+1. 把 `override=False` 改成按 scope 順序載入 + `override=True`
+2. 確認現有的 `.cjsys` 預設值不會蓋掉使用者的 `.cjconf`
+3. `config_loader.py:_default_config_paths()` 的 docstring 有記錄這個已知落差
+
+#### 另外
+`CJTradeConfiguration` 這個空 class 和它上面那條
+「Implement a hierarchical configuration structure (e.g. `simulation.playback_speed`)」
+的 TODO 應該一起做掉 —— 階層式 key 和 provenance 是同一件事的兩面。
