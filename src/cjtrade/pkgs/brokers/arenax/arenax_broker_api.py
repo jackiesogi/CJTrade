@@ -260,12 +260,20 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def get_system_time(self) -> dict:
         # Server emits all datetime fields as ISO 8601 (naive Asia/Taipei).
         # Parse with fromisoformat(); no timezone conversion needed.
+        #
+        # playback_speed and paused are forwarded, not dropped: the server
+        # already reports both on /control/get-time, and a caller that wants to
+        # scale its own waiting needs the speed. Dropping them here is what
+        # forced callers to reach through to
+        # middleware.get_config()['internal_config']['playback_speed'] instead.
         t = self.middleware.get_system_time()
         return {
             "mock_current_time": datetime.fromisoformat(t['mock_current_time']),
             "real_current_time": datetime.fromisoformat(t['real_current_time']),
             "mock_init_time":    datetime.fromisoformat(t['mock_init_time']),
             "real_init_time":    datetime.fromisoformat(t['real_init_time']),
+            "playback_speed":    float(t.get('playback_speed', 1.0)),
+            "paused":            bool(t.get('paused', False)),
         }
 
 

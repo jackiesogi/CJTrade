@@ -142,8 +142,54 @@ class AccountClient:
     def is_market_open(self) -> bool:
         return self.broker_api.is_market_open()
 
-    def get_market_time(self) -> bool:
-        return self.broker_api.get_market_time()
+    def get_market_time(self) -> dict:
+        """Deprecated alias for get_system_time()."""
+        return self.get_system_time()
+
+    def get_system_time(self) -> dict:
+        """Broker-side clock. Same keys for every broker — see BrokerAPIBase.
+
+        Includes playback_speed and paused, so a caller can pace itself against
+        a simulated clock without knowing which broker it is talking to. A live
+        broker reports 1.0 / False.
+        """
+        return self.broker_api.get_system_time()
+
+    @property
+    def playback_speed(self) -> float:
+        """Market seconds per real second. 1.0 for any live broker.
+
+        Use this to scale your own waiting, e.g. sleep(seconds / speed), rather
+        than configuring the speed separately on both sides: the broker is the
+        authority on how fast its own clock runs, so asking it is the only way
+        the two cannot disagree.
+        """
+        return float(self.get_system_time().get("playback_speed", 1.0))
+
+    @property
+    def control_plane(self):
+        """Broker-server control plane, or None when there is nothing to control.
+
+        Not named `simulation`: that word is already taken in this codebase for
+        Shioaji's sandbox flag (SIMULATION=y -> SinopacBrokerAPI.simulation), and
+        the two are unrelated — a sinopac sandbox account is still a live broker
+        with no clock to steer.
+
+        Deliberately NOT part of BrokerAPIBase either: freezing a clock, stepping
+        a replay or restarting a backend are things only a simulated exchange can
+        do, and declaring them there would force every adapter (yuanta, cathay,
+        IBKR) to implement methods that have no meaning for a real broker.
+
+        It lives here so callers never reach through
+        `client.broker_api.middleware`. Against a real broker it is None, which
+        is an explicit check rather than an AttributeError two layers down.
+
+        Example::
+
+            if client.control_plane:
+                client.control_plane.resume_time_progress()
+        """
+        return getattr(self.broker_api, "middleware", None)
 
     def get_broker_name(self) -> str:
         return self.broker_api.get_broker_name()

@@ -594,20 +594,28 @@ class CalendarCommand(CommandBase):
 
             # Check if it's a time adjustment command (+N or -N)
             if arg.startswith(('+', '-')):
-                if client.get_broker_name() != "arenax":
+                # startswith, not ==: get_broker_name() returns "arenax (8802)".
+                if not client.get_broker_name().startswith('arenax'):
                     print("Error: Time adjustment only available in ArenaX environment")
                     return
 
                 try:
                     hours = float(arg)
-                    client.broker_api.api.market.adjust_time(hours)
-                    # Show updated time
-                    ts = client.broker_api.get_system_time()
-                    print(f"New mock time: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
-                    return
                 except ValueError:
                     print(f"Error: Unable to parse time adjustment '{arg}'")
                     return
+
+                # ArenaX_Market.adjust_time() exists server-side but is not
+                # exposed over HTTP, so there is nothing for the client to call.
+                # The old code here reached for client.broker_api.api.market,
+                # which only the retired MockBroker ever had — ArenaXBrokerAPI_v2
+                # has .middleware, not .api — so this branch could only raise.
+                # Say so plainly until a /control/adjust-time endpoint exists.
+                print(f"Error: time adjustment ({hours:+.1f}h) is not supported "
+                      f"by the ArenaX server yet — it needs a /control/adjust-time "
+                      f"endpoint. Restart the server with a different start date "
+                      f"instead.")
+                return
             else:
                 # Direct call with date argument
                 subprocess.run([sys.executable, str(self.ncal_script), '--sunday', arg], shell=False)
@@ -617,7 +625,7 @@ class CalendarCommand(CommandBase):
         bkr_name = client.get_broker_name()
         if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()['mock_current_time']
+            ts = client.get_system_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()

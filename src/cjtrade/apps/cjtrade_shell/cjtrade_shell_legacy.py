@@ -562,14 +562,19 @@ class CalendarCommand(CommandBase):
 
                 try:
                     hours = float(arg)
-                    client.broker_api.api.market.adjust_time(hours)
-                    # Show updated time
-                    ts = client.broker_api.get_system_time()
-                    print(f"New mock time: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
-                    return
                 except ValueError:
                     print(f"Error: Unable to parse time adjustment '{arg}'")
                     return
+
+                # Unreachable in practice: the guard above requires broker
+                # "mock", and BrokerType.MOCK can no longer be constructed —
+                # cjtrade.pkgs.brokers.arenax.legacy was removed. Kept honest
+                # rather than left reaching for broker_api.api.market, which
+                # only that retired broker ever had.
+                print(f"Error: time adjustment ({hours:+.1f}h) is not supported — "
+                      f"the mock broker it relied on has been removed. Use the "
+                      f"current shell with --broker=arenax instead.")
+                return
             else:
                 # Direct call with date argument
                 subprocess.run([sys.executable, str(self.ncal_script), '--sunday', arg], shell=False)
@@ -578,7 +583,7 @@ class CalendarCommand(CommandBase):
         # Get timestamp from broker or system
         if client.get_broker_name() == "mock":
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()
+            ts = client.get_system_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()

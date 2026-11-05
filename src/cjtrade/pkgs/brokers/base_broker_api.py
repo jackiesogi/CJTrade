@@ -146,7 +146,27 @@ class BrokerAPIBase(ABC):
         pass
 
     def get_market_time(self) -> dict:
-        pass
+        """Deprecated alias for get_system_time(). Prefer get_system_time()."""
+        return self.get_system_time()
+
+    def get_system_time(self) -> dict:
+        """Broker-side clock, as a dict. Every broker must answer this.
+
+        Required keys:
+            mock_current_time / real_current_time / mock_init_time / real_init_time
+
+        Simulated brokers must additionally report how their clock is running,
+        so callers can scale their own waiting without reaching into the
+        broker's internals:
+            playback_speed  float  market seconds per real second (1.0 = live)
+            paused          bool   True when the clock is frozen
+
+        A live broker reports playback_speed=1.0 and paused=False: its clock is
+        real time, which is the degenerate case of the same contract.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement get_system_time()"
+        )
 
     @abstractmethod
     def get_broker_name(self) -> str:
