@@ -103,13 +103,15 @@ class LocalLedgerMirror:
 
 def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
-    target_symbol = "BTCUSDT"
+    target_symbol = "2317"
 
     strategy = BollingerStrategy()
     ledger = LocalLedgerMirror(INITIAL_BALANCE)
     price_map: dict[str, float] = {}
     price_history: dict[str, list] = {}
-    params: dict = {}
+    params: dict = {
+        "bb__min_width_pct": 0.001
+    }
 
     log.info(f"[{bot_id}] started! ({target_symbol}) strategy={strategy.name}")
 

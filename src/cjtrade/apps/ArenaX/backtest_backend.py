@@ -51,8 +51,8 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             )
             print(f"[ArenaX] Fixed start_date: {start_dt.date()}")
             print(self.market.get_market_time())
-            self.market.pause_time_progress()
-            print("[ArenaX] Market time paused – waiting for client to call resume.")
+            # self.market.pause_time_progress()
+            # print("[ArenaX] Market time paused – waiting for client to call resume.")
             return
 
         # ── Random start_date path ────────────────────────────────────
@@ -72,5 +72,5 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             return
         self.market.set_historical_time(datetime.now(), days_back=days_back)
         print(self.market.get_market_time())
-        self.market.pause_time_progress()
-        print("[ArenaX] Market time paused – waiting for client to call resume.")
+        # self.market.pause_time_progress()
+        # print("[ArenaX] Market time paused – waiting for client to call resume.")

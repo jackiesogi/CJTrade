@@ -267,11 +267,11 @@ async def main():
     # Iterate all enabled bot definitions
     bots = get_enabled_bots()
     processes = []
-    proc_a = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_A_SCRIPT), bots[0])
-    proc_b = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_B_SCRIPT), bots[1])
+    # proc_a = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_A_SCRIPT), bots[0])
+    # proc_b = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_B_SCRIPT), bots[1])
     proc_c = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_C_SCRIPT), bots[2])
-    processes.append(proc_a)
-    processes.append(proc_b)
+    # processes.append(proc_a)
+    # processes.append(proc_b)
     processes.append(proc_c)
 
     await asyncio.sleep(2) # 等待子進程 ZMQ 連線建立完成
@@ -283,6 +283,8 @@ async def main():
     # This two API should provide to client-side application
     hub.subscribe_price_feed("0050")
     hub.subscribe_price_feed("2357")
+    hub.subscribe_price_feed("2317")
+    hub.subscribe_price_feed("00919")
 
     # Execution engine: the only place that actually executes/records trades.
     engine = ExecutionEngine(account_client=account_client)
