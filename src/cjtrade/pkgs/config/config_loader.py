@@ -12,11 +12,29 @@ class CJTradeConfiguration:
     pass
 
 
-SUPPORTED_CONFIG_PATHS = [
-    Path(".env"),
-    Path.cwd(),  # Current working directory
-    # Path(".cjtrade_config"),  # Directory with recursive *.cjconf search
-]
+def _default_config_paths() -> List[Path]:
+    """Where to look for config, nearest-first.
+
+    The user config directory is searched as well as the CWD so credentials do
+    not have to live inside the checkout. load_dotenv(override=False) means the
+    FIRST file to set a key wins, so the CWD is listed first and a project-local
+    .cjconf still beats the user-level one.
+
+    NOTE: that precedence is the opposite of git's, where the more specific
+    scope wins because it is applied last. Reconciling this -- plus recording
+    which file each key came from -- is tracked in TODO.md under
+    "Config provenance".
+    """
+    from cjtrade.pkgs import paths
+
+    return [
+        Path(".env"),
+        Path.cwd(),                 # project-local *.cjconf (recursive)
+        paths.config_dir(),         # user-level *.cjconf
+    ]
+
+
+SUPPORTED_CONFIG_PATHS = _default_config_paths()
 
 SUPPORTED_FILE_PATTERN = "*.cjconf"
 
