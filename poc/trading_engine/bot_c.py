@@ -39,9 +39,10 @@ log = logging.getLogger("poc.bot_c")
 CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
 CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
 
-# Must match main.py's ExecutionEngine.INITIAL_BALANCE — the two only need to
-# agree before this bot's first fill; after that, master's Fill message is
-# authoritative and this bot just overwrites its mirror with it.
+# Fallback only — master normally passes its own starting balance as argv[2]
+# (main2.py). Used when this script is run standalone. The mirror only matters
+# before this bot's first fill; after that master's Fill message is authoritative
+# and this bot overwrites its mirror with whatever master reports.
 INITIAL_BALANCE = 1_000_000.0
 
 
@@ -103,10 +104,15 @@ class LocalLedgerMirror:
 
 def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
+    # argv[2] is master's starting balance. Taking it from master rather than
+    # keeping a local constant means the two cannot disagree: the mirror only
+    # matters until this bot's first fill, but position sizing before that fill
+    # would be computed against the wrong equity.
+    initial_balance = float(sys.argv[2]) if len(sys.argv) > 2 else INITIAL_BALANCE
     target_symbol = "2317"
 
     strategy = BollingerStrategy()
-    ledger = LocalLedgerMirror(INITIAL_BALANCE)
+    ledger = LocalLedgerMirror(initial_balance)
     price_map: dict[str, float] = {}
     price_history: dict[str, list] = {}
     params: dict = {

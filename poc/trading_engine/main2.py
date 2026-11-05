@@ -39,6 +39,7 @@ import logging
 import random
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
@@ -49,6 +50,7 @@ from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
+from cjtrade.pkgs.ui.engine import FormEngine
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Two independent knobs, because the two kinds of noise have nothing to do with
@@ -82,10 +84,20 @@ CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
 
 BOT_C_SCRIPT = Path(__file__).resolve().parent / "bot_c.py"
 
-INITIAL_BALANCE = 1_000_000.0
 ARENAX_PORT = 8802
-SYMBOLS = ["0050", "2357", "2317", "00919"]
 BAR_INTERVAL_SEC = 60        # market seconds between samples == 1m bars
+
+# The same form cjtrade_system is launched with (poc/backtest_full_simulation.sh
+# evals it). Sharing the file means the two apps ask the identical questions and
+# share one persisted answer set, instead of drifting into two copies.
+FORM_SCHEMA = Path(__file__).resolve().parents[1] / "backtest_full_simulation.toml"
+
+# Which clock implementation to exercise. Deliberately NOT a form field: the
+# form asks which ArenaX backend to run against (backtest / paper / demo), which
+# is a question about the market being simulated. This is a question about the
+# engine, and "replay" additionally needs a server that implements
+# set_market_time, so it cannot be derived from the backend mode alone.
+CLOCK = "scaled"             # "scaled" | "replay" | "realtime"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -305,12 +317,16 @@ class EventHub:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class ExecutionEngine:
-    def __init__(self, account_client: AccountClient | None):
+    def __init__(self, account_client: AccountClient | None,
+                 initial_balance: float = 1_000_000.0):
         self.client = account_client
+        self.initial_balance = initial_balance
         self._ledger: dict[str, dict] = {}
 
     def _account_for(self, bot_id: str) -> dict:
-        return self._ledger.setdefault(bot_id, {"balance": INITIAL_BALANCE, "positions": {}})
+        return self._ledger.setdefault(
+            bot_id, {"balance": self.initial_balance, "positions": {}}
+        )
 
     async def execute(self, order: dict) -> dict:
         if self.client is not None:
@@ -402,35 +418,100 @@ async def handle_orders(pull_socket, pub_socket, engine: ExecutionEngine):
 #  Init task — the only place that knows which broker and which mode this is.
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODE = "scaled"          # "scaled" | "replay" | "realtime"
-REPLAY_START = "2025-09-01"
-REPLAY_END = "2025-12-01"
-REPLAY_SPEED = None     # None = full speed; 120.0 = watchable demo
+@dataclass(frozen=True)
+class EngineConfig:
+    """Answers from the shared form, coerced into the types the engine wants."""
+
+    broker: str
+    backend_mode: str            # ArenaX backend: backtest | paper | demo
+    symbols: list[str]
+    initial_balance: float
+    duration_days: int
+    playback_speed: float
+    start_date: str | None       # None = let the server's own start date stand
+
+    @property
+    def is_live(self) -> bool:
+        """paper and real track the wall clock, so no replay is possible."""
+        return self.backend_mode in ("paper", "real")
 
 
-def build_clock(client: AccountClient, mode: str, symbols: list[str]):
+def load_config(schema: Path = FORM_SCHEMA) -> EngineConfig:
+    """Ask the shared form, or take answers from CLI flags when given.
+
+    Fields whose cli_arg appears in sys.argv are never prompted (FormEngine.run
+    drops them from the schema), so this is interactive by default and scriptable
+    on demand:
+
+        uv run python poc/trading_engine/main2.py \\
+            --broker=arenax --mode=backtest --watch-list=0050,2317 \\
+            --speed=60 --days=30 --fund=1000000 --start-date=2025-09-01
+    """
+    answers = FormEngine(str(schema), renderer="cli").run()
+
+    raw_symbols = (answers.get("watch_list") or "").strip()
+    symbols = [s.strip() for s in raw_symbols.split(",") if s.strip()]
+
+    start = (answers.get("start_date") or "").strip() or None
+
+    return EngineConfig(
+        broker=answers.get("broker", "arenax"),
+        backend_mode=answers.get("mode", "backtest"),
+        symbols=symbols,
+        initial_balance=float(answers.get("fund") or 1_000_000),
+        duration_days=int(float(answers.get("days") or 365)),
+        playback_speed=float(answers.get("playback_speed") or 1.0),
+        start_date=start,
+    )
+
+
+def build_clock(client: AccountClient, clock: str, cfg: EngineConfig):
     """Choose the time regime. Everything downstream is broker-agnostic.
 
     This `if` is the entire broker/mode-specific surface. Putting sinopac here
     means returning RealtimeClock() and changing nothing else.
     """
-    if mode == "realtime":
+    if clock == "realtime":
         return RealtimeClock()           # note: never touches `client`
 
     mw = client.control_plane            # None for a live broker
     if mw is None:
         raise RuntimeError(f"broker {client.get_broker_name()!r} has no control "
-                           f"plane — mode={mode!r} needs a simulated exchange")
+                           f"plane — clock={clock!r} needs a simulated exchange")
 
-    if mode == "scaled":
+    if clock == "scaled":
         return ScaledClock.for_server(mw)
-    if mode == "replay":
-        return ReplayClock.for_server(mw, symbols, REPLAY_START, REPLAY_END,
-                                      interval="1m", speed=REPLAY_SPEED)
-    raise ValueError(f"unknown mode: {mode!r}")
+
+    if clock == "replay":
+        # The form's start_date is optional. When blank, take the server's own
+        # timeline origin rather than inventing one: the backtest backend has
+        # already picked a start date (possibly at random) and preloaded data
+        # around it, so any other guess would ask for bars that do not exist.
+        start = cfg.start_date or client.get_system_time()["mock_init_time"].date().isoformat()
+        end = (datetime.fromisoformat(start)
+               + timedelta(days=cfg.duration_days)).date().isoformat()
+        # speed=None means flat out; the form's speed only paces a watchable demo.
+        speed = None if cfg.backend_mode == "backtest" else cfg.playback_speed
+        return ReplayClock.for_server(mw, cfg.symbols, start, end,
+                                      interval="1m", speed=speed)
+
+    raise ValueError(f"unknown clock: {clock!r}")
 
 
 async def main():
+    # Ask before binding anything: the form blocks on stdin, and there is no
+    # point holding sockets or a broker session open while it waits.
+    cfg = await asyncio.to_thread(load_config)
+    if not cfg.symbols:
+        log.error("[Master] No symbols — set a watch list in the form or pass "
+                  "--watch-list=0050,2317")
+        return
+
+    clock_name = "realtime" if cfg.is_live else CLOCK
+    log.info(f"[Master] broker={cfg.broker} backend={cfg.backend_mode} "
+             f"clock={clock_name} symbols={','.join(cfg.symbols)} "
+             f"fund={cfg.initial_balance:.0f} days={cfg.duration_days}")
+
     pub_socket = ctx.socket(zmq.PUB)
     pub_socket.bind(CJ_ENGINE_SOCKET_SUB_PRICE)
     pull_socket = ctx.socket(zmq.PULL)
@@ -445,20 +526,26 @@ async def main():
     # Before spawning bots: ReplayClock does its kbar fetch and clock alignment
     # here, and there is no point feeding bots if that fails.
     try:
-        clock = await asyncio.to_thread(build_clock, account_client, MODE, SYMBOLS)
+        clock = await asyncio.to_thread(build_clock, account_client, clock_name, cfg)
     except Exception as e:
-        log.error(f"[Master] Could not build clock for mode={MODE!r}: {e}")
+        log.error(f"[Master] Could not build {clock_name!r} clock: {e}")
         account_client.disconnect()
         return
 
-    proc = await asyncio.create_subprocess_exec(sys.executable, '-u', str(BOT_C_SCRIPT), "Bot_C")
+    # Pass the balance down: the bot keeps a local mirror for position sizing and
+    # it is only meaningful until its first fill, but starting it at a different
+    # number than the engine would silently skew every pre-first-fill decision.
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, '-u', str(BOT_C_SCRIPT), "Bot_C", str(cfg.initial_balance)
+    )
     await asyncio.sleep(2)       # let the subprocess finish its ZMQ connect
 
     hub = EventHub(account_client=account_client, clock=clock)
-    for s in SYMBOLS:
+    for s in cfg.symbols:
         hub.subscribe_price_feed(s)
 
-    engine = ExecutionEngine(account_client=account_client)
+    engine = ExecutionEngine(account_client=account_client,
+                             initial_balance=cfg.initial_balance)
     asyncio.create_task(handle_orders(pull_socket, pub_socket, engine))
 
     try:
