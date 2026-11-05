@@ -583,7 +583,7 @@ class CalendarCommand(CommandBase):
         # Get timestamp from broker or system
         if client.get_broker_name() == "mock":
             suffix = " (mock time)"
-            ts = client.get_system_time()['mock_current_time']
+            ts = client.get_market_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()

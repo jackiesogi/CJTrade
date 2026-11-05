@@ -79,18 +79,23 @@ class ArenaXMiddleWare:
         data = self._get("health")
         return data
 
-    def get_system_time(self, **kwargs) -> dict:
+    def get_market_time(self, **kwargs) -> dict:
+        """Raw clock dict from the server. See BrokerAPIBase.get_market_time."""
         t = self._get("control/get-time")
         if t:
             return t
         else:
-            print(f"Failed to get system time: {t.get('error') if t else 'No response'}")
+            print(f"Failed to get market time: {t.get('error') if t else 'No response'}")
             return None
+
+    def get_system_time(self, **kwargs) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time(**kwargs)
 
     def is_market_open(self, **kwargs) -> bool:
         # mock_current_time is an ISO 8601 naive datetime (Asia/Taipei).
         # No timezone conversion — parse as-is.
-        mct = self.get_system_time()["mock_current_time"]
+        mct = self.get_market_time()["mock_current_time"]
         dt = datetime.fromisoformat(mct)
         return (
             dt.weekday() < 5 and
@@ -343,7 +348,7 @@ if __name__ == "__main__":
     print(a.get_time())
     print("sleep 5 seconds and get time again...")
     time.sleep(5)
-    print(a.get_system_time())
+    print(a.get_market_time())
     time.sleep(5)
     print("Try to resume time progress...")
     print(a.resume_time_progress())

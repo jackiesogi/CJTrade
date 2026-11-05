@@ -130,7 +130,7 @@ class ScaledClock:
 
     @classmethod
     def for_server(cls, mw) -> "ScaledClock":
-        t = mw.get_system_time()
+        t = mw.get_market_time()
         if not t:
             raise RuntimeError("ArenaX /control/get-time returned nothing — is the server up?")
         speed = float(t["playback_speed"])
@@ -487,7 +487,7 @@ def build_clock(client: AccountClient, clock: str, cfg: EngineConfig):
         # timeline origin rather than inventing one: the backtest backend has
         # already picked a start date (possibly at random) and preloaded data
         # around it, so any other guess would ask for bars that do not exist.
-        start = cfg.start_date or client.get_system_time()["mock_init_time"].date().isoformat()
+        start = cfg.start_date or client.get_market_time()["mock_init_time"].date().isoformat()
         end = (datetime.fromisoformat(start)
                + timedelta(days=cfg.duration_days)).date().isoformat()
         # speed=None means flat out; the form's speed only paces a watchable demo.

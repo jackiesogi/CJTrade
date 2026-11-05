@@ -114,7 +114,7 @@ class TestIsMarketOpen:
     """Verify is_market_open() boundary conditions — no real HTTP needed."""
 
     def _stub_time(self, mw, iso: str):
-        mw.get_system_time = lambda **kw: {"mock_current_time": iso}
+        mw.get_market_time = lambda **kw: {"mock_current_time": iso}
 
     def test_weekday_within_hours_is_open(self, mw):
         """Monday 10:00 is within trading hours."""

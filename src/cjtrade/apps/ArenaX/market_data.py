@@ -25,6 +25,40 @@ from cjtrade.pkgs.models.quote import Snapshot
 
 # Price source: yfinance
 class ArenaX_Market:
+    """Simulated exchange clock and historical price cache.
+
+    VOCABULARY
+    ----------
+    Three separate concepts live here. They used to share the words "system
+    time" and "market time" interchangeably, which made the getters look like
+    the setters' partners when they were not. Only these three exist:
+
+    1. market time -- what time it is ON THE MARKET right now.
+       Read with get_market_time()["mock_current_time"]. Either derived
+       (start_date + elapsed * playback_speed + manual_time_offset) or, while
+       frozen, read straight back from paused_time.
+       Written with set_market_time(t), which also freezes it: a derived value
+       cannot be "set" without pinning it, or it would drift away immediately.
+
+    2. timeline origin -- where the simulated timeline BEGINS.
+       Held in start_date, reported as mock_init_time.
+       Written with set_historical_time_abs() / set_historical_time(), both of
+       which snap to 09:00 and may trigger a data preload. Do NOT use either to
+       step the clock; see set_market_time().
+
+    3. playback rate and frozen state -- HOW time advances.
+       playback_speed (market seconds per real second) plus
+       paused / paused_time. Controlled by pause_time_progress() and
+       resume_time_progress(); adjust_time() shifts by an offset, and is a no-op
+       while frozen because the paused branch of get_market_time() does not read
+       manual_time_offset.
+
+    There is deliberately NO "system time" concept. real_current_time and
+    real_init_time are this host's wall clock, kept for diagnostics only --
+    anything wanting its own machine's clock should call datetime.now() instead,
+    since in general the client runs on a different machine.
+    """
+
     def __init__(self, real_account: AccountClient = None, price_db_path: str = "data/arenax_price.db"):
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)

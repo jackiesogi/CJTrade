@@ -625,7 +625,7 @@ class CalendarCommand(CommandBase):
         bkr_name = client.get_broker_name()
         if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
             suffix = " (mock time)"
-            ts = client.get_system_time()['mock_current_time']
+            ts = client.get_market_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()

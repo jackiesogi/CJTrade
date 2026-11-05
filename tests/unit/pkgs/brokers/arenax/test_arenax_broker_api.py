@@ -46,7 +46,7 @@ class StubMiddleWare:
     def logout(self):
         pass
 
-    def get_system_time(self) -> dict:
+    def get_market_time(self) -> dict:
         return {
             "mock_current_time": "2024-01-15T10:30:00",
             "real_current_time": "2026-05-01T10:30:00",
@@ -127,12 +127,16 @@ def sample_order():
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-class TestGetSystemTime:
+class TestGetMarketTime:
     def test_returns_datetime_objects(self, api):
-        """get_system_time() must parse ISO strings from middleware into datetime objects."""
-        t = api.get_system_time()
+        """get_market_time() must parse ISO strings from middleware into datetime objects."""
+        t = api.get_market_time()
 
         assert isinstance(t["mock_current_time"], datetime)
         assert isinstance(t["real_current_time"], datetime)
         assert t["mock_current_time"] == datetime(2024, 1, 15, 10, 30, 0)
         assert t["real_current_time"] == datetime(2026, 5, 1, 10, 30, 0)
+
+    def test_get_system_time_alias_still_works(self, api):
+        """The old name is deprecated but must keep returning the same thing."""
+        assert api.get_system_time() == api.get_market_time()
