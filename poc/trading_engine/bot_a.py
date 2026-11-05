@@ -16,8 +16,8 @@ CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
 
 def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
-    # 假設這個機器人只關心 BTCUSDT
-    target_symbol = "BTCUSDT"
+    # 假設這個機器人只關心 0050
+    target_symbol = "0050"
     log.info(f"[{bot_id}] started! ({target_symbol})")
 
     context = zmq.Context()

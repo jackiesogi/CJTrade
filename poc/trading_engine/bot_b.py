@@ -16,7 +16,7 @@ CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
 
 def main():
     bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
-    target_symbol = "ETHUSDT"
+    target_symbol = "2357"
     log.info(f"[{bot_id}] started! ({target_symbol})")
 
     context = zmq.Context()
