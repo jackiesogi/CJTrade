@@ -21,6 +21,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.brokers.base_broker_api import BrokerAPIBase
 from cjtrade.pkgs.db.db_api import *
@@ -55,7 +56,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
         # db connection
         self.username = config.get('username', 'Ariana')
-        self.db_path = config.get('mirror_db_path', f'./data/arenax.db')
+        self.db_path = config.get('mirror_db_path') or str(paths.mirror_db_path('arenax'))
         self.db = None
 
 

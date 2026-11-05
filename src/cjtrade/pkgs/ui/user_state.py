@@ -16,7 +16,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-_STATE_DIR = Path.home() / ".config" / "cjtrade" / "form_state"
+def _state_dir() -> Path:
+    """Resolved lazily so CJTRADE_HOME set after import is still honoured.
+
+    Was Path.home()/".config"/"cjtrade"/"form_state", which is the XDG layout
+    and therefore wrong on macOS and Windows.
+    """
+    from cjtrade.pkgs import paths
+    return paths.form_state_dir()
 
 
 class UserState:
@@ -31,7 +38,7 @@ class UserState:
     """
 
     def __init__(self, schema_stem: str) -> None:
-        self._path = _STATE_DIR / f"{schema_stem}.json"
+        self._path = _state_dir() / f"{schema_stem}.json"
         self._data: dict[str, Any] = self._load()
 
     # ------------------------------------------------------------------
@@ -58,7 +65,7 @@ class UserState:
             if field_name in results and results[field_name] is not None:
                 self._data[key] = results[field_name]
 
-        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _state_dir().mkdir(parents=True, exist_ok=True)
         self._path.write_text(
             json.dumps(self._data, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",

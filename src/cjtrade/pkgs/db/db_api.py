@@ -403,7 +403,7 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
 # Simple test code
 if __name__ == "__main__":
     from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
-    conn = connect_sqlite("./data/sinopac.db")
+    conn = connect_sqlite(str(paths.mirror_db_path("sinopac")))
     res = get_cj_order_id_from_db(conn, "f224a302")
     print(type(res))
     print(res)

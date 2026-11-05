@@ -7,12 +7,14 @@ from datetime import timedelta
 from enum import Enum
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import pandas as pd
 import yfinance as yf
 
 log = logging.getLogger("cjtrade.arenax_market")
 from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
@@ -59,7 +61,7 @@ class ArenaX_Market:
     since in general the client runs on a different machine.
     """
 
-    def __init__(self, real_account: AccountClient = None, price_db_path: str = "data/arenax_price.db"):
+    def __init__(self, real_account: AccountClient = None, price_db_path: Optional[str] = None):
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
         self.real_init_time = 0       # real_current_time - real_init_time = time_offset
@@ -71,7 +73,9 @@ class ArenaX_Market:
         self.paused: bool = False
         self.paused_time: datetime | None = None
 
-        self.price_db = ArenaX_LocalPriceDB(path=price_db_path)
+        self.price_db = ArenaX_LocalPriceDB(
+            path=str(price_db_path) if price_db_path else str(paths.price_db_path())
+        )
         self.price_db.connect()
 
     def set_playback_speed(self, speed: float):
