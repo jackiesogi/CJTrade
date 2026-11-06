@@ -254,7 +254,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
             l = float(r[3]) if r[3] is not None else 0.0
             c = float(r[4]) if r[4] is not None else 0.0
             v = int(r[5]) if r[5] is not None else 0
-            k = Kbar(datetime.fromtimestamp(ts), o, h, l, c, v)
+            k = Kbar(datetime.fromtimestamp(ts), o, h, l, c, v, symbol)
             results.append(k)
         return results
     except Exception as e:

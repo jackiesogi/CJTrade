@@ -1,20 +1,48 @@
 from datetime import datetime
 
 class Kbar:
-    def __init__(self, timestamp: datetime, open: float, high: float, low: float, close: float, volume: int):
+    """One OHLCV bar (K線) for one symbol.
+
+    `symbol` is optional only for backward compatibility; anything that merges
+    bars from several symbols into one stream (multi-symbol backtest, live
+    feed) needs it set.
+    """
+
+    def __init__(self, timestamp: datetime, open: float, high: float, low: float,
+                 close: float, volume: int, symbol: str = ""):
         self.timestamp = timestamp
         self.open = open
         self.high = high
         self.low = low
         self.close = close
         self.volume = volume
+        self.symbol = symbol
+
+    @classmethod
+    def from_snapshot(cls, snapshot) -> "Kbar":
+        """Treat a Snapshot as one closed bar. Used by live/replay runners."""
+        return cls(
+            timestamp=snapshot.timestamp,
+            open=snapshot.open,
+            high=snapshot.high,
+            low=snapshot.low,
+            close=snapshot.close,
+            volume=snapshot.volume,
+            symbol=snapshot.symbol,
+        )
+
+    def tagged(self, symbol: str) -> "Kbar":
+        """Copy with `symbol` set. For sources that only know it one level up."""
+        return Kbar(self.timestamp, self.open, self.high, self.low,
+                    self.close, self.volume, symbol)
 
     def __repr__(self):
-        return (f"Kbar(timestamp={self.timestamp}, open={self.open}, high={self.high}, "
-                f"low={self.low}, close={self.close}, volume={self.volume})")
+        return (f"Kbar(symbol={self.symbol}, timestamp={self.timestamp}, open={self.open}, "
+                f"high={self.high}, low={self.low}, close={self.close}, volume={self.volume})")
 
     def to_dict(self):
         return {
+            "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),
             "open": self.open,
             "high": self.high,

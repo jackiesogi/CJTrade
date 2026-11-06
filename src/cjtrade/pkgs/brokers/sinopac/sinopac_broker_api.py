@@ -210,7 +210,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         try:
             # Always fetch 1-minute data from Shioaji (only supported interval)
             kbars_1m = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
-            base_kbars = _from_sinopac_kbar(kbars_1m)
+            base_kbars = _from_sinopac_kbar(kbars_1m, product.symbol)
         except Exception as e:
             print(f"Error fetchin sinopac kbars: {e}")
             raise   # re-raise so callers can handle / fallback properly

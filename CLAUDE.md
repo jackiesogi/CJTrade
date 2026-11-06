@@ -244,11 +244,11 @@ Good (from `pkgs/analytics/backtest/engine.py`):
 
 ```python
 # ---------------------------------------------------------------------------
-# _TaggedKbar – Kbar + symbol (Kbar model has no symbol field)
+# Simulated account (internal to engine)
 # ---------------------------------------------------------------------------
 
-class _TaggedKbar:
-    """Thin wrapper that attaches a symbol to a plain Kbar."""
+class _SimAccount:
+    """Minimal simulated brokerage account used by the engine."""
 ```
 
 Bad — too long, explains history instead of the code:
@@ -302,6 +302,21 @@ client.disconnect()
 
 `BrokerType.MOCK` is **broken** (`cjtrade.pkgs.brokers.arenax.legacy` does not
 exist). It is still the default in `pkgs/api/beginner.py:create_client`.
+
+### Kbar
+
+`Kbar` carries its own `symbol`. Every strategy reads `bar.symbol`, and
+`BacktestEngine` rejects a bar whose symbol is empty, so tag at the source:
+
+```python
+Kbar(ts, o, h, l, c, v, symbol="2317")
+kbar.tagged("2317")             # copy with symbol set, for sources that know it one level up
+Kbar.from_snapshot(snapshot)    # live/replay runners: one Snapshot = one closed bar
+```
+
+`get_kbars()` on every broker already tags what it returns. Don't wrap `Kbar`
+in a local bar class — that is what `_TaggedKbar` and `LiveBar` were, and both
+are gone.
 
 ### Writing a strategy
 

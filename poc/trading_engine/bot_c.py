@@ -21,6 +21,10 @@ an OrderEvent. So an "order rejected" and an "order accepted, still resting"
 are different messages here rather than the same one, which is what lets the
 mirror stay in step with master's ledger.
 
+The Snapshot becomes a Kbar via Kbar.from_snapshot(), which is the same type
+BacktestEngine feeds a strategy — so a strategy cannot tell the two runners
+apart.
+
 This is the shape future bots should follow: users only write a BaseStrategy
 subclass (on_start/on_bar/on_fill/on_end); everything below main() is
 generic runner plumbing that doesn't change per-strategy.
@@ -32,6 +36,7 @@ from datetime import datetime
 
 import protocol
 import zmq
+from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.order import OrderLot
@@ -39,7 +44,6 @@ from cjtrade.pkgs.models.order import OrderType
 from cjtrade.pkgs.models.order import PriceType
 from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Product
-from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 from cjtrade.pkgs.strategy.bb import BollingerStrategy
@@ -74,27 +78,6 @@ INITIAL_BALANCE = 1_000_000.0
 # lost report on the PUB socket; neither is retransmitted, and without a
 # deadline either one would freeze this symbol for the rest of the run.
 UNACKED_MAX_BARS = 10
-
-
-class LiveBar:
-    """Stand-in for Kbar/_TaggedKbar (engine.py), built from a Snapshot.
-
-    Master promises 1m-equivalent granularity (see main.py's Q1/A1 note), so
-    every broadcast is treated as one closed 1m bar. The OHLC is the broker's
-    own, not open=high=low=close as it was when the feed only carried a close
-    price. If/when the feed drops to tick granularity, a small candle-builder
-    would sit right here, rolling ticks up into 1m bars before this point.
-    """
-    __slots__ = ("symbol", "timestamp", "open", "high", "low", "close", "volume")
-
-    def __init__(self, snap: Snapshot):
-        self.symbol = snap.symbol
-        self.timestamp = snap.timestamp
-        self.open = snap.open
-        self.high = snap.high
-        self.low = snap.low
-        self.close = snap.close
-        self.volume = snap.volume
 
 
 class LocalLedgerMirror:
@@ -160,7 +143,7 @@ class InFlight:
     acknowledged: bool = False   # master has said *something* about this order
 
 
-def build_order(bot_id: str, sig, bar: LiveBar) -> Order:
+def build_order(bot_id: str, sig, bar: Kbar) -> Order:
     """Turn a strategy Signal into the Order master should place.
 
     The Order is fully formed here, including its id: master places it with that
@@ -278,7 +261,10 @@ def main():
                             f"of {target_symbol} (seq {last_seq} -> {msg.seq})")
             last_seq = msg.seq
 
-            bar = LiveBar(msg.snapshot)
+            # One broadcast = one closed bar. Master promises 1m-equivalent
+            # granularity (see main.py's Q1/A1 note); if the feed ever drops to
+            # tick granularity, a candle-builder belongs right here.
+            bar = Kbar.from_snapshot(msg.snapshot)
             price_map[bar.symbol] = bar.close
             price_history.setdefault(bar.symbol, []).append(bar.close)
 

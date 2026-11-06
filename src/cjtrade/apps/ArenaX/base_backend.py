@@ -10,7 +10,6 @@ from typing import Optional
 
 import pandas as pd
 import yfinance as yf
-from cjtrade.pkgs import paths
 from cjtrade.apps.ArenaX.oder_result_helper import CANCELLED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import COMMITTED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import PLACED_ORDER_STANDARD
@@ -22,6 +21,7 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_BALANCE
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_STOCK
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
@@ -263,6 +263,7 @@ class ArenaX_BackendBase:
                     low=round(row["Low"].item(), 2),
                     close=round(row["Close"].item(), 2),
                     volume=int(row["Volume"].item()),
+                    symbol=symbol,
                 )
                 kbars.append(kbar)
 
@@ -1103,6 +1104,7 @@ class ArenaX_BackendBase:
             raise ValueError(f"Mock broker: Unsupported interval for aggregation: {target_interval}")
 
         target_mins = interval_minutes[target_interval]
+        symbol = kbars[0].symbol        # aggregation never mixes symbols
         data = {
             "timestamp": [k.timestamp for k in kbars],
             "open": [k.open for k in kbars],
@@ -1132,6 +1134,7 @@ class ArenaX_BackendBase:
                 low=round(row["low"], 2),
                 close=round(row["close"], 2),
                 volume=int(row["volume"]),
+                symbol=symbol,
             )
             result.append(kbar)
 

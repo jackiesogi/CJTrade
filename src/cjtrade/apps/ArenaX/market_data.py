@@ -495,6 +495,7 @@ class ArenaX_Market:
                     low=round(row["Low"].item(), 2),
                     close=round(row["Close"].item(), 2),
                     volume=int(row["Volume"].item()),
+                    symbol=symbol,
                 ))
             return kbars
         except Exception as exc:
