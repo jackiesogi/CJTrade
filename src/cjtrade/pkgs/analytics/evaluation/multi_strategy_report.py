@@ -44,7 +44,7 @@ class MultiStrategyBacktestReport:
     Attributes
     ----------
     kbars : list
-        Pre-fetched list of _TaggedKbar objects (time-sorted, all symbols).
+        Pre-fetched list of Kbar objects (time-sorted, all symbols, each tagged).
     initial_balance : float
         Starting cash for each strategy.
     params : dict

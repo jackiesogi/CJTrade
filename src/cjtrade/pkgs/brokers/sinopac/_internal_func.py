@@ -102,10 +102,12 @@ def _retrieve_sinopac_trade_by_cj_order_id(api, db_conn, cj_order_id: str):
 
     return sinopac_trade  # May be None if not found
 
-def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
+def _from_sinopac_kbar(sj_kbar, symbol: str = "") -> List[Kbar]:
     """
     Note: Shioaji timestamps have an extra 8-hour offset,
     so we need to subtract 8 hours to get the correct Taiwan market time.
+
+    sj_kbar carries no code, so `symbol` has to come from the caller's Product.
     """
     cj_kbars = []
     for i in range(len(sj_kbar.ts)):
@@ -120,7 +122,8 @@ def _from_sinopac_kbar(sj_kbar) -> List[Kbar]:
                 high=sj_kbar.High[i],
                 low=sj_kbar.Low[i],
                 close=sj_kbar.Close[i],
-                volume=sj_kbar.Volume[i]
+                volume=sj_kbar.Volume[i],
+                symbol=symbol
             )
         )
     return cj_kbars
@@ -431,7 +434,8 @@ def _aggregate_by_trading_session(kbars: List[Kbar], interval: str) -> List[Kbar
             high=max(k.high for k in day_kbars),
             low=min(k.low for k in day_kbars),
             close=day_kbars[-1].close,
-            volume=sum(k.volume for k in day_kbars)
+            volume=sum(k.volume for k in day_kbars),
+            symbol=day_kbars[0].symbol
         )
         daily_kbars.append(daily_kbar)
 
@@ -472,7 +476,8 @@ def _aggregate_daily_to_weekly(daily_kbars: List[Kbar]) -> List[Kbar]:
             high=max(k.high for k in week_kbars),
             low=min(k.low for k in week_kbars),
             close=week_kbars[-1].close,
-            volume=sum(k.volume for k in week_kbars)
+            volume=sum(k.volume for k in week_kbars),
+            symbol=week_kbars[0].symbol
         )
         weekly_kbars.append(weekly_kbar)
 
@@ -504,7 +509,8 @@ def _aggregate_daily_to_monthly(daily_kbars: List[Kbar]) -> List[Kbar]:
             high=max(k.high for k in month_kbars),
             low=min(k.low for k in month_kbars),
             close=month_kbars[-1].close,
-            volume=sum(k.volume for k in month_kbars)
+            volume=sum(k.volume for k in month_kbars),
+            symbol=month_kbars[0].symbol
         )
         monthly_kbars.append(monthly_kbar)
 
@@ -515,6 +521,10 @@ def _aggregate_by_time_windows(kbars: List[Kbar], target_mins: int) -> List[Kbar
     """
     Aggregate kbars using fixed time windows for intraday intervals.
     """
+    if not kbars:
+        return []
+    symbol = kbars[0].symbol        # aggregation never mixes symbols
+
     # Convert to pandas for efficient aggregation
     data = {
         'timestamp': [k.timestamp for k in kbars],
@@ -546,7 +556,8 @@ def _aggregate_by_time_windows(kbars: List[Kbar], target_mins: int) -> List[Kbar
             high=round(row['high'], 2),
             low=round(row['low'], 2),
             close=round(row['close'], 2),
-            volume=int(row['volume'])
+            volume=int(row['volume']),
+            symbol=symbol
         )
         result.append(kbar)
 

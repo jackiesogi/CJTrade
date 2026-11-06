@@ -164,6 +164,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
                 low=float(kr["low"]),
                 close=float(kr["close"]),
                 volume=int(kr["volume"]),
+                # Server response has no code field; take it from the request.
+                symbol=kr.get("symbol") or product.symbol,
             )
 
         kbars = [_parse_kbar(kr) for kr in kbars_raw] if kbars_raw else []

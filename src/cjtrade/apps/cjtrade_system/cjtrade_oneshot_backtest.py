@@ -50,7 +50,6 @@ from typing import List
 from typing import Optional
 from typing import Union
 
-from cjtrade.pkgs.analytics.backtest.engine import _TaggedKbar
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
 from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
@@ -140,7 +139,7 @@ def run_oneshot(
             log.warning(f"[OneShot] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
-        all_kbars.extend(_TaggedKbar(kb, sym) for kb in kbars)
+        all_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
 
     if not all_kbars:
         raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
@@ -262,14 +261,14 @@ def run_compare_strategies(
             log.warning(f"[CompareStrategies] No kbars for {sym} [{start_str} - {end_str}], skipping.")
             continue
 
-        test_kbars.extend(_TaggedKbar(kb, sym) for kb in kbars)
+        test_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
 
     # Fetch kbars for baseline symbol if baseline strategy exists
     baseline_kbars = []
     if baseline_strategy:
         kbars = api.get_kbars(Product(symbol=baseline_symbol), start_str, end_str, interval)
         if kbars:
-            baseline_kbars = [_TaggedKbar(kb, baseline_symbol) for kb in kbars]
+            baseline_kbars = kbars
             log.info(f"[CompareStrategies] Fetched {len(baseline_kbars)} kbars for baseline symbol {baseline_symbol}")
         else:
             log.warning(f"[CompareStrategies] No kbars for baseline {baseline_symbol}, skipping baseline strategy")

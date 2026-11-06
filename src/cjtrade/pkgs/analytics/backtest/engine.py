@@ -49,26 +49,6 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
-# _TaggedKbar – Kbar + symbol (Kbar model has no symbol field)
-# ---------------------------------------------------------------------------
-
-class _TaggedKbar:
-    """Thin wrapper that attaches a symbol to a plain Kbar."""
-    __slots__ = ("timestamp", "open", "high", "low", "close", "volume", "symbol")
-
-    def __init__(self, kbar: Kbar, symbol: str) -> None:
-        self.timestamp = kbar.timestamp
-        self.open      = kbar.open
-        self.high      = kbar.high
-        self.low       = kbar.low
-        self.close     = kbar.close
-        self.volume    = kbar.volume
-        self.symbol    = symbol
-
-
-
-
-# ---------------------------------------------------------------------------
 # Simulated account (internal to engine)
 # ---------------------------------------------------------------------------
 
@@ -212,13 +192,20 @@ class BacktestEngine:
         session_id: Optional[str] = None,
         cost_model: Optional[CostModel] = None,
     ) -> None:
-        # Kbar doesn't carry a symbol field; we attach one via a thin wrapper
-        # so the engine and strategy can always read bar.symbol.
+        # `symbol` overrides whatever the bars carry — a single-symbol caller
+        # may have fetched them from a source that left it blank.
         if symbol:
-            kbars = [_TaggedKbar(k, symbol) for k in kbars]
-        else:
-            # Caller must have passed TaggedKbar or objects that already have .symbol
-            pass
+            kbars = [k.tagged(symbol) for k in kbars]
+
+        # Every strategy reads bar.symbol, so an untagged bar would silently
+        # look up price history under "".
+        missing = sum(1 for k in kbars if not k.symbol)
+        if missing:
+            raise ValueError(
+                f"{missing}/{len(kbars)} kbars have no symbol. Pass symbol= for a "
+                f"single-symbol run, or tag them before merging."
+            )
+
         self.kbars = sorted(kbars, key=lambda k: k.timestamp)
         # import time
         # print([t.timestamp for t in self.kbars[:200]])
