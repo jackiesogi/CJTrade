@@ -1,7 +1,7 @@
 from abc import ABC
 from abc import abstractmethod
 from typing import Any
-from typing import Dict
+from typing import Dict  # noqa: F401  (re-exported; used by importers)
 from typing import List
 
 from cjtrade.pkgs.models.kbar import *
@@ -9,6 +9,7 @@ from cjtrade.pkgs.models.order import *
 from cjtrade.pkgs.models.position import *
 from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import *
+from cjtrade.pkgs.models.trade import Trade
 
 # connect / disconnect / is_connected /
 # get_positions / get_balance / get_quotes /
@@ -138,7 +139,7 @@ class BrokerAPIBase(ABC):
         pass
 
     @abstractmethod
-    def list_orders(self) -> List[Dict]:
+    def list_orders(self) -> List[Trade]:
         pass
 
     @abstractmethod

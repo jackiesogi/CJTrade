@@ -12,6 +12,7 @@ from cjtrade.pkgs.models.position import *
 from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import *
+from cjtrade.pkgs.models.trade import Trade
 
 
 class BrokerType(Enum):
@@ -95,6 +96,18 @@ class AccountClient:
         self._sync_all()  # will sync `account_state`
         return self.account_state.balance
 
+    def get_account_state(self) -> AccountState:
+        """Balance and positions from a single sync.
+
+        get_balance() and get_positions() each run a full `_sync_all()`, so
+        asking for both costs two syncs and returns two views of the account
+        taken a round-trip apart. A caller that needs them together -- anything
+        reporting "here is your new balance and your new position" -- wants one
+        consistent read, not two.
+        """
+        self._sync_all()  # will sync `account_state`
+        return self.account_state
+
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
         return self.broker_api.get_bid_ask(product, intraday_odd)
 
@@ -136,7 +149,10 @@ class AccountClient:
     def cancel_order(self, order_id: str) -> OrderResult:
         return self.broker_api.cancel_order(order_id)
 
-    def list_orders(self) -> List[Dict[str, Any]]:
+    def list_orders(self) -> List[Trade]:
+        # Trade, not Dict: both implementations (arenax, sinopac) already return
+        # Trade objects, and the annotation saying otherwise is what pushes
+        # callers into subscripting them.
         return self.broker_api.list_orders()
 
     def is_market_open(self) -> bool:

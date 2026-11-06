@@ -25,6 +25,7 @@ from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
+from cjtrade.pkgs import paths
 from dotenv import load_dotenv
 from flask import Flask
 from flask import jsonify
