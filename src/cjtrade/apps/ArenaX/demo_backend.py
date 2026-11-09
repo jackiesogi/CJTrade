@@ -50,6 +50,6 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 		self.market.set_historical_time(datetime.now(), days_back=days_back)
 		print(self.market.get_market_time())
         # Pause immediately so client initialisation lag does not consume mock time.
-        # Client must call POST /control/resume-time-progress once ready.
+        # Client must call PATCH /api/v1/clock {"paused": false} once ready.
 		# self.market.pause_time_progress()
 		# print("[ArenaX] Market time paused – waiting for client to call resume.")

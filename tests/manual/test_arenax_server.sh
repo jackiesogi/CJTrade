@@ -66,6 +66,12 @@ post_json() {
     curl -s -X POST -H "Content-Type: application/json" -d "${payload}" "${url}"
 }
 
+put_json() {
+    local url=$1
+    local payload=$2
+    curl -s -X PUT -H "Content-Type: application/json" -d "${payload}" "${url}"
+}
+
 if [[ ${1:-} == "--gui" ]]; then
     start_server 1
 else
@@ -88,24 +94,24 @@ assert_json_eq "health.backend_connected" "$(echo "${res}" | jq -r .backend_conn
 assert_json_eq "health.ok" "$(echo "${res}" | jq -r .ok)" "true"
 assert_json_eq "health.running" "$(echo "${res}" | jq -r .running)" "false"
 
-start_res=$(post_json "${BASE_URL}/control/start" "{}")
+start_res=$(put_json "${BASE_URL}/api/v1/backend" '{"running": true}')
 assert_json_eq "start.ok" "$(echo "${start_res}" | jq -r .ok)" "true"
 assert_json_eq "start.running" "$(echo "${start_res}" | jq -r .running)" "true"
 
-time_res=$(curl -s "${BASE_URL}/control/get-market-time")
+time_res=$(curl -s "${BASE_URL}/api/v1/clock")
 assert_json_eq "get-time.playback_speed" "$(echo "${time_res}" | jq -r .playback_speed)" "12000"
 
 anchor_time=$(date -u +"%Y-%m-%dT%H:%M:%S")
-set_time_res=$(post_json "${BASE_URL}/control/set-timeline-origin" "{\"anchor_time\": \"${anchor_time}\", \"days_back\": 5}")
+set_time_res=$(put_json "${BASE_URL}/api/v1/clock/origin" "{\"mock_init_time\": \"${anchor_time}\"}")
 assert_json_eq "set-time.ok" "$(echo "${set_time_res}" | jq -r .ok)" "true"
 
-config_res=$(curl -s "${BASE_URL}/control/get-config")
+config_res=$(curl -s "${BASE_URL}/api/v1/config")
 if [[ "$(echo "${config_res}" | jq -r .server_config)" == "null" ]]; then
     echo "Assertion failed: get-config.server_config missing" >&2
     exit 1
 fi
 echo "Pass"
 
-stop_res=$(post_json "${BASE_URL}/control/stop" "{}")
+stop_res=$(put_json "${BASE_URL}/api/v1/backend" '{"running": false}')
 assert_json_eq "stop.ok" "$(echo "${stop_res}" | jq -r .ok)" "true"
 assert_json_eq "stop.running" "$(echo "${stop_res}" | jq -r .running)" "false"

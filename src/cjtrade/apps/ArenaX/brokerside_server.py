@@ -35,6 +35,26 @@ from werkzeug.serving import make_server
 external_config = {}
 internal_config = {}
 
+# Substrings that mark a config value as a secret. Matched, not listed exactly,
+# so a key added later (another "*_api_key", a "token") is covered by default
+# rather than leaking until someone remembers to add it here.
+_SECRET_KEY_MARKERS = ("key", "secret", "password", "passwd", "token", "credential")
+
+_REDACTED = "<redacted>"
+
+
+def _redact_secrets(cfg: dict) -> dict:
+    """Copy of `cfg` with secret values replaced. Key names are kept.
+
+    Never mutates the input: the server reads these dicts to build the backend.
+    """
+    if not isinstance(cfg, dict):
+        return cfg
+    return {
+        k: (_REDACTED if any(m in str(k).lower() for m in _SECRET_KEY_MARKERS) else v)
+        for k, v in cfg.items()
+    }
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)-8s: %(message)s"
@@ -218,7 +238,8 @@ class ArenaX_BrokerSideServer:
         # /health and /favicon.ico are always served so callers can poll readiness.
         @app.before_request
         def _require_backend_ready():
-            exempt = ('/health', '/favicon.ico', '/control/start-backend')
+            # /api/v1/backend is exempt because it is how you start a stopped one.
+            exempt = ('/health', '/favicon.ico', '/api/v1/backend')
             if request.path not in exempt and not self._running:
                 return jsonify({"ok": False, "error": "backend initializing, please retry"}), 503
 
@@ -240,20 +261,26 @@ class ArenaX_BrokerSideServer:
                 "data_readiness": self._data_readiness.value,
             })
 
-        @app.post("/control/start-backend")
-        def control_start():
+        @app.put("/api/v1/backend")
+        def set_backend_running():
+            """Start or stop the simulated backend.
+
+            Body: {"running": true|false}
+            """
+            payload = request.get_json(silent=True) or {}
+            if "running" not in payload:
+                return jsonify({"ok": False, "error": "running is required"}), 400
+            want = bool(payload["running"])
             try:
-                self.start_backend()
+                if want:
+                    self.start_backend()
+                else:
+                    self.stop_backend()
             except Exception as e:
-                # start_backend now refuses to come up on a failed login, so
-                # answer with the reason instead of a bare 500 traceback.
+                # start_backend refuses to come up on a failed login, so answer
+                # with the reason instead of a bare 500 traceback.
                 return jsonify({"ok": False, "running": self._running,
                                 "error": str(e)}), 500
-            return jsonify({"ok": True, "running": self._running})
-
-        @app.post("/control/stop-backend")
-        def control_stop():
-            self.stop_backend()
             return jsonify({"ok": True, "running": self._running})
 
         # Note: for user, they only care about setting "mock current time" / "mock init time"
@@ -263,24 +290,28 @@ class ArenaX_BrokerSideServer:
         #   1. Only stop time progress (mock current time would stop at a specific point)
         #   2. Kill the backend (endpoint `/control/stop` do this)
         #   3. Stop the whole server (kill the process at OS-level, there will be a systemd service file for this in the future)
-        @app.post("/control/set-timeline-origin")
-        @app.post("/control/set-time")          # deprecated name, kept for older clients
-        def control_set_timeline_origin():
-            """Set where the simulated timeline BEGINS (not the current moment).
+        @app.put("/api/v1/clock/origin")
+        def set_clock_origin():
+            """Set where the simulated timeline BEGINS, not the current moment.
 
             Snaps to 09:00 and, unless told otherwise, also starts the clock and
-            refetches the data cache. To move the current moment instead, use
-            /control/set-market-time.
+            refetches the data cache. To move the current moment within an
+            existing timeline, PATCH /api/v1/clock instead.
+
+            Body: {"mock_init_time": ISO8601,
+                   "auto_start_progress": bool, "auto_preload_data": bool}
             """
             payload = request.get_json(silent=True) or {}
-            anchor_time = payload.get("anchor_time")
-            if not anchor_time:
-                return jsonify({"ok": False, "error": "anchor_time is required"}), 400
-            parsed_time = datetime.fromisoformat(anchor_time)
+            raw = payload.get("mock_init_time")
+            if not raw:
+                return jsonify({"ok": False, "error": "mock_init_time is required"}), 400
+            try:
+                parsed_time = datetime.fromisoformat(raw)
+            except (TypeError, ValueError) as exc:
+                return jsonify({"ok": False, "error": f"bad mock_init_time: {exc}"}), 400
             # Forward both flags. They used to be dropped here (and commented out
             # in the middleware payload), so a caller asking to set the start date
             # without starting the clock or refetching data silently got both.
-            # Defaults stay True, so existing callers are unaffected.
             success = self.set_timeline_origin(
                 parsed_time,
                 auto_start_progress=bool(payload.get("auto_start_progress", True)),
@@ -288,34 +319,61 @@ class ArenaX_BrokerSideServer:
             )
             return jsonify({"ok": success})
 
-        @app.post("/control/set-market-time")
-        def control_set_market_time():
-            """Step the frozen clock to an exact timestamp. Repeatable.
+        @app.patch("/api/v1/clock")
+        def patch_clock():
+            """Move the clock, freeze it, or let it run.
 
-            Separate from /control/set-timeline-origin: that one establishes
-            where the timeline starts (and snaps to 09:00), this one moves the
-            current moment within it and leaves the data cache alone.
+            Body may carry either or both:
+              {"mock_current_time": ISO8601}  step to an exact moment. Freezing
+                   is part of the semantics -- a derived value cannot be "set"
+                   without pinning it, or it drifts away immediately.
+              {"paused": true|false}          freeze / resume.
+
+            Both given: the time is applied first, then `paused`. Repeatable,
+            which is what makes it usable once per replayed bar.
             """
             payload = request.get_json(silent=True) or {}
-            raw = payload.get("t")
-            if not raw:
-                return jsonify({"ok": False, "error": "t is required"}), 400
+            market = getattr(self.backend, "market", None)
+            if market is None:
+                return jsonify({"ok": False, "error": "no clock on this backend"}), 400
+            if "mock_current_time" not in payload and "paused" not in payload:
+                return jsonify({"ok": False,
+                                "error": "mock_current_time or paused is required"}), 400
+
+            resp = {"ok": True}
             try:
-                parsed = datetime.fromisoformat(raw)
-            except (TypeError, ValueError) as exc:
-                return jsonify({"ok": False, "error": f"bad t: {exc}"}), 400
-            if not hasattr(self.backend, "market") or \
-               not hasattr(self.backend.market, "set_market_time"):
-                return jsonify({"ok": False, "error": "steppable clock not supported"}), 400
-            try:
-                frozen = self.backend.market.set_market_time(parsed)
-                return jsonify({"ok": True, "mock_current_time": frozen.isoformat()}), 200
+                if "mock_current_time" in payload:
+                    if not hasattr(market, "set_market_time"):
+                        return jsonify({"ok": False,
+                                        "error": "steppable clock not supported"}), 400
+                    try:
+                        parsed = datetime.fromisoformat(payload["mock_current_time"])
+                    except (TypeError, ValueError) as exc:
+                        return jsonify({"ok": False,
+                                        "error": f"bad mock_current_time: {exc}"}), 400
+                    resp["mock_current_time"] = market.set_market_time(parsed).isoformat()
+
+                if "paused" in payload:
+                    want_paused = bool(payload["paused"])
+                    method = "pause_time_progress" if want_paused else "resume_time_progress"
+                    if not hasattr(market, method):
+                        return jsonify({"ok": False,
+                                        "error": f"{method} not supported"}), 400
+                    moment = getattr(market, method)()
+                    resp["paused"] = want_paused
+                    resp["mock_current_time"] = moment.isoformat()
+                return jsonify(resp), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.get("/control/get-market-time")
-        @app.get("/control/get-time")           # deprecated name, kept for older clients
-        def control_get_market_time():
+        @app.get("/api/v1/clock")
+        def get_clock():
+            """Read the simulated clock.
+
+            All datetime fields are ISO 8601 naive datetimes representing
+            Asia/Taipei local time; callers must NOT apply any timezone
+            conversion.
+            """
             t = self.backend.market.get_market_time()
 
             if self._skip_non_trading_hours:
@@ -334,43 +392,25 @@ class ArenaX_BrokerSideServer:
                 "paused_time": t["paused_time"].isoformat() if t.get("paused_time") else None,
             })
 
-        @app.post("/control/pause-time-progress")
-        def control_pause():
-            if not hasattr(self.backend, "market") or not hasattr(self.backend.market, "pause_time_progress"):
-                return jsonify({"ok": False, "error": "pause not supported"}), 400
-            try:
-                paused_time = self.backend.market.pause_time_progress()
-                return jsonify({"ok": True, "paused": True, "paused_time": paused_time.isoformat()}), 200
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
+        @app.get("/api/v1/config")
+        def get_config():
+            """The server's resolved configuration, with secrets withheld.
 
-        @app.post("/control/resume-time-progress")
-        def control_resume():
-            if not hasattr(self.backend, "market") or not hasattr(self.backend.market, "resume_time_progress"):
-                return jsonify({"ok": False, "error": "resume not supported"}), 400
-            try:
-                baseline = self.backend.market.resume_time_progress()
-                return jsonify({"ok": True, "paused": False, "baseline": baseline.isoformat()}), 200
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
-
-        @app.get("/control/get-config")
-        def control_get_config():
+            external_config is the broker credential set loaded from *.cjconf
+            (API key, secret key, CA password, news API key). This route used to
+            return it verbatim and is not behind any authentication, so a plain
+            GET handed out live Sinopac credentials. Secret values are replaced
+            with "<redacted>" and only their key names are reported, which is
+            all the admin shell ever displayed them for.
+            """
             return jsonify({
-                "internal_config": internal_config,
-                "external_config": external_config,
+                "internal_config": _redact_secrets(internal_config),
+                "external_config": _redact_secrets(external_config),
             })
 
-        @app.get("/control/get-price")
-        def control_get_price():
-            symbol = request.args.get("symbol")
-            if not symbol:
-                return jsonify({"ok": False, "error": "symbol is required"}), 400
-            price = self.backend.snapshot(symbol)
-            return jsonify({"ok": True, "symbol": symbol, "price": str(price)})
-
-        @app.post("/account/login")
-        def login():
+        @app.post("/api/v1/session")
+        def open_session():
+            """Authenticate. Body: {"api_key": "..."}"""
             payload = request.get_json(silent=True) or {}
             api_key = payload.get("api_key")
             if api_key in self._valid_api_keys:
@@ -380,13 +420,19 @@ class ArenaX_BrokerSideServer:
                 print(f"API key {api_key} is invalid. Login failed.")
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
-        @app.post("/account/logout")
-        def logout():
+        @app.delete("/api/v1/session")
+        def close_session():
+            """Log out."""
             return jsonify({"ok": True, "message": "Logout successful"})
 
-        # Contains account balance, positions, orders
-        @app.get("/account/summary")
-        def account_summary():
+        @app.get("/api/v1/account")
+        def get_account():
+            """Balance, positions and orders in one read.
+
+            One representation rather than three endpoints because every caller
+            wants them from the same instant -- fetching them separately gives
+            views taken a round-trip apart.
+            """
             b = self.backend.account_balance()
             p = self.backend.list_positions()
             o = self.backend.list_trades()
@@ -397,13 +443,18 @@ class ArenaX_BrokerSideServer:
                 "orders": o if o is not None else None,
             })
 
-        # Raw backtest data for the client to build a BacktestResult locally.
-        # The backend only records; the client decides how to analyse.
-        # NOTE: equity_curve is intentionally NOT included here.  The client
-        # (cjtrade_system) records it locally during the backtest run so the
-        # server doesn't accumulate unbounded in-memory data across sessions.
-        @app.get("/account/backtest-state")
-        def backtest_state():
+        @app.get("/api/v1/account/fills")
+        def get_account_fills():
+            """Everything needed to build a BacktestResult client-side.
+
+            The backend only records; the client decides how to analyse. The
+            two balances ride along because a fill history is meaningless
+            without the bracket it sits in.
+
+            NOTE: equity_curve is intentionally NOT here. The client
+            (cjtrade_system) records it locally during the run so the server
+            does not accumulate unbounded in-memory data across sessions.
+            """
             state = self.backend.account_state
             return jsonify({
                 "ok": True,
@@ -412,8 +463,13 @@ class ArenaX_BrokerSideServer:
                 "fill_history": state.fill_history,
             })
 
+        @app.get("/api/v1/orders")
+        def list_orders():
+            """Every order this session knows about, resting ones included."""
+            o = self.backend.list_trades()
+            return jsonify({"ok": True, "orders": o if o is not None else []})
 
-        @app.post("/trade/place-order")
+        @app.post("/api/v1/orders")
         def place_order():
             payload = request.get_json(silent=True) or {}
             product_payload = payload.get("product") or {}
@@ -459,12 +515,9 @@ class ArenaX_BrokerSideServer:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.post("/trade/cancel-order")
-        def cancel_order():
-            payload = request.get_json(silent=True) or {}
-            order_id = payload.get("order_id")
-            if not order_id:
-                return jsonify({"ok": False, "error": "order_id is required"}), 400
+        @app.delete("/api/v1/orders/<string:order_id>")
+        def cancel_order(order_id: str):
+            """Cancel a resting order."""
             try:
                 result = self.backend.cancel_order(order_id)
                 print(f"Cancelling order {order_id}")
@@ -473,36 +526,34 @@ class ArenaX_BrokerSideServer:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.post("/trade/sync-state")
-        def sync_state():
-            payload = request.get_json(silent=True) or {}
-            order_id = payload.get("order_id")
-            if not order_id:
-                return jsonify({"ok": False, "error": "order_id is required"}), 400
+        @app.get("/api/v1/orders/<string:order_id>")
+        def get_order(order_id: str):
+            """Current status of one order, refreshed against the market.
+
+            A read, which is why it is a GET: the backend re-runs the fill check
+            and reports, it performs no transition of its own. It used to be
+            POST /trade/sync-state, which read like a mutation.
+            """
             try:
                 result = self.backend.sync_state(order_id)
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.get("/market/snapshot")
-        def market_snapshot():
-            symbol = request.args.get("symbol")
-            if not symbol:
-                return jsonify({"ok": False, "error": "symbol is required"}), 400
+        @app.get("/api/v1/market/<string:symbol>/snapshot")
+        def market_snapshot(symbol: str):
+            """Latest OHLCV snapshot for one symbol."""
             price = self.backend.snapshot(symbol)
-            # print(type(price))  # Snapshot
-            # print(type(price.to_dict()))  # dict
             resp = {"ok": True, "symbol": symbol, "price": price.to_dict() if price else None}
             if self._data_readiness != DataReadiness.ALL_SET:
                 resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"
             return jsonify(resp)
 
-        @app.get("/market/data_availability")
+        @app.get("/api/v1/market/data-availability")
         def market_data_availability():
             """Informational endpoint: returns known real-broker date range if
             a real account is connected.  Clients should NOT use this to decide
-            whether to call /market/kbars – that endpoint handles all source
+            whether to call the kbars route – that endpoint handles all source
             selection internally (price_db → real broker → yfinance).
             """
             if self.backend.real_account is None:
@@ -521,9 +572,14 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
 
-        @app.get("/market/kbars")
-        def market_kbars():
-            symbol = request.args.get("symbol")
+        @app.get("/api/v1/market/<string:symbol>/kbars")
+        def market_kbars(symbol: str):
+            """Historical bars. Query: start, end, interval (1m|5m|1h|1d).
+
+            The server picks the data source itself (price_db -> real broker ->
+            yfinance); there is deliberately no way to ask for one, so callers
+            cannot depend on where the bars came from.
+            """
             start = request.args.get("start")
             end = request.args.get("end")
             interval = request.args.get("interval", "1m")
@@ -544,28 +600,18 @@ class ArenaX_BrokerSideServer:
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
-        @app.get("/market/kbars_yfinance")
-        def market_kbars_yfinance():
-            symbol = request.args.get("symbol")
-            start = request.args.get("start")
-            end = request.args.get("end")
-            interval = request.args.get("interval", "1m")
-            try:
-                kbars = self.backend.kbars_yf(symbol, start, end, interval)
-                print(f"length of kbars: {len(kbars)}")
-                print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
-                return jsonify({"ok": True, "result": [kb.__dict__ for kb in kbars]}), 200
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
-
-        @app.post("/trade/register-order-callback")
-        def register_order_callback():
-            return jsonify({"ok": False, "error": "not implemented"}), 501
-
-        @app.get("/trade/get-broker-name")
-        def trade_get_broker_name():
-            return jsonify({"ok": True, "broker": self.backend.broker_name if hasattr(self.backend, "broker_name") else "unknown"})
-
+        # Deliberately absent, all four had no client and were removed with the
+        # move to /api/v1:
+        #   GET  /control/get-price            duplicate of the snapshot route,
+        #                                      and it returned str(Snapshot)
+        #   GET  /market/kbars_yfinance        named its data source in the URL
+        #   GET  /trade/get-broker-name        read backend.broker_name, which
+        #                                      does not exist -> always "unknown"
+        #   POST /trade/register-order-callback a 501 stub. A callback is a local
+        #                                      function; it cannot be POSTed. The
+        #                                      REST shape for this is an event
+        #                                      log the adapter polls -- see the
+        #                                      note in arenax_broker_api.
         return app
 
 

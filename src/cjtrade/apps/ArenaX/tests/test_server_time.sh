@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_URL="http://localhost:8801/control"
+BASE_URL="http://localhost:8801/api/v1"
 THRESHOLD=15
 ANCHOR_TIME="2024-01-16T09:00:00"
 
@@ -34,9 +34,9 @@ echo "--------------------------------------------------------"
 
 # --- 1. Pre-check: Ensure server initial state is running ---
 info "Pre-check: Verifying initial clock is running..."
-PRE_1=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+PRE_1=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 sleep 2
-PRE_2=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+PRE_2=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 
 if [ "$PRE_1" != "$PRE_2" ] && [ "$PRE_1" != "null" ]; then
     success "Pre-check: PASS (System clock is running by default)"
@@ -47,11 +47,11 @@ fi
 
 # --- 2. Action: Set Time ---
 info "Action: Setting anchor time to $ANCHOR_TIME..."
-curl -s -X POST -H "Content-Type: application/json" \
-     -d "{\"anchor_time\": \"$ANCHOR_TIME\"}" "$BASE_URL/set-time" > /dev/null
+curl -s -X PUT -H "Content-Type: application/json" \
+     -d "{\"mock_init_time\": \"$ANCHOR_TIME\"}" "$BASE_URL/clock/origin" > /dev/null
 
 # --- 3. Validation: real_init_time (Default Arg Check) ---
-SERVER_DATA=$(curl -s "$BASE_URL/get-time")
+SERVER_DATA=$(curl -s "$BASE_URL/clock")
 REAL_INIT_STR=$(echo "$SERVER_DATA" | jq -r '.real_init_time')
 
 OFFSET=$(python3 - <<EOF
@@ -74,10 +74,10 @@ fi
 
 # --- 4. Test: Pause (Should be frozen) ---
 info "Action: Requesting Pause..."
-curl -s -X POST "$BASE_URL/pause-time-progress" > /dev/null
-M_PAUSE_1=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+curl -s -X PATCH -H "Content-Type: application/json" -d '{"paused": true}' "$BASE_URL/clock" > /dev/null
+M_PAUSE_1=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 sleep 2
-M_PAUSE_2=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+M_PAUSE_2=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 
 if [ "$M_PAUSE_1" == "$M_PAUSE_2" ]; then
     success "Pause Check: PASS (Frozen at $M_PAUSE_1)"
@@ -87,10 +87,10 @@ fi
 
 # --- 5. Test: Resume (Should resume) ---
 info "Action: Requesting Resume..."
-curl -s -X POST "$BASE_URL/resume-time-progress" > /dev/null
-M_RESUME_1=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+curl -s -X PATCH -H "Content-Type: application/json" -d '{"paused": false}' "$BASE_URL/clock" > /dev/null
+M_RESUME_1=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 sleep 2
-M_RESUME_2=$(curl -s "$BASE_URL/get-time" | jq -r '.mock_current_time')
+M_RESUME_2=$(curl -s "$BASE_URL/clock" | jq -r '.mock_current_time')
 
 if [ "$M_RESUME_1" != "$M_RESUME_2" ]; then
     success "Resume Check: PASS (Clock moving again)"
