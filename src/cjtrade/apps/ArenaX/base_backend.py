@@ -463,7 +463,25 @@ class ArenaX_BackendBase:
 
             if not data.empty and timestamps is not None:
                 data_idx = self._calculate_kbar_index(symbol, adjusted_mock_time)
-                daily_data = data.iloc[: data_idx + 1]
+
+                # Aggregate only the day the latest bar belongs to. This used
+                # to slice from row 0 of the whole preloaded range, so `open`
+                # was the first bar of the entire backtest and `high`/`low`
+                # were the running extremes across every day loaded -- numbers
+                # that drifted further from the truth the longer a replay ran,
+                # while being named `daily_*`. Only `close` was ever right.
+                #
+                # Keyed on the latest bar's own day rather than on
+                # adjusted_mock_time's: asked for a moment before the first bar
+                # of a session (the data starts at 09:01, not 09:00) this
+                # reports the previous session's figures, which is what a
+                # pre-open snapshot should say. Keying on the requested day
+                # would slice to nothing and fall through to the random
+                # fallback snapshot below.
+                day_start = int(data.index.searchsorted(
+                    data.index[data_idx].normalize()
+                ))
+                daily_data = data.iloc[day_start:data_idx + 1]
 
                 if len(daily_data) > 0:
                     daily_open = daily_data["Open"].iloc[0].item()

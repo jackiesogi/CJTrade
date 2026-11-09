@@ -20,7 +20,18 @@ class Kbar:
 
     @classmethod
     def from_snapshot(cls, snapshot) -> "Kbar":
-        """Treat a Snapshot as one closed bar. Used by live/replay runners."""
+        """Treat a Snapshot as one closed bar. Used by live/replay runners.
+
+        `close` and `timestamp` carry over exactly. `open`, `high`, `low` and
+        `volume` do NOT describe this bar: a Snapshot reports the figures for
+        the whole trading day so far -- that is what shioaji's api.snapshots()
+        returns and what ArenaX now matches -- so on a 1m feed the high and low
+        are the day's range, not the minute's, and they only widen as the
+        session goes on.
+
+        A strategy reading bar.close is fine. One reading bar.high/low wants
+        real per-bar extremes and has to get them from get_kbars() instead.
+        """
         return cls(
             timestamp=snapshot.timestamp,
             open=snapshot.open,

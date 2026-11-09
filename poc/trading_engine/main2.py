@@ -326,8 +326,14 @@ class EventHub:
 
     def _snapshot_real(self, symbol: str) -> Snapshot:
         # Pass the broker's Snapshot through untouched. It used to be projected
-        # down to {symbol, close, timestamp}, which threw away the OHLC the bot
-        # then had to fake by setting open=high=low=close.
+        # down to {symbol, close, timestamp}, which threw away everything else
+        # and left the bot setting open=high=low=close.
+        #
+        # Know what survives: close and timestamp are this moment's, but open,
+        # high and low are the TRADING DAY's so far -- that is what a Snapshot
+        # means to shioaji and now to ArenaX too. Kbar.from_snapshot carries
+        # them straight into bar.high/bar.low, so a strategy wanting per-bar
+        # extremes on a 1m feed is not getting them here.
         return self.client.get_snapshots([Product(symbol=symbol)])[0]
 
     def _snapshot_mock(self, symbol: str) -> Snapshot:
