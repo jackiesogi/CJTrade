@@ -62,10 +62,3 @@ AX_SKIP_DATA_PRELOAD = n
 AX_AUTO_TIME_PROGRESS = y
 AX_AUTO_START_BACKEND = y
 # ===========================================================================================================
-
-
-# ======================================  System Intervals (seconds)  =======================================
-# This section control how often the system performs certain actions during backtesting.
-# Adjusting these intervals can help balance between realism and speed of backtesting.
-AX_ORDER_MATCHING_INTERVAL  = 1.0      # seconds in virtual environment
-# ===========================================================================================================

@@ -104,7 +104,7 @@ def load_cjsys(backend_str: str = "demo"):
     load_dotenv(file_to_load, override=False)
     keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
-            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND', 'AX_ORDER_MATCHING_INTERVAL',
+            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND',
             'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT']
     for key in keys:
         if os.environ.get(key):
@@ -152,7 +152,7 @@ class ArenaX_BrokerSideServer:
         backend: Optional[ArenaX_BackendBase] = None,
         host: str = "127.0.0.1",
         port: int = 8801,
-        match_interval: float = 1.0,
+        match_interval: float = 1.0,   # real seconds between matching sweeps
     ):
         if backend is not None:
             self.backend = backend
@@ -745,6 +745,16 @@ class ArenaX_BrokerSideServer:
     #   1. Check if any order is filled and update account state.
     #   2. Other periodic checks that need to be done frequently.
     def _matching_loop(self) -> None:
+        """Background sweep: notice fills, expire what its TIF says to expire.
+
+        `_match_interval` is REAL seconds, not virtual. It does not change
+        results -- _check_if_any_order_filled scans the whole range since its
+        last pass, so a longer interval only means a fill is noticed later,
+        never missed. It used to have an AX_ORDER_MATCHING_INTERVAL config key
+        that was parsed and discarded, documented as "seconds in virtual
+        environment" -- which described the legacy client-driven matching that
+        scaled its sleep by playback speed, not this loop.
+        """
         while not self._stop_event.is_set():
             if hasattr(self.backend, "_check_if_any_order_filled"):
                 self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
