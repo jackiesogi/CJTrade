@@ -110,6 +110,18 @@ def account_states_dir() -> Path:
     return d
 
 
+def reports_dir() -> Path:
+    """Backtest reports: HTML tearsheets and pickled BacktestResults.
+
+    Data, not cache: a report describes one run of a strategy against one
+    account state, and neither can be reconstructed once the account has moved
+    on -- so unlike the price cache, deleting this loses something.
+    """
+    d = data_dir() / "reports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def form_state_dir() -> Path:
     """Remembered answers for pkgs.ui forms, keyed by schema stem."""
     d = state_dir() / "form_state"
@@ -136,6 +148,7 @@ def describe() -> str:
         f"cache        : {cache_dir(ensure=False)}",
         f"state        : {state_dir(ensure=False)}",
         f"logs         : {log_dir(ensure=False)}",
+        f"reports      : {data_dir(ensure=False) / 'reports'}",
     ]
     return "\n".join(lines)
 

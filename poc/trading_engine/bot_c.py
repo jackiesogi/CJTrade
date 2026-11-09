@@ -143,13 +143,18 @@ class InFlight:
     acknowledged: bool = False   # master has said *something* about this order
 
 
-def build_order(bot_id: str, sig, bar: Kbar) -> Order:
+def build_order(bot_id: str, session_id: str, sig, bar: Kbar) -> Order:
     """Turn a strategy Signal into the Order master should place.
 
     The Order is fully formed here, including its id: master places it with that
     id, so the OrderReport that comes back later is unambiguously about this
     signal. created_at is the bar's market time, not datetime.now(), so a replay
     run stamps orders with replayed time.
+
+    session_id rides in opt_field because the ArenaX backend copies it into
+    fill_history when it settles a fill (base_backend._apply_fill), which is how
+    master's end-of-run report asks for this run's trades and not the ones
+    sitting on the server from a previous run.
     """
     return Order(
         product=Product(symbol=sig.symbol),
@@ -160,7 +165,7 @@ def build_order(bot_id: str, sig, bar: Kbar) -> Order:
         order_type=OrderType.ROD,
         order_lot=OrderLot.IntraDayOdd,
         created_at=bar.timestamp,
-        opt_field={"bot_id": bot_id},
+        opt_field={"bot_id": bot_id, "session_id": session_id},
     )
 
 
@@ -171,6 +176,9 @@ def main():
     # matters until this bot's first fill, but position sizing before that fill
     # would be computed against the wrong equity.
     initial_balance = float(sys.argv[2]) if len(sys.argv) > 2 else INITIAL_BALANCE
+    # argv[3] is master's session id. Empty when launched by the legacy main.py,
+    # which does not report on a run and so has nothing to filter by.
+    session_id = sys.argv[3] if len(sys.argv) > 3 else ""
     target_symbol = "2317"
 
     strategy = BollingerStrategy()
@@ -296,7 +304,7 @@ def main():
                                 f"{sig.symbol} again")
 
                 # Just the intent — master's ExecutionEngine decides if/how it fills.
-                order = build_order(bot_id, sig, bar)
+                order = build_order(bot_id, session_id, sig, bar)
                 inflight[sig.symbol] = InFlight(order_id=order.id, bar_sent=bar_index)
                 push_socket.send(protocol.encode(
                     OrderIntent(bot_id=bot_id, order=order, reason=sig.reason)
