@@ -7,6 +7,8 @@ from typing import Optional
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.market_data import ArenaX_Market
 from cjtrade.apps.ArenaX.market_data import ArenaX_RealMarket
+from cjtrade.apps.ArenaX.time_in_force import policy_for
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import OrderAction
@@ -121,6 +123,8 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		for symbol in symbols:
 			self._refresh_kbar_buffer(symbol)
 
+		calendar = getattr(getattr(self, "market", None), "calendar", None) or TradingCalendar()
+
 		committed_copy = list(self.account_state.orders_committed)
 		any_filled = False
 
@@ -130,6 +134,14 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 
 			kbars = self._kbar_buffer.get(order.product.symbol, [])
 			new_kbars = [kbar for kbar in kbars if kbar.timestamp > last_check_time]
+
+			# Same deadline clamp as the base matcher: an order must not fill on
+			# a bar later than the point its time-in-force ended it. Here the
+			# buffer is the risk rather than a clock jump -- a refresh that
+			# crosses a session boundary brings back bars from after the close.
+			deadline = policy_for(order.order_type).expires_at(order, calendar)
+			if deadline is not None:
+				new_kbars = [kbar for kbar in new_kbars if kbar.timestamp <= deadline]
 
 			if not new_kbars:
 				continue
