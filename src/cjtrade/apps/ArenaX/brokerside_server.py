@@ -26,6 +26,7 @@ from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
 from apiflask import APIFlask
 from dotenv import load_dotenv
+from flask import g
 from flask import jsonify
 from flask import request
 from flask import send_from_directory
@@ -220,6 +221,11 @@ class ArenaX_BrokerSideServer:
         self._valid_api_keys.add('testkey123')  # hardcoded API key for testing
         self._data_readiness = DataReadiness.NONE
         self._backend_str = backend_str  # stored to skip keepalive in backtest mode
+        # Guards every touch of self.backend, taken by the request threads and
+        # by the matching loop. Re-entrant because the backend calls itself:
+        # place_order -> _is_within_trading_limit -> list_trades ->
+        # _check_if_any_order_filled, all within one acquisition.
+        self._backend_lock = threading.RLock()
 
         # When enabled, the matching loop automatically jumps over non-trading hours
         # (after 13:30 or weekends) to accelerate backtesting.
@@ -264,12 +270,51 @@ class ArenaX_BrokerSideServer:
         # Return 503 for all trading/account/market endpoints while the backend
         # is still initialising (login + price-DB preload not yet complete).
         # /health and /favicon.ico are always served so callers can poll readiness.
+        # Routes that answer without the backend lock, so a long preload cannot
+        # make the server look dead.
+        #
+        # /health is in here on purpose. It reads three flags -- self._running,
+        # backend.is_connected() and self._data_readiness -- and mutates
+        # nothing, so a single attribute read is already atomic. Queueing a
+        # liveness probe behind the work it is meant to report on defeats the
+        # probe: every harness here polls /health to decide the server is up.
+        lock_free = frozenset((
+            '/health', '/favicon.ico', app.docs_path, app.spec_path,
+            app.spec_path.rstrip('/') + '/',
+        ))
+
+        @app.before_request
+        def _serialise_backend_access():
+            """One thread in the backend at a time.
+
+            The backend was written single-threaded: place_order appends to
+            orders_committed while the matching loop iterates and mutates the
+            same lists, and both move `balance`. That race already existed with
+            one request thread; threaded=True would widen it. Holding the lock
+            for the whole request keeps the backend's own code unchanged, which
+            matters because paper/real override place_order, cancel_order and
+            list_trades -- a lock inside the base class would be bypassed by
+            exactly the subclasses that need it.
+            """
+            if request.path in lock_free:
+                return None
+            self._backend_lock.acquire()
+            g._arenax_lock_held = True
+            return None
+
+        @app.teardown_request
+        def _release_backend_access(exc=None):
+            # teardown runs even when the handler raised, so the lock cannot be
+            # leaked by a 500.
+            if getattr(g, "_arenax_lock_held", False):
+                g._arenax_lock_held = False
+                self._backend_lock.release()
+
         @app.before_request
         def _require_backend_ready():
             # /api/v1/backend is exempt because it is how you start a stopped one;
-            # the docs are exempt so they stay readable while the backend warms up.
-            exempt = ('/health', '/favicon.ico', '/api/v1/backend',
-                      app.docs_path, app.spec_path)
+            # /health so liveness is answerable while the backend warms up.
+            exempt = ('/health', '/api/v1/backend') + tuple(lock_free)
             if request.path not in exempt and not self._running:
                 return jsonify({"ok": False, "error": "backend initializing, please retry"}), 503
 
@@ -722,7 +767,17 @@ class ArenaX_BrokerSideServer:
     def start_http(self) -> None:
         if self._http_server:
             return
-        self._http_server = make_server(self.host, self.port, self._app)
+        # threaded=True: werkzeug's default is one request at a time, so any
+        # slow handler queued every other request behind it. A preload fetching
+        # a month of 1m bars from yfinance takes seconds, and /health would time
+        # out behind it while the server was in fact perfectly alive.
+        #
+        # Concurrency stops at the socket: _backend_lock still serialises
+        # anything that touches the backend (see _create_app), so the simulated
+        # exchange remains single-threaded while /health and /docs stay
+        # answerable. That is deliberate -- there is one order book.
+        self._http_server = make_server(self.host, self.port, self._app,
+                                        threaded=True)
         self._http_thread = threading.Thread(
             target=self._http_server.serve_forever,
             name="ArenaXHttpServer",
@@ -861,22 +916,26 @@ class ArenaX_BrokerSideServer:
         scaled its sleep by playback speed, not this loop.
         """
         while not self._stop_event.is_set():
-            if hasattr(self.backend, "_check_if_any_order_filled"):
-                self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
+            # Same lock the request threads take, and released before the wait
+            # below -- holding it across the sleep would stall every request for
+            # a whole interval.
+            with self._backend_lock:
+                if hasattr(self.backend, "_check_if_any_order_filled"):
+                    self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
 
-            # Expiry is the backend's business, keyed on each order's own
-            # time-in-force. The server used to run a date-latched EOD sweep
-            # here and cancel everything committed regardless of TIF.
-            if hasattr(self.backend, "expire_resting_orders"):
-                self.backend.expire_resting_orders()
+                # Expiry is the backend's business, keyed on each order's own
+                # time-in-force. The server used to run a date-latched EOD sweep
+                # here and cancel everything committed regardless of TIF.
+                if hasattr(self.backend, "expire_resting_orders"):
+                    self.backend.expire_resting_orders()
 
-            # NOTE: Time skipping logic is here because high frequency of calling _matching_loop.
-            #       It might be a bit weird but just a trade-off (we don't want to create a specific
-            #       high-frequency background thread just to manage the time skipping.)
-            # Auto-skip non-trading hours (after 13:30 / weekends) for backtest acceleration.
-            # Server manages this internally; cjtrade_system does NOT need to call adjust_time().
-            if self._skip_non_trading_hours:
-                self._skip_to_trading_hours()
+                # NOTE: Time skipping logic is here because high frequency of calling _matching_loop.
+                #       It might be a bit weird but just a trade-off (we don't want to create a specific
+                #       high-frequency background thread just to manage the time skipping.)
+                # Auto-skip non-trading hours (after 13:30 / weekends) for backtest acceleration.
+                # Server manages this internally; cjtrade_system does NOT need to call adjust_time().
+                if self._skip_non_trading_hours:
+                    self._skip_to_trading_hours()
 
             self._stop_event.wait(self._match_interval)
 
