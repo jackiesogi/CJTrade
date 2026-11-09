@@ -57,10 +57,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("poc.bot_c")
 
-# Config
-CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
-CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
-
 # Fallback only — master normally passes the broker's starting balance as
 # argv[2] (main2.py). Used when this script is run standalone. The mirror only
 # matters before this bot's first report; after that master's OrderReport is
@@ -186,21 +182,23 @@ def main():
     price_map: dict[str, float] = {}
     price_history: dict[str, list] = {}
     params: dict = {
-        "bb__min_width_pct": 0.001
+        # "bb__min_width_pct": 0.001
+        "bb__min_width_pct": 0.01,
+        "bb__window_size": 100,
     }
 
     log.info(f"[{bot_id}] started! ({target_symbol}) strategy={strategy.name}")
 
     zmq_context = zmq.Context()
     sub_socket = zmq_context.socket(zmq.SUB)
-    sub_socket.connect(CJ_ENGINE_SOCKET_SUB_PRICE)
+    sub_socket.connect(protocol.price_feed_address())
     sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
     # Order reports from master are published on our own bot_id topic (see
     # main2.py's publish_report) — subscribe to that too, same socket.
     sub_socket.set(zmq.SUBSCRIBE, bot_id.encode('utf-8'))
 
     push_socket = zmq_context.socket(zmq.PUSH)
-    push_socket.connect(CJ_ENGINE_SOCKET_PUSH_STATE)
+    push_socket.connect(protocol.order_intent_address())
 
     strategy.on_start(StrategyContext(
         timestamp=datetime.now(), balance=ledger.balance, equity=ledger.balance,

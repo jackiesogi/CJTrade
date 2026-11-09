@@ -66,6 +66,36 @@ from cjtrade.pkgs.models.trade import Trade
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  Socket addresses.  Here because both ends must agree on them, and this is
+#  already the module that defines what agreement means.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Loopback, and not configurable. The master and its bots are one deployment
+# unit on one host -- master spawns the bots itself -- so there is no caller on
+# another machine to serve. The PULL socket in particular accepts order intents
+# and applies no authentication to them, so binding it anywhere wider would let
+# anything that can reach this host place orders on the account.
+SOCKET_HOST = "127.0.0.1"
+
+# Defaults only; both ends take the port as a parameter so two engines can run
+# side by side. They used to be two literals copied into five files, which is
+# why the legacy main.py and the new main2.py silently share a port pair while
+# speaking incompatible wire formats.
+DEFAULT_PRICE_FEED_PORT = 5555     # master PUB  -> bot SUB   (topic = symbol | bot_id)
+DEFAULT_ORDER_INTENT_PORT = 5556   # bot    PUSH -> master PULL
+
+
+def price_feed_address(port: int = DEFAULT_PRICE_FEED_PORT) -> str:
+    """Where master publishes bars and order reports; master binds, bots connect."""
+    return f"tcp://{SOCKET_HOST}:{port}"
+
+
+def order_intent_address(port: int = DEFAULT_ORDER_INTENT_PORT) -> str:
+    """Where bots push order intents; master binds, bots connect."""
+    return f"tcp://{SOCKET_HOST}:{port}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  Envelopes — the three things that actually travel, and nothing else.
 # ══════════════════════════════════════════════════════════════════════════════
 
