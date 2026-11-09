@@ -10,7 +10,6 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
-from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.position import Position
@@ -118,28 +117,16 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
                 continue
 
             if broker_result.status == OrderStatus.FILLED:
-                self.account_state.orders_committed.remove(order)
-                self.account_state.orders_filled.append(order)
-                self.account_state.all_order_status[order.id] = OrderStatus.FILLED
-
                 fill_price = (
                     broker_result.metadata.get("fill_price", order.price)
                     if broker_result.metadata
                     else order.price
                 )
-                qty_signed = order.quantity if order.action == OrderAction.BUY else -order.quantity
-                self.account_state.balance -= qty_signed * fill_price
-
-                self.account_state.fill_history.append({
-                    "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
-                    "order_id": order.id,
-                    "symbol": order.product.symbol,
-                    "action": order.action.value,
-                    "quantity": qty_signed,
-                    "price": fill_price,
-                    "time": datetime.now().isoformat(),
-                    "session_id": order.opt_field.get("session_id") if order.opt_field else None,
-                })
+                # Same settlement path as backtest and paper. The local copy
+                # this replaces did `balance -= qty_signed * fill_price` with
+                # no commission or tax, so the mirrored balance drifted from
+                # the broker's on every fill.
+                self._apply_fill(order, fill_price, datetime.now())
                 print(f"[RealTrade] Order filled: {order.id} @ {fill_price}")
 
             elif broker_result.status == OrderStatus.CANCELLED:
