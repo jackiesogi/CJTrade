@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.0",
+    "apiflask>=2.2.0",
     "beautifulsoup4>=4.13.5",
     "duckdb>=1.4.3",
     "fake-useragent>=2.2.0",

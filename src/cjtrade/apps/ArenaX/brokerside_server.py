@@ -24,8 +24,8 @@ from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
+from apiflask import APIFlask
 from dotenv import load_dotenv
-from flask import Flask
 from flask import jsonify
 from flask import request
 from flask import send_from_directory
@@ -230,21 +230,52 @@ class ArenaX_BrokerSideServer:
 
 ################################ HTTP Interface ##################################
 
-    def _create_app(self) -> Flask:
-        app = Flask(__name__)
+    def _create_app(self) -> APIFlask:
+        # APIFlask rather than Flask: it is a Flask subclass, so it is still a
+        # WSGI app and make_server / the thread / stop_http are untouched, but
+        # it derives an OpenAPI spec from the routes and serves Swagger UI at
+        # /docs. Each route's docstring becomes its summary there, so the
+        # endpoint documentation and the endpoint cannot drift apart.
+        app = APIFlask(
+            __name__,
+            title="ArenaX broker-side API",
+            version="1.0.0",
+            docs_path="/docs",
+            spec_path="/openapi.json",
+        )
+        app.description = (
+            "Simulated broker for CJTrade. Every datetime on this API is an "
+            "ISO 8601 **naive Asia/Taipei** value — do not apply any timezone "
+            "conversion.\n\n"
+            "Served on loopback only. There is no per-route authentication yet: "
+            "`POST /api/v1/session` validates an API key but nothing enforces a "
+            "session, so do not bind this beyond 127.0.0.1."
+        )
+        app.tags = [
+            {"name": "Health", "description": "Liveness and readiness."},
+            {"name": "Session", "description": "API-key login."},
+            {"name": "Backend", "description": "Start and stop the simulated backend."},
+            {"name": "Clock", "description": "The simulated market clock and its timeline."},
+            {"name": "Account", "description": "Balance, positions, fills."},
+            {"name": "Orders", "description": "Place, inspect and cancel orders."},
+            {"name": "Market", "description": "Snapshots and historical bars."},
+        ]
 
         # Return 503 for all trading/account/market endpoints while the backend
         # is still initialising (login + price-DB preload not yet complete).
         # /health and /favicon.ico are always served so callers can poll readiness.
         @app.before_request
         def _require_backend_ready():
-            # /api/v1/backend is exempt because it is how you start a stopped one.
-            exempt = ('/health', '/favicon.ico', '/api/v1/backend')
+            # /api/v1/backend is exempt because it is how you start a stopped one;
+            # the docs are exempt so they stay readable while the backend warms up.
+            exempt = ('/health', '/favicon.ico', '/api/v1/backend',
+                      app.docs_path, app.spec_path)
             if request.path not in exempt and not self._running:
                 return jsonify({"ok": False, "error": "backend initializing, please retry"}), 503
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         @app.route('/favicon.ico')
+        @app.doc(hide=True)
         def favicon():
             return send_from_directory(
                 os.path.join(BASE_DIR, 'static'),  # folder for static files
@@ -253,7 +284,13 @@ class ArenaX_BrokerSideServer:
             )
 
         @app.get("/health")
+        @app.doc(tags=["Health"])
         def health():
+            """Liveness and readiness.
+
+            `running` is the backend; `data_readiness` is the price-cache
+            preload. Always served, even while the backend is still warming up.
+            """
             return jsonify({
                 "ok": True,
                 "running": self._running,
@@ -262,6 +299,7 @@ class ArenaX_BrokerSideServer:
             })
 
         @app.put("/api/v1/backend")
+        @app.doc(tags=["Backend"])
         def set_backend_running():
             """Start or stop the simulated backend.
 
@@ -291,6 +329,7 @@ class ArenaX_BrokerSideServer:
         #   2. Kill the backend (endpoint `/control/stop` do this)
         #   3. Stop the whole server (kill the process at OS-level, there will be a systemd service file for this in the future)
         @app.put("/api/v1/clock/origin")
+        @app.doc(tags=["Clock"])
         def set_clock_origin():
             """Set where the simulated timeline BEGINS, not the current moment.
 
@@ -320,6 +359,7 @@ class ArenaX_BrokerSideServer:
             return jsonify({"ok": success})
 
         @app.patch("/api/v1/clock")
+        @app.doc(tags=["Clock"])
         def patch_clock():
             """Move the clock, freeze it, or let it run.
 
@@ -367,6 +407,7 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/api/v1/clock")
+        @app.doc(tags=["Clock"])
         def get_clock():
             """Read the simulated clock.
 
@@ -393,6 +434,7 @@ class ArenaX_BrokerSideServer:
             })
 
         @app.get("/api/v1/config")
+        @app.doc(tags=["Health"])
         def get_config():
             """The server's resolved configuration, with secrets withheld.
 
@@ -409,6 +451,7 @@ class ArenaX_BrokerSideServer:
             })
 
         @app.post("/api/v1/session")
+        @app.doc(tags=["Session"])
         def open_session():
             """Authenticate. Body: {"api_key": "..."}"""
             payload = request.get_json(silent=True) or {}
@@ -421,11 +464,13 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
         @app.delete("/api/v1/session")
+        @app.doc(tags=["Session"])
         def close_session():
             """Log out."""
             return jsonify({"ok": True, "message": "Logout successful"})
 
         @app.get("/api/v1/account")
+        @app.doc(tags=["Account"])
         def get_account():
             """Balance, positions and orders in one read.
 
@@ -444,6 +489,7 @@ class ArenaX_BrokerSideServer:
             })
 
         @app.get("/api/v1/account/fills")
+        @app.doc(tags=["Account"])
         def get_account_fills():
             """Everything needed to build a BacktestResult client-side.
 
@@ -464,13 +510,21 @@ class ArenaX_BrokerSideServer:
             })
 
         @app.get("/api/v1/orders")
+        @app.doc(tags=["Orders"])
         def list_orders():
             """Every order this session knows about, resting ones included."""
             o = self.backend.list_trades()
             return jsonify({"ok": True, "orders": o if o is not None else []})
 
         @app.post("/api/v1/orders")
+        @app.doc(tags=["Orders"])
         def place_order():
+            """Place an order.
+
+            `id` is the caller's: it is kept as-is so the client and the server
+            can talk about the same order afterwards, instead of the factory
+            minting a second identity for it.
+            """
             payload = request.get_json(silent=True) or {}
             product_payload = payload.get("product") or {}
             action = payload.get("action")
@@ -516,6 +570,7 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.delete("/api/v1/orders/<string:order_id>")
+        @app.doc(tags=["Orders"])
         def cancel_order(order_id: str):
             """Cancel a resting order."""
             try:
@@ -527,6 +582,7 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/api/v1/orders/<string:order_id>")
+        @app.doc(tags=["Orders"])
         def get_order(order_id: str):
             """Current status of one order, refreshed against the market.
 
@@ -541,6 +597,7 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": str(e)}), 500
 
         @app.get("/api/v1/market/<string:symbol>/snapshot")
+        @app.doc(tags=["Market"])
         def market_snapshot(symbol: str):
             """Latest OHLCV snapshot for one symbol."""
             price = self.backend.snapshot(symbol)
@@ -550,6 +607,7 @@ class ArenaX_BrokerSideServer:
             return jsonify(resp)
 
         @app.get("/api/v1/market/data-availability")
+        @app.doc(tags=["Market"])
         def market_data_availability():
             """Informational endpoint: returns known real-broker date range if
             a real account is connected.  Clients should NOT use this to decide
@@ -573,6 +631,7 @@ class ArenaX_BrokerSideServer:
 
 
         @app.get("/api/v1/market/<string:symbol>/kbars")
+        @app.doc(tags=["Market"])
         def market_kbars(symbol: str):
             """Historical bars. Query: start, end, interval (1m|5m|1h|1d).
 
