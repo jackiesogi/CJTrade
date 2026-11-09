@@ -186,8 +186,11 @@ class TestNormalOperations:
         # we should ideally have it raise an exception or return a distinguishable value on failure instead of an empty list.
 
     def test_N008_register_order_callback(self, client):
+        # ArenaX has no push callback. It used to accept the registration and
+        # silently never call it, which is worse than refusing.
         cb = lambda event: print(f"Order callback received: {event}")
-        assert client.register_order_callback(callback=cb) == None  # Currently not implemented
+        with pytest.raises(NotImplementedError):
+            client.register_order_callback(callback=cb)
 
     def test_N009_get_market_movers(self, client):
         assert client.get_market_movers() == None  # Currently not implemented

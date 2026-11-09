@@ -173,13 +173,26 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return kbars
 
 
-    # TODO: Finish this!
+    # TODO: Finish this once the server grows GET /api/v1/events.
     def register_order_callback(self, callback: OrderCallback) -> None:
+        """Not implemented. Poll sync_state() or list_orders() instead.
+
+        A callback is a local function, so there is nothing to register with a
+        REST server -- the server-side shape for this is an append-only event
+        log the client tails:
+
+            GET /api/v1/events?after=<seq>  ->  {"events": [...], "last_seq": N}
+
+        and THIS method is where the callback illusion gets manufactured: store
+        `callback`, run a daemon thread that tails the log, rebuild each
+        OrderEvent and invoke it. The server would learn nothing about
+        callbacks, and the backend would only append to the log from the two
+        places that already own every transition -- _apply_fill() and the
+        cancel path.
         """
-        Placeholder for order callback registration.
-        But mock broker is not suitable for using callback mechanism.
-        """
-        pass
+        raise NotImplementedError(
+            "ArenaX has no push callback yet; poll sync_state() or list_orders()."
+        )
 
 
     # TODO: Finish this!
@@ -220,8 +233,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def sync_state(self) -> List[OrderResult]:
         """Refresh status of all committed orders from the broker backend."""
         res = []
-        summary = self.middleware.account_summary()
-        orders = summary.get("orders", []) if summary else []
+        orders = self.middleware.list_orders()
         committed_statuses = {OrderStatus.COMMITTED_WAIT_MATCHING.value, OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value}
         committed_orders = [o for o in orders if o.get("status") in committed_statuses]
         for o in committed_orders:
@@ -238,8 +250,9 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def list_orders(self) -> List[Trade]:
-        odrs = self.middleware.account_summary().get("orders")
-        return [Trade(**o) for o in odrs]
+        # GET /api/v1/orders, not the whole account: this skips rebuilding and
+        # re-pricing every position just to read the order list.
+        return [Trade(**o) for o in self.middleware.list_orders()]
 
 
     def is_market_open(self) -> bool:

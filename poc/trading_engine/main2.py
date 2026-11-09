@@ -145,7 +145,7 @@ class ScaledClock:
     def for_server(cls, mw) -> "ScaledClock":
         t = mw.get_market_time()
         if not t:
-            raise RuntimeError("ArenaX /control/get-market-time returned nothing — is the server up?")
+            raise RuntimeError("ArenaX GET /api/v1/clock returned nothing — is the server up?")
         speed = float(t["playback_speed"])
         log.info(f"[Clock] scaled: server playback_speed={speed}x")
         return cls(speed)
@@ -254,7 +254,7 @@ def _parse_server_datetime(raw) -> datetime | None:
     hand-written handlers call .isoformat() (so "2025-09-01T09:01:00"), while
     anything handed straight to flask.jsonify comes back as an HTTP date
     ("Mon, 01 Sep 2025 09:01:00 GMT") -- that is Flask's default encoder for
-    datetime, and /market/kbars goes through it.
+    datetime, and the kbars route goes through it.
 
     The "GMT" is a fiction: every datetime in this codebase is a naive
     Asia/Taipei value, so the tzinfo parsedate_to_datetime attaches is dropped

@@ -188,7 +188,7 @@ class ArenaX_Market:
             'playback_speed': self.playback_speed,
             'manual_time_offset': self.manual_time_offset,
             'paused': self.paused,
-            # Was missing, so /control/get-market-time always reported
+            # Was missing, so GET /api/v1/clock always reported
             # paused_time: null even while frozen. mock_current_time already
             # carries the value, so nothing broke -- the field was just dead.
             'paused_time': self.paused_time,
