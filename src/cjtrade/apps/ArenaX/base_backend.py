@@ -1114,11 +1114,31 @@ class ArenaX_BackendBase:
             return None
 
     def _reconstruct_positions_from_history(self) -> None:
+        """Rebuild positions from fill_history, costing the shares still held.
+
+        FIFO: a sell retires the oldest lots, so what remains in the queue IS
+        the open position, and its cost is the cost of those lots alone.
+
+        This used to average every buy the account had ever made and never let
+        a sell reduce that average, so avg_cost drifted toward the mean traded
+        price of the whole session instead of describing the open lot. Over 146
+        buys and 145 sells it reported 247.50 for a position actually bought at
+        243.00 -- and since unrealized_pnl is derived from avg_cost, every
+        caller reading it (cjtrade_system's summary) was given a wrong number.
+        market_value was unaffected, because _update_position_prices() re-marks
+        it from a live snapshot.
+
+        Fills are consumed in append order, not sorted: _sync_with_real_account
+        seeds opening positions with time="initial_sync", which would sort after
+        every real ISO timestamp and turn a pre-existing holding into the most
+        recent buy.
+        """
         if not self.account_state.fill_history:
             self.account_state.positions = []
             return
 
         from collections import defaultdict
+        from collections import deque
 
         sym_fills = defaultdict(list)
         for fill in self.account_state.fill_history:
@@ -1126,31 +1146,53 @@ class ArenaX_BackendBase:
 
         new_positions = []
         for sym, fills in sym_fills.items():
-            net_qty = 0
-            total_buy_cost = 0.0
-            total_buy_qty = 0
+            lots: deque = deque()   # [price, qty] per open lot, oldest first
+            oversold = 0            # shares sold with no lot left to retire
 
             for fill in fills:
-                q = fill["quantity"]
-                p = fill["price"]
+                # quantity is signed in fill_history: + for BUY, - for SELL
+                # (see _apply_fill).
+                qty = fill["quantity"]
+                price = fill["price"]
 
-                if q > 0:
-                    total_buy_cost += (q * p)
-                    total_buy_qty += q
-                    net_qty += q
-                else:
-                    net_qty += q
+                if qty > 0:
+                    lots.append([price, qty])
+                    continue
 
-            if net_qty == 0:
+                remaining = -qty
+                while remaining > 0 and lots:
+                    lot_price, lot_qty = lots[0]
+                    matched = min(remaining, lot_qty)
+                    if matched >= lot_qty:
+                        lots.popleft()
+                    else:
+                        lots[0][1] -= matched
+                    remaining -= matched
+                oversold += remaining
+
+            held_qty = sum(q for _, q in lots) - oversold
+            if held_qty == 0:
                 continue
 
-            avg_cost = total_buy_cost / total_buy_qty if total_buy_qty > 0 else 0.0
+            if oversold:
+                # Reservation should make this impossible (see _reserved_quantity
+                # / available_to_sell). Report it rather than hiding it: a
+                # negative share count in a cash equity account is a bug
+                # upstream, and silently dropping the position would erase the
+                # only evidence.
+                print(f"Warning: {sym} fill history oversells by {oversold} "
+                      f"share(s) — position reported as {held_qty}")
+
+            held_cost = sum(p * q for p, q in lots)
+            avg_cost = held_cost / held_qty if held_qty > 0 else 0.0
             new_positions.append(Position(
                 symbol=sym,
-                quantity=net_qty,
+                quantity=held_qty,
                 avg_cost=round(avg_cost, 2),
+                # Placeholders: _update_position_prices() overwrites both from a
+                # live snapshot, and list_positions() always calls it next.
                 current_price=round(avg_cost, 2),
-                market_value=round(net_qty * avg_cost, 1),
+                market_value=round(held_qty * avg_cost, 1),
                 unrealized_pnl=0.0,
             ))
 
