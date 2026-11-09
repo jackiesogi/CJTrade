@@ -185,6 +185,18 @@ def main():
         # "bb__min_width_pct": 0.001
         "bb__min_width_pct": 0.01,
         "bb__window_size": 100,
+        # Fraction of equity per position, read by calc_qty (base_strategy.py).
+        # The strategy's own default is 0.05, which against the backtest
+        # backend's 100,000 account sizes a 20-share order -- and commission is
+        # max(notional * 0.1425%, NT$20), so 20 shares pay the NT$20 floor:
+        # 1.100% of notional round trip instead of the statutory 0.585%. The
+        # floor stops biting at 57 shares (notional 14,035), so 0.20 -> 80
+        # shares buys the whole of that saving.
+        #
+        # It does not make this strategy profitable. 0.585% is the floor from
+        # 0.1425% commission twice plus 0.3% transaction tax, and a one-tick
+        # target on a 250 stock is 0.4%. Size fixes the penalty, not the edge.
+        "risk__max_position_pct": 0.20,
     }
 
     log.info(f"[{bot_id}] started! ({target_symbol}) strategy={strategy.name}")
