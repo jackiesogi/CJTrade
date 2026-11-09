@@ -3,7 +3,6 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from datetime import timedelta
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -892,16 +891,16 @@ class ArenaX_BackendBase:
             if cmp_time_range_end <= cmp_time_range_start:
                 continue
 
-            price_filled = False
+            fill_time = None
             if order.action == OrderAction.BUY:
-                price_filled = self._check_price_in_time_range(
+                fill_time = self._find_fill_time(
                     order.product.symbol,
                     cmp_time_range_start,
                     cmp_time_range_end,
                     lambda p: p <= target_price,
                 )
             elif order.action == OrderAction.SELL:
-                price_filled = self._check_price_in_time_range(
+                fill_time = self._find_fill_time(
                     order.product.symbol,
                     cmp_time_range_start,
                     cmp_time_range_end,
@@ -910,14 +909,13 @@ class ArenaX_BackendBase:
 
             order.opt_field["last_check_for_fill"] = cmp_time_range_end
 
-            if price_filled and price_filled > 0:
+            if fill_time is not None:
                 try:
                     self.account_state.orders_filled.append(order)
                     if order in self.account_state.orders_committed:
                         self.account_state.orders_committed.remove(order)
                     self.account_state.all_order_status[order.id] = OrderStatus.FILLED
 
-                    fill_time = self.market.start_date + timedelta(minutes=price_filled)
                     value = order.price * order.quantity
                     commission = self._cost_model.calc_commission(value)
                     tax = self._cost_model.calc_tax(value, order.action.value, order.product.symbol)
@@ -947,55 +945,57 @@ class ArenaX_BackendBase:
                     print(f"Error moving order {order.id} to filled: {exc}")
         return True
 
-    def _check_price_in_time_range(
+    def _find_fill_time(
         self,
         symbol: str,
         start_time: datetime,
         end_time: datetime,
         price_condition,
-    ) -> int:
-        try:
-            if symbol not in self.market.historical_data:
-                return False
+    ) -> Optional[datetime]:
+        """Timestamp of the first bar in (start_time, end_time] that matches.
 
-            data_info = self.market.historical_data[symbol]
+        Searched by timestamp, the same way _calculate_kbar_index does it. The
+        previous version indexed bars on a uniform minute grid from start_date
+        and wrapped with `idx = minute % n`: a trading day holds ~270 1m bars,
+        not 1440, so the offset drifted a day further out every day and once it
+        passed `n` the modulo silently matched against an unrelated day's prices.
+
+        Returns None when nothing matches — the fill timestamp itself is the
+        answer, so the caller no longer re-derives it from a minute offset.
+        """
+        try:
+            data_info = self.market.historical_data.get(symbol)
+            if not data_info:
+                return None
+
             data = data_info.get("data")
             timestamps = data_info.get("timestamps")
+            if data is None or data.empty or timestamps is None or len(timestamps) == 0:
+                return None
 
-            if data is None or data.empty or timestamps is None:
-                return False
+            ts = pd.DatetimeIndex(timestamps)
+            # (start, end]: start was already checked on the previous pass.
+            lo = int(ts.searchsorted(pd.Timestamp(start_time), side="right"))
+            hi = int(ts.searchsorted(pd.Timestamp(end_time), side="right"))
+            if hi <= lo:
+                return None
 
-            start_offset = int((start_time - self.market.start_date).total_seconds() / 60)
-            end_offset = int((end_time - self.market.start_date).total_seconds() / 60)
-            if end_offset <= start_offset:
-                return False
+            column = "Close" if "Close" in data.columns else (
+                "close" if "close" in data.columns else None
+            )
+            if column is None:
+                print(f"_find_fill_time: no close column for {symbol} "
+                      f"(have {list(data.columns)})")
+                return None
+            closes = data[column].to_numpy(dtype=float)
 
-            n = len(data)
-            if n == 0:
-                return False
-
-            for minute in range(start_offset + 1, end_offset + 1):
-                idx = minute % n
-                try:
-                    try:
-                        close_price = float(data["Close"].iat[idx])
-                    except Exception:
-                        close_price = float(data["Close"].iloc[idx].item())
-                except Exception:
-                    try:
-                        close_price = float(data.iloc[idx]["Close"])
-                    except Exception:
-                        try:
-                            close_price = float(data.iloc[idx]["close"])
-                        except Exception:
-                            continue
-
-                if price_condition(close_price):
-                    return minute
-            return -1
+            for i in range(lo, min(hi, len(closes))):
+                if price_condition(float(closes[i])):
+                    return ts[i].to_pydatetime()
+            return None
         except Exception as exc:
-            print(f"_check_price_in_time_range error: {exc}")
-            return -1
+            print(f"_find_fill_time error: {exc}")
+            return None
 
     def _reconstruct_positions_from_history(self) -> None:
         if not self.account_state.fill_history:
