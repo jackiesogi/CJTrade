@@ -497,6 +497,46 @@ class ExecutionEngine:
                 ))
         return reports
 
+    async def cancel_open_orders(self, as_of: datetime | None,
+                                 reason: str = "cancelled at shutdown") -> list[OrderReport]:
+        """Pull every resting order back from the broker.
+
+        Resting orders outlive this process. Under ReplayClock that is
+        harmless -- the simulated session ends with the run -- but a paper or
+        real run would walk away leaving live orders on the account.
+
+        And a GTC order is never expired by anyone: ArenaX's ROD policy kills
+        orders at the session close, GTC's deliberately does not, so an
+        explicit cancel is the only thing that ever ends one.
+        """
+        if self.client is None or not self._open:
+            return []
+
+        reports = []
+        for order_id in list(self._open):
+            bot_id, order = self._open[order_id]
+            try:
+                result = await asyncio.to_thread(self.client.cancel_order, order_id)
+            except Exception as e:
+                log.warning(f"[Master] Could not cancel {order_id[:8]}: {e}")
+                continue
+            # Report whatever the broker said rather than assuming CANCELLED:
+            # a cancel races the matcher, and "already filled" comes back as a
+            # rejection of the cancel, not of the order.
+            status = result.status if result else OrderStatus.UNKNOWN
+            message = (result.message if result and result.message else reason)
+            self._open.pop(order_id, None)
+            reports.append(self._broker_report(
+                OrderIntent(bot_id=bot_id, order=order), status, 0, message,
+                timestamp=as_of,
+            ))
+
+        if self._open:
+            log.error(f"[Master] {len(self._open)} order(s) still live at the "
+                      f"broker and could not be cancelled: "
+                      f"{', '.join(i[:8] for i in self._open)}")
+        return reports
+
     def _filled_qty(self, order: Order, status: OrderStatus) -> int:
         """How much of `order` is done, as far as we can tell.
 
@@ -798,6 +838,15 @@ async def main():
     try:
         await hub.start(pub_socket)
     finally:
+        # Before anything else: the broker still holds whatever was resting,
+        # and it outlives this process.
+        try:
+            for report in await engine.cancel_open_orders(hub.market_time):
+                await publish_report(pub_socket, report)
+        except Exception as e:
+            log.error(f"[Master] Shutdown cancel failed, orders may still be "
+                      f"live at the broker: {e}")
+
         log.info("[Master] Terminating all bots...")
         try:
             proc.terminate()
