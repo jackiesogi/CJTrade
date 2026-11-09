@@ -840,15 +840,56 @@ class ArenaX_BackendBase:
         }
         return data
 
+    # ── Reservation ───────────────────────────────────────────────────────────
+    # An accepted order encumbers what it will need until it fills or dies.
+    # Derived from the order lists rather than a counter, so the reservation is
+    # released by the same action that moves the real resource: a fill removes
+    # the order from orders_committed and mutates balance/position together.
+
+    def _resting_orders(self) -> List[Order]:
+        """Orders the account has out with the exchange, nothing decided yet."""
+        return (self.account_state.orders_placed
+                + self.account_state.orders_committed)
+
+    def _reserved_cash(self) -> float:
+        """Cash committed by resting BUY orders (值 + 手續費)."""
+        total = 0.0
+        for o in self._resting_orders():
+            if o.action == OrderAction.BUY:
+                value = o.price * o.quantity
+                total += value + self._cost_model.calc_commission(value)
+        return total
+
+    def _reserved_quantity(self, symbol: str) -> int:
+        """Shares committed by resting SELL orders on `symbol`."""
+        return sum(o.quantity for o in self._resting_orders()
+                   if o.action == OrderAction.SELL
+                   and o.product.symbol == symbol)
+
+    def buying_power(self) -> float:
+        return self.account_state.balance - self._reserved_cash()
+
+    def available_to_sell(self, symbol: str) -> int:
+        position = next((pos for pos in self.account_state.positions
+                         if pos.symbol == symbol), None)
+        held = position.quantity if position else 0
+        return held - self._reserved_quantity(symbol)
+
     def _is_sufficient_account_balance(self, order: Order) -> bool:
         value = order.price * order.quantity
         commission = self._cost_model.calc_commission(value)
         required_amount = value + commission
-        return self.account_state.balance >= required_amount
+        # Against buying power, not raw balance: balance only drops at fill
+        # time, so N resting BUYs each used to "fit" inside the same cash and
+        # the account went negative when they all filled.
+        return self.buying_power() >= required_amount
 
     def _is_sufficient_account_inventory(self, order: Order) -> bool:
-        position = next((pos for pos in self.account_state.positions if pos.symbol == order.product.symbol), None)
-        return bool(position and position.quantity >= order.quantity)
+        # Against available-to-sell, not the whole position: a resting SELL did
+        # not reduce it (positions come from fill_history), so the same shares
+        # could be sold twice and fill_history went net-negative — a short
+        # position in a cash equity account, reported without complaint.
+        return self.available_to_sell(order.product.symbol) >= order.quantity
 
     def _is_valid_price(self, order: Order) -> bool:
         return order.price > 0
@@ -863,12 +904,19 @@ class ArenaX_BackendBase:
 
         trades = self.list_trades()
         today_str = self.market.get_market_time()["mock_current_time"].strftime("%Y-%m-%d")
+        # Every status that still consumes the day's quota. WAIT_MARKET_OPEN and
+        # PLACED were missing, so orders stacked up before the open did not
+        # count and the limit could be walked straight past.
+        counted = {
+            OrderStatus.PLACED.value,
+            OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value,
+            OrderStatus.COMMITTED_WAIT_MATCHING.value,
+            OrderStatus.PARTIAL.value,
+            OrderStatus.FILLED.value,
+        }
         traded_sum = 0.0
         for trade in trades:
-            if trade.status in [
-                OrderStatus.COMMITTED_WAIT_MATCHING.value,
-                OrderStatus.FILLED.value,
-            ] and trade.order_datetime.startswith(today_str):
+            if trade.status in counted and trade.order_datetime.startswith(today_str):
                 traded_sum += trade.price * trade.quantity
         return traded_sum + (order.price * order.quantity) <= trade_limit
 
