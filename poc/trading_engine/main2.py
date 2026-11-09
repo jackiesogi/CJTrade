@@ -39,6 +39,7 @@ import logging
 import random
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
@@ -50,8 +51,11 @@ from typing import Callable
 
 import protocol
 import zmq.asyncio
+from cjtrade.pkgs import paths
+from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
+from cjtrade.pkgs.models.backtest import BacktestResult
 from cjtrade.pkgs.models.event import OrderEvent
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
@@ -83,7 +87,11 @@ logging.basicConfig(
 # plus the request line). Replay mode makes 5 calls per bar, so at DEBUG these
 # outnumber our own output roughly 10:1 and hide the drift warnings entirely.
 # Silence the transport, not ourselves.
-for _noisy in ("urllib3", "asyncio"):
+#
+# matplotlib and PIL are here for the same reason at the other end of the run:
+# rendering the end-of-run tearsheet emits a dozen DEBUG lines about font
+# caches and axis titles immediately before the summary we actually want read.
+for _noisy in ("urllib3", "asyncio", "matplotlib", "PIL"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 log = logging.getLogger("poc.trading_engine2")
@@ -709,6 +717,120 @@ def _as_status(raw) -> OrderStatus:
         return OrderStatus.UNKNOWN
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  RunRecorder — keeps the one thing a report cannot be asked for afterwards.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class RunRecorder:
+    """Samples portfolio value per bar so the run can be reported at the end.
+
+    Everything else a BacktestResult wants can be fetched after the fact --
+    the fills from the broker, the closing balance from the account -- but what
+    the portfolio was worth at bar 400 is gone the moment bar 401 starts. The
+    kill switch already computes it every bar, since that is the number it
+    compares against the loss limit, so this only keeps what was being thrown
+    away.
+
+    Fills come from the server rather than from the OrderReports master
+    publishes: the backend applies the CostModel when it settles a fill
+    (base_backend._apply_fill), so its fill_history carries the commission and
+    tax that never reach master. Asking the server is the only way the report's
+    cost lines have numbers in them.
+    """
+
+    def __init__(self, session_id: str, initial_balance: float):
+        self.session_id = session_id
+        self.initial_balance = initial_balance
+        # Market time of the first bar, filled in by the first observe(). Not
+        # datetime.now(): under replay that is the wall clock of the machine,
+        # which has nothing to do with the period being replayed.
+        self.start_time: str | None = None
+        self.equity_curve: list[dict] = []
+        self._last_minute = ""
+
+    def observe(self, as_of: datetime | None, equity: float) -> None:
+        """Record one equity sample, at most one per minute of market time.
+
+        Deduped by minute to match how cjtrade_system and BacktestEngine record
+        theirs, so the resampling in BacktestResult.to_returns() sees the same
+        resolution whichever engine produced the curve.
+        """
+        stamp = as_of or datetime.now()
+        if self.start_time is None:
+            self.start_time = stamp.isoformat()
+        minute = stamp.replace(second=0, microsecond=0).isoformat()
+        if minute == self._last_minute:
+            return
+        self._last_minute = minute
+        self.equity_curve.append({"time": minute, "value": round(equity, 2)})
+
+    def build_result(self, client: AccountClient) -> BacktestResult | None:
+        """Assemble the result. Blocking HTTP — call it off the loop.
+
+        Must run before disconnect(): the fill history lives on the server, so
+        this is a read over the wire, not a look at local state.
+        """
+        ctrl = client.control_plane
+        if ctrl is None:
+            log.warning("[Report] broker has no control plane — no fills to report")
+            return None
+        raw = ctrl.get_backtest_state(session_id=self.session_id)
+        if raw is None:
+            log.warning("[Report] the server returned no fill history — no report")
+            return None
+
+        # One sync for both numbers, same reason as _broker_report: a balance
+        # and a position list read a round-trip apart is not a state the
+        # account was ever in.
+        state = client.get_account_state()
+        final_equity = state.balance + sum(p.market_value for p in state.positions)
+        return BacktestResult(
+            initial_balance=self.initial_balance,
+            final_balance=state.balance,
+            equity_curve=list(self.equity_curve),
+            fill_history=raw["fill_history"],
+            session_id=self.session_id,
+            start_time=self.start_time,
+            # cjtrade_system leaves this unset, which makes its summary report
+            # uPnL as 0 and understate the total whenever the run ends holding
+            # a position. Set it.
+            final_equity=final_equity,
+        )
+
+
+def print_run_report(result: BacktestResult, open_browser: bool = True) -> None:
+    """Print the summary and the round-trip table, then write the tearsheet.
+
+    All of it comes from pkgs/analytics/evaluation/quantstats.py -- the same
+    reporting layer cjtrade_system and the oneshot backtester use. Sharing it
+    rather than hand-rolling a summary here is the only way a run through this
+    engine and a run through those are comparable: one definition of realised
+    P&L, one FIFO round-trip matcher, one annualisation factor.
+    """
+    report = BacktestReport(result)
+    report.summary()
+    report.print_round_trips()
+
+    sid = (result.session_id or "run")[:8]
+    stem = paths.reports_dir() / f"engine_{sid}"
+
+    # Pickle first: it is the cheap one, and it is what lets you re-render a
+    # report later without re-running the session.
+    try:
+        result.save(f"{stem}.pkl")
+        log.info(f"[Report] result saved → {stem}.pkl")
+    except Exception as e:
+        log.warning(f"[Report] could not save the result: {e}")
+
+    try:
+        # Needs at least two equity samples to have a return series at all;
+        # BacktestReport raises rather than drawing a flat line.
+        report.full_report(path=f"{stem}.html", open_browser=open_browser,
+                           title=f"Trading engine — {sid}")
+    except Exception as e:
+        log.warning(f"[Report] no HTML tearsheet ({e})")
+
+
 ctx = zmq.asyncio.Context()
 
 
@@ -866,8 +988,17 @@ async def main():
         log.warning(f"[Master] broker balance is {bot_balance:.0f}, not the "
                     f"requested fund={cfg.initial_balance:.0f} — bots will size "
                     f"against the broker's number")
+
+    # Stamped on every order the bots place, so the server tags this run's
+    # fills with it and the end-of-run report can ask for exactly them. Without
+    # it, a second run against a server that was not restarted would inherit
+    # the first run's trades.
+    session_id = uuid.uuid4().hex
+    recorder = RunRecorder(session_id=session_id, initial_balance=bot_balance)
+    log.info(f"[Master] session {session_id}")
+
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, '-u', str(BOT_C_SCRIPT), "Bot_C", str(bot_balance)
+        sys.executable, '-u', str(BOT_C_SCRIPT), "Bot_C", str(bot_balance), session_id
     )
     await asyncio.sleep(2)       # let the subprocess finish its ZMQ connect
 
@@ -909,6 +1040,9 @@ async def main():
         gate.start_bar(hub.bars)
         state = await asyncio.to_thread(account_client.get_account_state)
         equity = state.balance + sum(p.market_value for p in state.positions)
+        # Record before the gate looks at it: a bar that trips the kill switch
+        # is the most interesting point on the curve, so it has to be on it.
+        recorder.observe(as_of, equity)
         tripped = gate.observe_equity(equity)
         if tripped:
             # A halt that leaves working orders out there is not a halt, so pull
@@ -943,6 +1077,16 @@ async def main():
         except Exception:
             pass
         log.info("[Master] Trading engine terminated.")
+
+        # After the bots are gone so the report is not interleaved with their
+        # output, and before disconnect() because the fills are a server read.
+        try:
+            result = await asyncio.to_thread(recorder.build_result, account_client)
+            if result is not None:
+                print_run_report(result)
+        except Exception as e:
+            log.error(f"[Report] could not build the run report: {e}")
+
         account_client.disconnect()
 
 
