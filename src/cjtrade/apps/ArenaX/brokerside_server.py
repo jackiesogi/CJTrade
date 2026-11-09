@@ -2,9 +2,7 @@ import enum
 import logging
 import os
 import threading
-import time
 from datetime import datetime
-from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 from typing import Optional
@@ -747,20 +745,15 @@ class ArenaX_BrokerSideServer:
     #   1. Check if any order is filled and update account state.
     #   2. Other periodic checks that need to be done frequently.
     def _matching_loop(self) -> None:
-        _eod_cancelled_date = None  # track which date EOD cancel has already run
         while not self._stop_event.is_set():
             if hasattr(self.backend, "_check_if_any_order_filled"):
                 self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
 
-            mock_time = self.backend.market.get_market_time()["mock_current_time"]
-            mock_date = mock_time.date()
-            market_close = self.backend.market.calendar.close_of(OrderLot.Common, mock_time)
-
-            # Time-based EOD cancel: fire once per date when mock_time >= 13:30.
-            # Reliable at any playback speed — no transition detection needed.
-            if mock_time >= market_close and _eod_cancelled_date != mock_date:
-                self._cancel_eod_orders()
-                _eod_cancelled_date = mock_date
+            # Expiry is the backend's business, keyed on each order's own
+            # time-in-force. The server used to run a date-latched EOD sweep
+            # here and cancel everything committed regardless of TIF.
+            if hasattr(self.backend, "expire_resting_orders"):
+                self.backend.expire_resting_orders()
 
             # NOTE: Time skipping logic is here because high frequency of calling _matching_loop.
             #       It might be a bit weird but just a trade-off (we don't want to create a specific
@@ -771,19 +764,6 @@ class ArenaX_BrokerSideServer:
                 self._skip_to_trading_hours()
 
             self._stop_event.wait(self._match_interval)
-
-    # Cancel all unfilled ROD (rest-of-day) orders at EOD.
-    def _cancel_eod_orders(self) -> None:
-        orders = list(getattr(self.backend.account_state, 'orders_committed', []))
-        if not orders:
-            return
-        log.info(f"[EOD] Market closed — cancelling {len(orders)} unfilled ROD order(s)")
-        for order in orders:
-            try:
-                self.backend.cancel_order(order.id)
-                log.info(f"[EOD] Cancelled order {order.id} ({order.action.value} {order.product.symbol} ×{order.quantity} @{order.price})")
-            except Exception as exc:
-                log.warning(f"[EOD] Could not cancel order {order.id}: {exc}")
 
     def _skip_to_trading_hours(self):
         # adjust_time() only exists on ArenaX_Market (backtest/demo); real/paper mode

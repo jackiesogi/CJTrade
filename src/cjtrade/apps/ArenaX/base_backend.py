@@ -20,6 +20,9 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_BALANCE
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_STOCK
+from cjtrade.apps.ArenaX.time_in_force import policy_for
+from cjtrade.apps.ArenaX.time_in_force import TIFContext
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.cost import CostModel
@@ -554,6 +557,9 @@ class ArenaX_BackendBase:
 
         # Attempt an immediate fill check (common in backtest with fast playback).
         self._check_if_any_order_filled()
+        # Then let the order's time-in-force have its say. This is what makes
+        # IOC and FOK real: the fill check above was their one chance.
+        self.expire_resting_orders()
 
         # Return the actual status after the fill check (may have advanced to FILLED).
         actual_status = self.account_state.all_order_status.get(order.id, initial_status)
@@ -839,6 +845,40 @@ class ArenaX_BackendBase:
             "fill_history": self.account_state.fill_history
         }
         return data
+
+    def expire_resting_orders(self, now: Optional[datetime] = None) -> List[str]:
+        """Ask each resting order's time-in-force whether it should still live.
+
+        Returns the ids cancelled. This is where EOD cancelling lives now: it
+        used to be a date-latched sweep inside the HTTP server's matching loop
+        (brokerside_server._cancel_eod_orders), which meant a backend used
+        without a server had no expiry at all, and the sweep could not tell ROD
+        from IOC.
+        """
+        if now is None:
+            if not hasattr(self, "market"):
+                return []
+            now = self.market.get_market_time()["mock_current_time"]
+
+        calendar = getattr(getattr(self, "market", None), "calendar", None) or TradingCalendar()
+        ctx = TIFContext(now=now, calendar=calendar)
+
+        cancelled = []
+        for order in list(self._resting_orders()):
+            decision = policy_for(order.order_type).on_no_fill(order, ctx)
+            if not decision.cancel:
+                continue
+            try:
+                # Through cancel_order so there is one cancellation path: it
+                # moves the lists, sets the status, and therefore releases the
+                # reservation in the same step.
+                self.cancel_order(order.id)
+                cancelled.append(order.id)
+                print(f"[TIF] {order.order_type.value} {order.id} cancelled: "
+                      f"{decision.reason}")
+            except Exception as exc:
+                print(f"[TIF] Could not cancel {order.id}: {exc}")
+        return cancelled
 
     # ── Reservation ───────────────────────────────────────────────────────────
     # An accepted order encumbers what it will need until it fills or dies.
