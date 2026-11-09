@@ -102,9 +102,6 @@ log = logging.getLogger("poc.trading_engine2")
 log_feed = logging.getLogger("poc.trading_engine2.feed")
 log_feed.setLevel(FEED_LOG_LEVEL)
 
-CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
-CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
-
 BOT_C_SCRIPT = Path(__file__).resolve().parent / "bot_c.py"
 
 ARENAX_PORT = 8802
@@ -955,9 +952,9 @@ async def main():
              f"fund={cfg.initial_balance:.0f} days={cfg.duration_days}")
 
     pub_socket = ctx.socket(zmq.PUB)
-    pub_socket.bind(CJ_ENGINE_SOCKET_SUB_PRICE)
+    pub_socket.bind(protocol.price_feed_address())
     pull_socket = ctx.socket(zmq.PULL)
-    pull_socket.bind(CJ_ENGINE_SOCKET_PUSH_STATE)
+    pull_socket.bind(protocol.order_intent_address())
 
     account_client = AccountClient(broker_type=BrokerType.ARENAX,
                                    arenax_port=ARENAX_PORT, api_key="testkey123")
