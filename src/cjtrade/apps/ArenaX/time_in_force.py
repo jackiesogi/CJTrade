@@ -23,6 +23,7 @@ from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs.models.order import Order
@@ -60,17 +61,35 @@ class TimeInForce(ABC):
         """Called once per matching pass for an order that did not fill."""
         ...
 
+    def expires_at(self, order: Order,
+                   calendar: TradingCalendar) -> Optional[datetime]:
+        """Last moment this order may still fill, or None for no deadline.
+
+        The matcher clamps its search window to this, which is what makes the
+        deadline hold even when nothing swept the order. on_no_fill alone is
+        not enough: it only runs when someone asks, and a replay driver steps
+        from the last bar of one session straight to the first bar of the next,
+        so the clock is never sitting between the close and the next open where
+        a sweep would have noticed. Without the clamp, yesterday's ROD matches
+        today's prices.
+        """
+        return None
+
 
 class ROD(TimeInForce):
     """當日有效 — dies at the close of the session it was placed in."""
 
     name = "ROD"
 
-    def on_no_fill(self, order: Order, ctx: TIFContext) -> Decision:
+    def expires_at(self, order: Order,
+                   calendar: TradingCalendar) -> Optional[datetime]:
         # Keyed on the order's own day, not today: if the matching loop skips
         # past 13:30 (easy at high playback speed) the order must still expire
         # the next time anyone looks, rather than surviving into tomorrow.
-        expiry = ctx.calendar.close_of(order.order_lot, order.created_at)
+        return calendar.close_of(order.order_lot, order.created_at)
+
+    def on_no_fill(self, order: Order, ctx: TIFContext) -> Decision:
+        expiry = self.expires_at(order, ctx.calendar)
         if ctx.now >= expiry:
             return Cancel(f"ROD expired at session close {expiry:%Y-%m-%d %H:%M}")
         return Rest()

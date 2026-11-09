@@ -499,7 +499,19 @@ class ArenaX_BackendBase:
 
     # corresponding command in cjtrade shell: lsodr
     def list_trades(self) -> List[Trade]:
+        # Fill check first, then expiry -- the same order place_order uses, and
+        # it matters. Expiring first would discard a legitimate fill sitting in
+        # the not-yet-checked window *before* the deadline: a clock that jumps
+        # 13:24 -> next 09:00 leaves 13:25-13:30 unexamined, and those bars can
+        # still fill a ROD order.
+        #
+        # The expiry sweep belongs here because this is the per-bar path. The
+        # engine polls resting orders through list_orders() every bar, and that
+        # path used to run the matcher with no time-in-force behind it, so the
+        # only thing that ever expired an order was the server's wall-clock
+        # matching loop -- which races the replay instead of following it.
         self._check_if_any_order_filled()
+        self.expire_resting_orders()
 
         trades = []
         all_orders = (
@@ -966,6 +978,8 @@ class ArenaX_BackendBase:
             return False
         # print("Checking for order fills...")
 
+        calendar = getattr(self.market, "calendar", None) or TradingCalendar()
+
         committed_copy = list(self.account_state.orders_committed)
         for order in committed_copy:
             target_price = order.price
@@ -974,6 +988,18 @@ class ArenaX_BackendBase:
                 self.market.get_market_time()["mock_init_time"],
             )
             cmp_time_range_end = self.market.get_market_time()["mock_current_time"]
+
+            # An order cannot fill after the moment its time-in-force ends it,
+            # and the clock is free to jump straight over that moment: a replay
+            # driver steps from the last bar of a session (13:24, say) to the
+            # first bar of the next one, so nothing is ever asked about the
+            # order while the clock sits past the close. Unclamped, the window
+            # spans the overnight gap and a ROD order placed yesterday matches
+            # today's opening bars -- verified: a 13:20 ROD filling at 09:01
+            # the following day, 19 hours after its own expiry.
+            deadline = policy_for(order.order_type).expires_at(order, calendar)
+            if deadline is not None and deadline < cmp_time_range_end:
+                cmp_time_range_end = deadline
 
             # print(f"Checking order {order.id} from {cmp_time_range_start} to {cmp_time_range_end} against target price {target_price} !!!")
 
