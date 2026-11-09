@@ -60,6 +60,8 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Exchange
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
+from cjtrade.pkgs.risk import RiskGate
+from cjtrade.pkgs.risk import RiskLimits
 from cjtrade.pkgs.ui.engine import FormEngine
 from protocol import OrderIntent
 from protocol import OrderReport
@@ -111,6 +113,14 @@ FORM_SCHEMA = Path(__file__).resolve().parents[1] / "backtest_full_simulation.to
 # engine, and "replay" additionally needs a server that implements
 # set_market_time, so it cannot be derived from the backend mode alone.
 CLOCK = "replay"             # "scaled" | "replay" | "realtime"
+
+# ── Risk limits ───────────────────────────────────────────────────────────────
+# The master's own controls, not the broker's. Module constants rather than form
+# fields because they are properties of this engine, not of the market being
+# simulated. None switches a control off.
+RISK_MAX_ORDERS_PER_BAR = 3      # a strategy firing more than this per bar is a bug
+RISK_MAX_LOSS_PCT = 0.25         # equity down this far halts new orders
+RISK_DUPLICATE_WINDOW_BARS = 3   # identical order within this many bars is refused
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -409,9 +419,14 @@ class _PaperAccount:
 
 class ExecutionEngine:
     def __init__(self, account_client: AccountClient | None,
-                 initial_balance: float = 1_000_000.0):
+                 initial_balance: float = 1_000_000.0,
+                 gate: RiskGate | None = None):
         self.client = account_client
         self.initial_balance = initial_balance
+        # The system's own pre-trade controls, as opposed to the broker's. The
+        # broker decides whether the account can do this at all; the gate
+        # decides whether this strategy should, right now.
+        self.gate = gate
         self._ledger: dict[str, _PaperAccount] = {}
         # Orders the broker accepted but has not resolved: id -> (bot, order).
         # The Order is kept because a status refresh only tells us the status;
@@ -422,9 +437,44 @@ class ExecutionEngine:
         return self._ledger.setdefault(bot_id, _PaperAccount(self.initial_balance))
 
     async def execute(self, intent: OrderIntent) -> OrderReport:
+        refusal = self._refuse(intent)
+        if refusal is not None:
+            return refusal
         if self.client is not None:
             return await asyncio.to_thread(self._execute_via_broker, intent)
         return self._execute_paper(intent)
+
+    def _refuse(self, intent: OrderIntent) -> OrderReport | None:
+        """Ask the gate first, so a refused order costs no broker round-trip.
+
+        Refusing here and refusing at the broker look identical to the bot --
+        both arrive as a REJECTED OrderReport -- which is the point: a strategy
+        should not have to know which layer said no.
+        """
+        if self.gate is None:
+            return None
+        order = intent.order
+        reason = self.gate.check(intent.bot_id, order.product.symbol,
+                                 order.action.value, order.quantity, order.price)
+        if reason is None:
+            return None
+        log.warning(f"[Risk] refused {order.action.value} "
+                    f"{order.product.symbol} x{order.quantity} @ {order.price} "
+                    f"for {intent.bot_id}: {reason}")
+        if self.client is not None:
+            return self._broker_report(intent, OrderStatus.REJECTED, 0, reason)
+        return self._paper_report(intent, self._account_for(intent.bot_id),
+                                  OrderStatus.REJECTED, 0, reason)
+
+    def _note_outcome(self, bot_id: str, order: Order,
+                      status: OrderStatus) -> None:
+        """Tell the gate an order reached a terminal state, so it can release
+        the capital it was holding against that bot's allocation."""
+        if self.gate is None or protocol.is_resting(status):
+            return
+        self.gate.record_outcome(bot_id, order.action.value,
+                                 order.price * order.quantity,
+                                 filled=(status == OrderStatus.FILLED))
 
     # ── broker path ───────────────────────────────────────────────────────────
 
@@ -442,6 +492,12 @@ class ExecutionEngine:
             # Note the id the broker answers with, which for ArenaX is the id we
             # sent (OrderResult.linked_order), but do not assume that.
             self._open[result.linked_order or order.id] = (intent.bot_id, order)
+
+        if self.gate is not None and result.status != OrderStatus.REJECTED:
+            self.gate.record_submitted(intent.bot_id, order.product.symbol,
+                                       order.action.value, order.quantity,
+                                       order.price)
+        self._note_outcome(intent.bot_id, order, result.status)
 
         return self._broker_report(intent, result.status,
                                    self._filled_qty(order, result.status),
@@ -471,6 +527,7 @@ class ExecutionEngine:
             if protocol.is_resting(status):
                 continue
             bot_id, order = self._open.pop(trade.id)
+            self._note_outcome(bot_id, order, status)
             reports.append(self._broker_report(
                 OrderIntent(bot_id=bot_id, order=order), status,
                 self._filled_qty(order, status),
@@ -526,6 +583,7 @@ class ExecutionEngine:
             status = result.status if result else OrderStatus.UNKNOWN
             message = (result.message if result and result.message else reason)
             self._open.pop(order_id, None)
+            self._note_outcome(bot_id, order, status)
             reports.append(self._broker_report(
                 OrderIntent(bot_id=bot_id, order=order), status, 0, message,
                 timestamp=as_of,
@@ -813,20 +871,51 @@ async def main():
     )
     await asyncio.sleep(2)       # let the subprocess finish its ZMQ connect
 
+    # One bot today, so its allocation is the whole account and the budget
+    # never bites. Add a second and each gets half, which is the point: without
+    # an allocation every bot sizes against the full equity and N bots deploy
+    # N times the capital.
+    bots = ["Bot_C"]
+    gate = RiskGate(
+        RiskLimits(
+            max_notional_per_bot=bot_balance / len(bots),
+            max_orders_per_bar=RISK_MAX_ORDERS_PER_BAR,
+            max_loss_pct=RISK_MAX_LOSS_PCT,
+            duplicate_window_bars=RISK_DUPLICATE_WINDOW_BARS,
+        ),
+        initial_equity=bot_balance,
+    )
+    log.info(f"[Risk] per-bot allocation {bot_balance / len(bots):,.0f}, "
+             f"max {RISK_MAX_ORDERS_PER_BAR} order(s)/bar, "
+             f"halt at -{RISK_MAX_LOSS_PCT:.0%}, "
+             f"duplicate window {RISK_DUPLICATE_WINDOW_BARS} bar(s)")
+
     engine = ExecutionEngine(account_client=account_client,
-                             initial_balance=cfg.initial_balance)
+                             initial_balance=cfg.initial_balance,
+                             gate=gate)
 
     async def report_resolved_orders(as_of: datetime | None) -> None:
-        """Tell each bot about any of its resting orders that just resolved.
+        """Tell each bot about any of its resting orders that just resolved,
+        then let the risk gate see the bar.
 
-        Runs at the end of every bar. Expect one bar of latency: an order placed
-        while handling bar t is only checked for a fill over (t, t+1], so the
-        earliest it can be reported is the end of bar t+1. That is the market's
-        behaviour, not an artefact -- a fill cannot be observed before the
-        prices that caused it.
+        Expect one bar of latency on fills: an order placed while handling bar
+        t is only checked for a fill over (t, t+1], so the earliest it can be
+        reported is the end of bar t+1. That is the market's behaviour, not an
+        artefact -- a fill cannot be observed before the prices that caused it.
         """
         for report in await engine.poll_open_orders(as_of):
             await publish_report(pub_socket, report)
+
+        gate.start_bar(hub.bars)
+        state = await asyncio.to_thread(account_client.get_account_state)
+        equity = state.balance + sum(p.market_value for p in state.positions)
+        tripped = gate.observe_equity(equity)
+        if tripped:
+            # A halt that leaves working orders out there is not a halt, so pull
+            # them before refusing anything new.
+            log.error(f"[Risk] KILL SWITCH — {tripped}")
+            for report in await engine.cancel_open_orders(as_of, "risk halt"):
+                await publish_report(pub_socket, report)
 
     hub = EventHub(account_client=account_client, clock=clock,
                    on_bar_end=report_resolved_orders)
