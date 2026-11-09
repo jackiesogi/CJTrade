@@ -754,7 +754,7 @@ class ArenaX_BrokerSideServer:
 
             mock_time = self.backend.market.get_market_time()["mock_current_time"]
             mock_date = mock_time.date()
-            market_close = mock_time.replace(hour=13, minute=30, second=0, microsecond=0)
+            market_close = self.backend.market.calendar.close_of(OrderLot.Common, mock_time)
 
             # Time-based EOD cancel: fire once per date when mock_time >= 13:30.
             # Reliable at any playback speed — no transition detection needed.
@@ -790,14 +790,15 @@ class ArenaX_BrokerSideServer:
         # uses wall-clock time and needs no artificial jump.
         if not hasattr(self.backend.market, 'adjust_time'):
             return
+        # adjust_time() is a no-op while the clock is frozen (the paused branch
+        # of get_market_time never reads manual_time_offset), so jumping would
+        # silently pile up an offset that lands all at once on resume. A replay
+        # driver owns the timeline and does its own skipping.
+        if self.backend.market.get_market_time().get("paused"):
+            return
         if not self.backend.market.is_market_open():
             mock_time = self.backend.market.get_market_time()["mock_current_time"]
-            # Find next weekday 9:00 AM
-            next_open = (mock_time + timedelta(days=1)).replace(
-                hour=9, minute=0, second=0, microsecond=0
-            )
-            while next_open.weekday() >= 5:  # skip Saturday / Sunday
-                next_open += timedelta(days=1)
+            next_open = self.backend.market.calendar.next_open(OrderLot.Common, mock_time)
             hours_to_jump = (next_open - mock_time).total_seconds() / 3600
             # log.info(
             #     f"⏭️  Market closed ({mock_time:%Y-%m-%d %H:%M}), "
