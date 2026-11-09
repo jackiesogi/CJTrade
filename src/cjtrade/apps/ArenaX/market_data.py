@@ -14,11 +14,13 @@ import yfinance as yf
 
 log = logging.getLogger("cjtrade.arenax_market")
 from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderLot
 from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.position import Position
@@ -72,6 +74,8 @@ class ArenaX_Market:
         # Pause/resume support
         self.paused: bool = False
         self.paused_time: datetime | None = None
+
+        self.calendar = TradingCalendar()
 
         self.price_db = ArenaX_LocalPriceDB(
             path=str(price_db_path) if price_db_path else str(paths.price_db_path())
@@ -258,15 +262,13 @@ class ArenaX_Market:
         Returns:
             Adjusted time within market hours or at market close
         """
-        # Market hours: 9:00 - 13:30
-        market_open_hour = 9
-        market_open_minute = 0
-        market_close_hour = 13
-        market_close_minute = 30
+        session = self.calendar.REGULAR
+        market_close_hour = session.close.hour
+        market_close_minute = session.close.minute
 
         current_time_of_day = mock_current_time.time()
-        market_open_time = time(market_open_hour, market_open_minute)
-        market_close_time = time(market_close_hour, market_close_minute)
+        market_open_time = session.open
+        market_close_time = session.close
 
         # If after market close (after 13:30), freeze at 13:30 of same day
         if current_time_of_day > market_close_time:
@@ -297,23 +299,15 @@ class ArenaX_Market:
         return mock_current_time
 
     def is_market_open(self) -> bool:
-        """Check if market is currently open (9:00-13:30 on weekdays)
+        """Is the regular session (一般交易) trading right now?
 
-        Returns:
-            True if within market hours, False otherwise
+        Regular lot, not odd lot: callers have no lot to pass and the answer
+        has always meant 09:00-13:30. Ask `calendar` directly for a lot-aware
+        answer.
         """
-        mock_current_time = self.get_market_time()['mock_current_time']
-
-        # Check if weekend
-        if mock_current_time.weekday() >= 5:  # Saturday or Sunday
-            return False
-
-        # Market hours: 9:00 - 13:30
-        current_time = mock_current_time.time()
-        market_open = time(9, 0)
-        market_close = time(13, 30)
-
-        return market_open <= current_time <= market_close
+        return self.calendar.is_open(
+            OrderLot.Common, self.get_market_time()['mock_current_time']
+        )
 
     # TODO: Check if the gap filling mechanism really work and is with correct timezone
     def create_historical_market(self, symbol: str, days_preload: int = 5):
@@ -579,6 +573,7 @@ class ArenaX_Market:
 class ArenaX_RealMarket:
     def __init__(self, real_account: AccountClient):
         self.real_account = real_account
+        self.calendar = TradingCalendar()
         self.playback_speed = 1.0  # Real market doesn't use playback speed, but we keep the attribute for interface consistency
         self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
         self.mock_init_time = datetime.now()  # For real market, mock_init_time is just the time when we start the simulation
