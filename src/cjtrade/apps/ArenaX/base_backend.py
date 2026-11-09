@@ -998,40 +998,57 @@ class ArenaX_BackendBase:
             order.opt_field["last_check_for_fill"] = cmp_time_range_end
 
             if fill_time is not None:
-                try:
-                    self.account_state.orders_filled.append(order)
-                    if order in self.account_state.orders_committed:
-                        self.account_state.orders_committed.remove(order)
-                    self.account_state.all_order_status[order.id] = OrderStatus.FILLED
-
-                    value = order.price * order.quantity
-                    commission = self._cost_model.calc_commission(value)
-                    tax = self._cost_model.calc_tax(value, order.action.value, order.product.symbol)
-                    if order.action == OrderAction.BUY:
-                        self.account_state.balance -= (value + commission)
-                    else:
-                        self.account_state.balance += (value - commission - tax)
-
-                    self.account_state.fill_history.append({
-                        "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
-                        "order_id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "quantity": order.quantity if order.action == OrderAction.BUY else -order.quantity,
-                        "price": order.price,
-                        "commission": round(commission, 2),
-                        "tax": round(tax, 2),
-                        "time": fill_time.isoformat(),
-                        # Propagate session_id from the order so the client can
-                        # filter fill_history by session after the backtest ends.
-                        "session_id": order.opt_field.get("session_id") if order.opt_field else None,
-                    })
-                    print("Order filled:", order.id)
-
-                    self._reconstruct_positions_from_history()
-                except Exception as exc:
-                    print(f"Error moving order {order.id} to filled: {exc}")
+                self._apply_fill(order, order.price, fill_time)
         return True
+
+    def _apply_fill(self, order: Order, fill_price: float,
+                    fill_time: datetime) -> bool:
+        """Book a fill: move the order, pay the costs, record it, re-derive positions.
+
+        The only place any backend settles a fill. There used to be three
+        copies — base, paper and real — and only this one applied the
+        CostModel, so the same strategy paid commission and tax in backtest and
+        nothing in paper. paper also dropped session_id, which broke the
+        client's per-session filtering of fill_history.
+        """
+        try:
+            if order in self.account_state.orders_committed:
+                self.account_state.orders_committed.remove(order)
+            if order in self.account_state.orders_placed:
+                self.account_state.orders_placed.remove(order)
+            self.account_state.orders_filled.append(order)
+            self.account_state.all_order_status[order.id] = OrderStatus.FILLED
+
+            value = fill_price * order.quantity
+            commission = self._cost_model.calc_commission(value)
+            tax = self._cost_model.calc_tax(value, order.action.value,
+                                            order.product.symbol)
+            if order.action == OrderAction.BUY:
+                self.account_state.balance -= (value + commission)
+            else:
+                self.account_state.balance += (value - commission - tax)
+
+            self.account_state.fill_history.append({
+                "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
+                "order_id": order.id,
+                "symbol": order.product.symbol,
+                "action": order.action.value,
+                "quantity": order.quantity if order.action == OrderAction.BUY else -order.quantity,
+                "price": fill_price,
+                "commission": round(commission, 2),
+                "tax": round(tax, 2),
+                "time": fill_time.isoformat(),
+                # Propagate session_id from the order so the client can
+                # filter fill_history by session after the backtest ends.
+                "session_id": order.opt_field.get("session_id") if order.opt_field else None,
+            })
+            print("Order filled:", order.id)
+
+            self._reconstruct_positions_from_history()
+            return True
+        except Exception as exc:
+            print(f"Error moving order {order.id} to filled: {exc}")
+            return False
 
     def _find_fill_time(
         self,

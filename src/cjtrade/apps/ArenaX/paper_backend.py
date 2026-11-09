@@ -10,7 +10,6 @@ from cjtrade.apps.ArenaX.market_data import ArenaX_RealMarket
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import OrderAction
-from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
 
@@ -149,29 +148,12 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 			if fill_kbar is None:
 				continue
 
-			try:
-				self.account_state.orders_filled.append(order)
-				if order in self.account_state.orders_committed:
-					self.account_state.orders_committed.remove(order)
-				self.account_state.all_order_status[order.id] = OrderStatus.FILLED
-
-				qty_signed = order.quantity if order.action == OrderAction.BUY else -order.quantity
-				self.account_state.balance -= (qty_signed * order.price)
-
-				self.account_state.fill_history.append({
-					"id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
-					"order_id": order.id,
-					"symbol": order.product.symbol,
-					"action": order.action.value,
-					"quantity": qty_signed,
-					"price": order.price,
-					"time": fill_kbar.timestamp.isoformat(),
-				})
-
-				self._reconstruct_positions_from_history()
+			# Settle through the base class so paper pays the same commission
+			# and tax as backtest and records session_id. This used to be a
+			# local copy that did `balance -= qty_signed * price` and nothing
+			# else, which made paper and backtest P&L silently incomparable.
+			if self._apply_fill(order, order.price, fill_kbar.timestamp):
 				any_filled = True
-			except Exception as exc:
-				print(f"[PaperTrade] Error filling order {order.id}: {exc}")
 
 		return any_filled
 
