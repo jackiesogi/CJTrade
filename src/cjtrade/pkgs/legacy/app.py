@@ -223,7 +223,9 @@ async def main():
     ]
 
     ## Start Flask in separate thread (Uncomment when all stub is done) ##
-    #flask_thread = Thread(target=WEB.run_flask, kwargs={'host': '0.0.0.0', 'port': 5000}, daemon=True)
+    ## Loopback: this has no authentication, so whoever uncomments it must not
+    ## widen the bind. Reach it from another machine with an SSH port-forward.
+    #flask_thread = Thread(target=WEB.run_flask, kwargs={'host': '127.0.0.1', 'port': 5000}, daemon=True)
     #flask_thread.start()
     ######################################################################
 

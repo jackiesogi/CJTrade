@@ -71,10 +71,18 @@ class TestSystemConfigDefaults:
         cfg = build_system_config("nonexistent_broker", "backtest")
         assert cfg.remote_port == 8801
 
-    def test_api_host_default(self, monkeypatch):
+    def test_api_host_defaults_to_loopback(self, monkeypatch):
+        """The default must stay loopback.
+
+        This server exposes balance, positions and trade history, and none of
+        its routes authenticate: /api/v1/auth/login returns
+        "cjtrade-{username}" for any username and nothing checks it afterwards.
+        The default used to be 0.0.0.0, which published the account to every
+        host on the network.
+        """
         monkeypatch.delenv("CJSYS_API_HOST", raising=False)
         cfg = build_system_config("nonexistent_broker", "backtest")
-        assert cfg.api_host == "0.0.0.0"
+        assert cfg.api_host == "127.0.0.1"
 
     def test_api_port_default(self, monkeypatch):
         monkeypatch.delenv("CJSYS_API_PORT", raising=False)
