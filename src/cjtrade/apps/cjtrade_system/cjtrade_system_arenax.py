@@ -22,8 +22,8 @@ from typing import Optional
 
 import numpy as np
 from aiohttp import web as _aiohttp_web
-from cjtrade.pkgs import paths
 from cjtrade.apps.cjtrade_system.extensions.ntfy_sh import push_to_ntfy_sh
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
 from cjtrade.pkgs.brokers.account_client import AccountClient
@@ -128,7 +128,7 @@ def build_system_config(broker: str, mode: str) -> "SystemConfig":
         bb_min_width_pct=float(_get('BB_MIN_WIDTH_PCT', 0.01) or 0.01),
         bb_window_size=int(_get('BB_WINDOW_SIZE', 20) or 20),
         risk_max_position_pct=float(_get('RISK_MAX_POSITION_PCT', 0.05) or 0.05),
-        api_host=_get('API_HOST', '0.0.0.0'),
+        api_host=_get('API_HOST', '127.0.0.1'),
         api_port=int(_get('API_PORT', 8899) or 8899),
     )
 
@@ -154,7 +154,11 @@ class SystemConfig:
     remote_host: str = "localhost"      # ArenaX server address
     remote_port: int = 8801             # ArenaX server port
     # ── CJTrade System API server ─────────────────────────────────────────
-    api_host: str = "0.0.0.0"
+    # Loopback. This server serves balance, positions and trade history, and
+    # none of its routes authenticate -- /api/v1/auth/login hands out
+    # "cjtrade-{username}" for any username and nothing ever checks it back.
+    # On 0.0.0.0 that published the account to every host on the network.
+    api_host: str = "127.0.0.1"
     api_port: int = 8899
 
     def to_dict(self) -> dict:
@@ -378,8 +382,8 @@ class BollingerBandsStrategy(SignalStrategy):
             target_quantity=target_quantity,
         )
 
-# CJTrade lightweight API server (for FinHub / external consumers)
-CJTRADE_API_HOST = "0.0.0.0"
+# CJTrade lightweight API server (for FinHub, which runs on this host)
+CJTRADE_API_HOST = "127.0.0.1"
 CJTRADE_API_PORT = 8899
 
 # ==================== Trading System Class ====================

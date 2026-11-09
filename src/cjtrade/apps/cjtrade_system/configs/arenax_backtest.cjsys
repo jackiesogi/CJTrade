@@ -56,6 +56,6 @@ CJSYS_STATE_FILE = backtest_account_state.json
 # ===========================================     API Server     ============================================
 # The CJTrade System API Server is a lightweight HTTP service
 # that enables third-party applications to integrate with CJTrade System.
-CJSYS_API_HOST                = 0.0.0.0
+CJSYS_API_HOST                = 127.0.0.1
 CJSYS_API_PORT                = 8899
 # ===========================================================================================================
