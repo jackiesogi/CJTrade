@@ -75,6 +75,28 @@ def print_config():
     log.info(f"System Configuration: {config}")
 
 
+# Browser origins allowed to read the CJTrade System API's responses.
+#
+# It used to answer every request with Access-Control-Allow-Origin: '*'. None
+# of those routes authenticate, so that wildcard let ANY page the user happened
+# to be visiting read their balance, positions and trade history -- a loopback
+# bind does nothing about that, because the request comes from the user's own
+# browser. An explicit list means only the local front end can read it.
+#
+# Override with CJSYS_API_ALLOWED_ORIGINS (comma-separated) if FinHub serves
+# from a port that is not listed; "none" turns CORS off entirely, which is
+# right when nothing but a server-side client polls this.
+#
+# Defined up here rather than next to CJTRADE_API_HOST because SystemConfig
+# uses it as a field default, and a dataclass default is evaluated when the
+# class is created.
+DEFAULT_API_ALLOWED_ORIGINS = (
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:8080", "http://127.0.0.1:8080",
+)
+
+
 def build_system_config(broker: str, mode: str) -> "SystemConfig":
     """Build SystemConfig with explicit priority: os.environ > .cjsys file > default.
 
@@ -130,7 +152,23 @@ def build_system_config(broker: str, mode: str) -> "SystemConfig":
         risk_max_position_pct=float(_get('RISK_MAX_POSITION_PCT', 0.05) or 0.05),
         api_host=_get('API_HOST', '127.0.0.1'),
         api_port=int(_get('API_PORT', 8899) or 8899),
+        api_allowed_origins=_parse_origins(_get('API_ALLOWED_ORIGINS')),
     )
+
+
+def _parse_origins(raw) -> tuple:
+    """Comma-separated origins, or the default list when unset.
+
+    An explicitly empty value ("" or "none") means no origin is allowed, which
+    disables CORS rather than falling back to the default -- otherwise there
+    would be no way to say "nothing in a browser talks to this".
+    """
+    if raw is None:
+        return DEFAULT_API_ALLOWED_ORIGINS
+    text = str(raw).strip()
+    if not text or text.lower() == "none":
+        return ()
+    return tuple(o.strip() for o in text.split(",") if o.strip())
 
 # ==================== System Config ====================
 @dataclass
@@ -160,6 +198,9 @@ class SystemConfig:
     # On 0.0.0.0 that published the account to every host on the network.
     api_host: str = "127.0.0.1"
     api_port: int = 8899
+    # Which browser origins may read the responses. See
+    # DEFAULT_API_ALLOWED_ORIGINS for why this is a list and not '*'.
+    api_allowed_origins: tuple = DEFAULT_API_ALLOWED_ORIGINS
 
     def to_dict(self) -> dict:
         import dataclasses, math
@@ -183,7 +224,7 @@ def _apply_config(cfg: SystemConfig) -> None:
     global ANALYSIS_INTERVAL, CHECK_FILL_INTERVAL, DISPLAY_TIME_INTERVAL, LLM_REPORT_INTERVAL, PRICE_MONITOR_INTERVAL
     global BB_MIN_WIDTH_PCT, BB_WINDOW_SIZE
     global RISK_MAX_POSITION_PCT
-    global CJTRADE_API_HOST, CJTRADE_API_PORT
+    global CJTRADE_API_HOST, CJTRADE_API_PORT, CJTRADE_API_ALLOWED_ORIGINS
 
     BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
     LAUNCH_MODE                = cfg.launch_mode
@@ -200,6 +241,7 @@ def _apply_config(cfg: SystemConfig) -> None:
     RISK_MAX_POSITION_PCT      = cfg.risk_max_position_pct
     CJTRADE_API_HOST           = cfg.api_host
     CJTRADE_API_PORT           = cfg.api_port
+    CJTRADE_API_ALLOWED_ORIGINS = tuple(cfg.api_allowed_origins)
 
 
 SHUTDOWN = False
@@ -385,6 +427,7 @@ class BollingerBandsStrategy(SignalStrategy):
 # CJTrade lightweight API server (for FinHub, which runs on this host)
 CJTRADE_API_HOST = "127.0.0.1"
 CJTRADE_API_PORT = 8899
+CJTRADE_API_ALLOWED_ORIGINS = DEFAULT_API_ALLOWED_ORIGINS
 
 # ==================== Trading System Class ====================
 class TradingSystem:
@@ -1228,17 +1271,43 @@ async def run_api_server(system: 'TradingSystem') -> None:
     GET  /api/equity_curve        Equity-curve data points.
     """
 
+    allowed_origins = tuple(CJTRADE_API_ALLOWED_ORIGINS)
+
+    def _cors_headers(origin: str | None) -> dict:
+        """CORS headers for this origin, or none if it is not on the list.
+
+        Echoing the specific origin instead of '*' is the whole point: these
+        routes do not authenticate, so a wildcard made the account readable by
+        any page the user had open. Vary: Origin goes with an echoed origin --
+        without it a cache can hand one origin's response to another and undo
+        the check.
+        """
+        if not origin or origin not in allowed_origins:
+            return {}
+        return {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+            'Vary': 'Origin',
+        }
+
     @_aiohttp_web.middleware
     async def _cors(request, handler):
-        """Allow cross-origin requests from the Finhub frontend."""
+        """Allow cross-origin reads from the configured front-end origins."""
+        origin = request.headers.get('Origin')
         if request.method == 'OPTIONS':
-            return _aiohttp_web.Response(status=204, headers={
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-            })
+            headers = _cors_headers(origin)
+            if not headers:
+                # Say no out loud. A 204 with no CORS headers also blocks the
+                # read, but it looks like a working preflight in the network
+                # tab and sends whoever is wiring up a front end hunting.
+                return _aiohttp_web.json_response(
+                    {'error': f'origin not allowed: {origin!r}. Set '
+                              f'CJSYS_API_ALLOWED_ORIGINS to permit it.'},
+                    status=403)
+            return _aiohttp_web.Response(status=204, headers=headers)
         resp = await handler(request)
-        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers.update(_cors_headers(origin))
         return resp
 
     async def login(request):
@@ -1337,20 +1406,19 @@ async def run_api_server(system: 'TradingSystem') -> None:
     app.router.add_get('/api/v1/positions',     get_positions)
     app.router.add_get('/api/v1/trades',        get_trades)
     app.router.add_get('/api/v1/equity_curve',  get_equity_curve)
-    # Catch-all OPTIONS for preflight
+    # Catch-all for preflight. The middleware above answers every OPTIONS
+    # before it reaches a handler, so this only needs to exist for the router
+    # to accept the method at all; it is never actually called.
     app.router.add_route('OPTIONS', r'/{path_info:.*}',
-        lambda r: _aiohttp_web.Response(status=204, headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-        })
-    )
+                         lambda r: _aiohttp_web.Response(status=204))
 
     runner = _aiohttp_web.AppRunner(app, access_log=None)
     await runner.setup()
     site = _aiohttp_web.TCPSite(runner, CJTRADE_API_HOST, CJTRADE_API_PORT)
     await site.start()
     log.info(f"🌐 CJTrade API server: http://{CJTRADE_API_HOST}:{CJTRADE_API_PORT}/api/")
+    log.info(f"   browser origins allowed: "
+             f"{', '.join(allowed_origins) if allowed_origins else 'none (CORS off)'}")
 
     try:
         while not SHUTDOWN:

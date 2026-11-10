@@ -89,6 +89,31 @@ class TestSystemConfigDefaults:
         cfg = build_system_config("nonexistent_broker", "backtest")
         assert cfg.api_port == 8899
 
+    def test_allowed_origins_never_default_to_a_wildcard(self, monkeypatch):
+        """No route here authenticates, so '*' let any page the user was
+        visiting read their balance, positions and trade history. A loopback
+        bind does not help: the request comes from the user's own browser."""
+        monkeypatch.delenv("CJSYS_API_ALLOWED_ORIGINS", raising=False)
+        cfg = build_system_config("nonexistent_broker", "backtest")
+        assert cfg.api_allowed_origins
+        assert "*" not in cfg.api_allowed_origins
+        assert all(o.startswith(("http://localhost", "http://127.0.0.1"))
+                   for o in cfg.api_allowed_origins), cfg.api_allowed_origins
+
+    def test_allowed_origins_from_env(self, monkeypatch):
+        monkeypatch.setenv("CJSYS_API_ALLOWED_ORIGINS",
+                           "http://localhost:4321, http://localhost:9999")
+        cfg = build_system_config("nonexistent_broker", "backtest")
+        assert cfg.api_allowed_origins == ("http://localhost:4321",
+                                           "http://localhost:9999")
+
+    def test_allowed_origins_can_be_emptied(self, monkeypatch):
+        """"none" must mean no browser at all, not "fall back to the default" --
+        otherwise there is no way to say only a server-side client polls this."""
+        monkeypatch.setenv("CJSYS_API_ALLOWED_ORIGINS", "none")
+        cfg = build_system_config("nonexistent_broker", "backtest")
+        assert cfg.api_allowed_origins == ()
+
     def test_returns_system_config_instance(self):
         cfg = build_system_config("nonexistent_broker", "backtest")
         assert isinstance(cfg, SystemConfig)
