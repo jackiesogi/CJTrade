@@ -30,7 +30,9 @@ subclass (on_start/on_bar/on_fill/on_end); everything below main() is
 generic runner plumbing that doesn't change per-strategy.
 """
 import logging
+import signal
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -47,6 +49,7 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 from cjtrade.pkgs.strategy.bb import BollingerStrategy
+from protocol import BotStatus
 from protocol import OrderIntent
 from protocol import OrderReport
 from protocol import PriceUpdate
@@ -74,6 +77,21 @@ INITIAL_BALANCE = 1_000_000.0
 # lost report on the PUB socket; neither is retransmitted, and without a
 # deadline either one would freeze this symbol for the rest of the run.
 UNACKED_MAX_BARS = 10
+
+# How long to sit on a silent socket before concluding master is gone.
+#
+# In seconds rather than bars because the two clocks are three orders of
+# magnitude apart: under ReplayClock a bar lands every ~12ms, under
+# RealtimeClock every 60s. 180s is three missed live bars, and master's long
+# startup work (kbar fetch, preload) happens before it spawns anyone, so a
+# healthy bot is never silent that long.
+#
+# Without this a bot blocks in recv forever. One that outlives its master keeps
+# a stale ledger mirror and goes on trading against it, and because it is still
+# subscribed to the same port the next master's bars arrive with a sequence
+# number lower than its own -- which showed up as a negative dropped-bar count.
+RECV_TIMEOUT_MS = 5000
+SILENCE_LIMIT_S = 180.0
 
 
 class LocalLedgerMirror:
@@ -201,6 +219,8 @@ def main():
 
     log.info(f"[{bot_id}] started! ({target_symbol}) strategy={strategy.name}")
 
+    started_at = datetime.now()
+
     zmq_context = zmq.Context()
     sub_socket = zmq_context.socket(zmq.SUB)
     sub_socket.connect(protocol.price_feed_address())
@@ -208,9 +228,19 @@ def main():
     # Order reports from master are published on our own bot_id topic (see
     # main2.py's publish_report) — subscribe to that too, same socket.
     sub_socket.set(zmq.SUBSCRIBE, bot_id.encode('utf-8'))
+    # So recv can return instead of blocking forever; see SILENCE_LIMIT_S.
+    sub_socket.set(zmq.RCVTIMEO, RECV_TIMEOUT_MS)
 
     push_socket = zmq_context.socket(zmq.PUSH)
     push_socket.connect(protocol.order_intent_address())
+
+    # master terminates bots with SIGTERM, which Python does not turn into an
+    # exception, so the shutdown path below never ran on a normal end of run --
+    # on_end was only ever reached by Ctrl-C. Convert it, so a bot reports its
+    # final state however the run ends.
+    def _on_sigterm(_sig, _frm):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _on_sigterm)
 
     strategy.on_start(StrategyContext(
         timestamp=datetime.now(), balance=ledger.balance, equity=ledger.balance,
@@ -219,10 +249,27 @@ def main():
 
     bar_index = 0
     last_seq = -1
+    bars_dropped = 0
     inflight: dict[str, InFlight] = {}
+    silent_since: float | None = None
     try:
         while True:
-            _topic, payload = sub_socket.recv_multipart()
+            try:
+                _topic, payload = sub_socket.recv_multipart()
+            except zmq.Again:
+                # Nothing from master this interval. Any traffic at all resets
+                # this, including an order report, so only a genuinely dead
+                # master accumulates silence.
+                now = time.monotonic()
+                if silent_since is None:
+                    silent_since = now
+                elif now - silent_since >= SILENCE_LIMIT_S:
+                    log.error(f"[{bot_id}] nothing from master for "
+                              f"{now - silent_since:.0f}s — assuming it is gone "
+                              f"and exiting rather than trading on a stale mirror")
+                    break
+                continue
+            silent_since = None
             msg = protocol.decode(payload)
 
             if isinstance(msg, OrderReport):
@@ -275,7 +322,18 @@ def main():
             # the only evidence that a bar never reached us. Worth saying out
             # loud: the strategy's price history now has a hole in it.
             if last_seq >= 0 and msg.seq != last_seq + 1:
-                log.warning(f"[{bot_id}] dropped {msg.seq - last_seq - 1} bar(s) "
+                missed = msg.seq - last_seq - 1
+                if missed < 0:
+                    # Not a drop: a sequence that went backwards means these
+                    # bars are from a different master than the last ones, i.e.
+                    # this bot outlived its own. SILENCE_LIMIT_S should have
+                    # caught that first, so say so loudly and stop.
+                    log.error(f"[{bot_id}] sequence went backwards "
+                              f"({last_seq} -> {msg.seq}) — these bars belong to "
+                              f"another master. Exiting.")
+                    break
+                bars_dropped += missed
+                log.warning(f"[{bot_id}] dropped {missed} bar(s) "
                             f"of {target_symbol} (seq {last_seq} -> {msg.seq})")
             last_seq = msg.seq
 
@@ -320,13 +378,38 @@ def main():
                     OrderIntent(bot_id=bot_id, order=order, reason=sig.reason)
                 ))
 
+            # After the signals, so the status reflects the orders this bar
+            # produced rather than the state just before them.
+            push_socket.send(protocol.encode(BotStatus(
+                bot_id=bot_id,
+                seq=last_seq,
+                bar_index=bar_index,
+                market_time=bar.timestamp,
+                started_at=started_at,
+                bars_seen=bar_index,
+                bars_dropped=bars_dropped,
+                inflight={s: f.order_id[:8] for s, f in inflight.items()},
+                balance=ledger.balance,
+                monitors=protocol.wire_safe(strategy.monitors()),
+            )))
+
     except KeyboardInterrupt:
-        strategy.on_end(StrategyContext(
-            timestamp=datetime.now(), balance=ledger.balance,
-            equity=ledger.equity(price_map), positions=ledger.positions_list(price_map),
-            price_history=price_history, bar_index=bar_index, params=params,
-        ))
-        log.info(f"[{bot_id}] exited without error (balance={ledger.balance:.0f})")
+        pass
+
+    # One shutdown path for every exit: Ctrl-C, SIGTERM from master, a dead
+    # master, or a sequence from someone else's master.
+    strategy.on_end(StrategyContext(
+        timestamp=datetime.now(), balance=ledger.balance,
+        equity=ledger.equity(price_map), positions=ledger.positions_list(price_map),
+        price_history=price_history, bar_index=bar_index, params=params,
+    ))
+    mon = strategy.monitors()
+    log.info(f"[{bot_id}] exiting after {bar_index} bar(s), "
+             f"balance={ledger.balance:.0f}, dropped={bars_dropped}"
+             + (f", {mon.get('signals_emitted', '?')} signal(s)" if mon else ""))
+    if mon:
+        log.info(f"[{bot_id}] final monitors: "
+                 + "  ".join(f"{k}={v}" for k, v in mon.items()))
 
 
 if __name__ == "__main__":

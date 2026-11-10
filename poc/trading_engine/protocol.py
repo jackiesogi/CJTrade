@@ -23,10 +23,12 @@ What goes on each socket
     PUB  tcp://...:5555   topic = symbol   PriceUpdate
     PUB  tcp://...:5555   topic = bot_id   OrderReport
     PULL tcp://...:5556                    OrderIntent
+    PULL tcp://...:5556                    BotStatus
 
-Three envelopes, because pkgs/models has no type for "a tick plus a sequence
-number" or "an order event plus the account state it produced". Everything
-inside them is a pkgs/models type.
+Four envelopes, because pkgs/models has no type for "a tick plus a sequence
+number", "an order event plus the account state it produced", or "what a bot
+and its strategy currently look like". Everything inside them is a pkgs/models
+type or a plain scalar.
 
 Codec
 -----
@@ -154,6 +156,75 @@ class OrderReport:
     event: OrderEvent
     balance: float
     position: Optional[Position] = None
+
+
+@dataclass
+class BotStatus:
+    """Bot -> master: what this bot is, and what its strategy is seeing.
+
+    Sent once per bar on the same PUSH socket as OrderIntent. Master is the
+    only process that talks to every bot and already holds a broker session,
+    so it is the only place these can be collected -- and the collection is
+    what a status view, a chart overlay or a stuck-bot alarm all read.
+
+    It is also the heartbeat, deliberately. Master cannot otherwise tell a bot
+    that has nothing to say from one that has died or wandered off: a bot that
+    outlives its master keeps a stale ledger mirror and goes on placing orders
+    against it, which is how a run ends up reporting a negative dropped-bar
+    count. One message answers both questions, so the two cannot disagree
+    about whether a bot is alive.
+
+    `monitors` is whatever the strategy chose to expose (BaseStrategy.monitors)
+    and is therefore not a fixed shape. Put it through wire_safe() before
+    sending: a strategy is free to return a numpy scalar, and a monitoring
+    field must never be able to kill the trading loop.
+    """
+    bot_id: str
+    seq: int                    # last PriceUpdate.seq this bot saw
+    bar_index: int
+    market_time: Optional[datetime]
+    started_at: datetime
+    bars_seen: int
+    bars_dropped: int
+    # symbol -> short order id. Plain dict, not dict[str, str]: _coerce walks
+    # declared field types, and a parametrised generic is not reliably an
+    # instance of `type` across Python versions.
+    inflight: dict
+    balance: float
+    monitors: dict
+
+
+_WIRE_SAFE = (bool, int, float, str)
+
+
+def wire_safe(values: dict) -> dict:
+    """Coerce a strategy's monitors dict to values msgpack can carry.
+
+    Anything numeric becomes a float, anything else becomes its str(). Nothing
+    is dropped silently and nothing raises: _encode_hook rejects unregistered
+    types with a TypeError, and a monitoring field that can abort a send would
+    put the trading loop at the mercy of a display value.
+
+    The pass-through test is on the exact type, not isinstance: np.float64
+    subclasses float but msgpack cannot pack it, so a subclass has to go
+    through the float()/str() conversion below like any other foreign value.
+    """
+    out: Dict[str, Any] = {}
+    for key, val in values.items():
+        name = str(key)
+        if val is None or type(val) in _WIRE_SAFE:
+            out[name] = val
+            continue
+        try:
+            out[name] = float(val)          # numpy scalars, Decimal, Fraction
+            continue
+        except (TypeError, ValueError):
+            pass
+        try:
+            out[name] = str(val)
+        except Exception:                   # a __str__ that raises
+            out[name] = "<unrenderable>"
+    return out
 
 
 def is_resting(status: OrderStatus) -> bool:
@@ -303,7 +374,7 @@ _WIRE_TYPES: Dict[str, type] = {
     cls.__name__: cls
     for cls in (
         # envelopes
-        PriceUpdate, OrderIntent, OrderReport,
+        PriceUpdate, OrderIntent, OrderReport, BotStatus,
         # pkgs/models
         BidAsk, FillEvent, Order, OrderEvent, OrderResult,
         Position, Product, Quote, Snapshot, TickEvent, Trade,

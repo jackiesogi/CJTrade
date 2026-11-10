@@ -40,6 +40,7 @@ import random
 import sys
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
@@ -126,6 +127,13 @@ CLOCK = "replay"             # "scaled" | "replay" | "realtime"
 RISK_MAX_ORDERS_PER_BAR = 3      # a strategy firing more than this per bar is a bug
 RISK_MAX_LOSS_PCT = 0.25         # equity down this far halts new orders
 RISK_DUPLICATE_WINDOW_BARS = 3   # identical order within this many bars is refused
+
+# ── Bot monitoring ────────────────────────────────────────────────────────────
+# A bot reports once per bar, so silence is measured in bars here (the bot's own
+# side measures it in seconds, because it cannot know the playback rate).
+BOT_SILENT_BARS = 20             # no status for this many bars -> say so
+BOT_STATUS_HISTORY = 500         # per-bar snapshots kept, across all bots
+BOT_STATUS_EVERY = 500           # log a status line this often, with bars served
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -849,14 +857,95 @@ async def publish_report(pub_socket, report: OrderReport) -> None:
     )
 
 
-async def handle_orders(pull_socket, pub_socket, engine: ExecutionEngine):
-    log.info("[Master] Started order execution loop...")
+class BotRegistry:
+    """What master knows about each bot, and how recently it said so.
+
+    Master is the only process that talks to every bot, so this is the only
+    place a view of "all bots" can exist. It is also how a dead or wandering
+    bot gets noticed: a bot that stops reporting has either exited or is
+    talking to a different master, and either way its orders should not be
+    trusted.
+
+    History is bounded. A year-long replay is ~64,000 bars per bot, and the
+    point of keeping any history at all is to answer "what was it doing just
+    before that", not to accumulate the run.
+    """
+
+    def __init__(self, history: int = 500):
+        self._latest: dict[str, protocol.BotStatus] = {}
+        self._heard_at_bar: dict[str, int] = {}
+        self._reported_silent: set[str] = set()
+        self.history: deque = deque(maxlen=history)
+
+    def expect(self, bot_ids: list[str], engine_bar: int) -> None:
+        """Start the silence clock for bots that have been spawned.
+
+        Without this, silence is only ever noticed for a bot that reported at
+        least once, so the case this is most meant to catch -- a bot that dies
+        during startup, before its first bar -- would pass unremarked.
+        """
+        for bot_id in bot_ids:
+            self._heard_at_bar.setdefault(bot_id, engine_bar)
+
+    def record(self, status: protocol.BotStatus, engine_bar: int) -> None:
+        self._latest[status.bot_id] = status
+        self._heard_at_bar[status.bot_id] = engine_bar
+        self._reported_silent.discard(status.bot_id)
+        self.history.append(status)
+
+    @property
+    def latest(self) -> dict[str, protocol.BotStatus]:
+        return dict(self._latest)
+
+    def newly_silent(self, engine_bar: int, max_silent_bars: int) -> list[str]:
+        """Bots that have gone quiet, each reported once rather than per bar."""
+        out = []
+        for bot_id, bar in self._heard_at_bar.items():
+            if engine_bar - bar < max_silent_bars or bot_id in self._reported_silent:
+                continue
+            self._reported_silent.add(bot_id)
+            out.append(bot_id)
+        return out
+
+    def summary_line(self, bot_id: str) -> str:
+        s = self._latest.get(bot_id)
+        if s is None:
+            return f"{bot_id}: nothing heard yet"
+        mon = s.monitors or {}
+        keys = ("regime", "volatility", "lower_touches", "upper_touches",
+                "mid_crossings", "signals_emitted")
+        shown = "  ".join(f"{k}={mon[k]}" for k in keys if k in mon)
+        inflight = ",".join(f"{k}:{v}" for k, v in (s.inflight or {}).items())
+        return (f"{bot_id}: bar {s.bar_index} dropped={s.bars_dropped} "
+                f"balance={s.balance:.0f}"
+                + (f" inflight[{inflight}]" if inflight else "")
+                + (f"  {shown}" if shown else "")
+                + (f"\n{' ' * 10}why: {mon['last_decision']}"
+                   if "last_decision" in mon else ""))
+
+
+async def handle_bot_messages(pull_socket, pub_socket, engine: ExecutionEngine,
+                              registry: BotRegistry, hub: "EventHub"):
+    """The one reader of the PULL socket. Two message types arrive on it.
+
+    Was handle_orders: bots now also report their own state, and it comes up
+    the same socket because the alternative -- a listener per bot -- is N ports
+    to secure for data master needs anyway.
+    """
+    log.info("[Master] Started bot message loop...")
     while True:
         try:
-            intent = protocol.decode(await pull_socket.recv())
-            await publish_report(pub_socket, await engine.execute(intent))
+            msg = protocol.decode(await pull_socket.recv())
+            if isinstance(msg, protocol.BotStatus):
+                registry.record(msg, hub.bars)
+                continue
+            if isinstance(msg, OrderIntent):
+                await publish_report(pub_socket, await engine.execute(msg))
+                continue
+            log.warning(f"[Master] ignoring unexpected message "
+                        f"{type(msg).__name__} on the intent socket")
         except Exception as e:
-            log.info(f"[Master] Got exception while handling order: {e}")
+            log.info(f"[Master] Got exception while handling a bot message: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -998,6 +1087,7 @@ async def main():
     # the first run's trades.
     session_id = uuid.uuid4().hex
     recorder = RunRecorder(session_id=session_id, initial_balance=bot_balance)
+    bot_registry = BotRegistry(history=BOT_STATUS_HISTORY)
     log.info(f"[Master] session {session_id}")
 
     proc = await asyncio.create_subprocess_exec(
@@ -1010,6 +1100,8 @@ async def main():
     # an allocation every bot sizes against the full equity and N bots deploy
     # N times the capital.
     bots = ["Bot_C"]
+    # Bar 0: bots are spawned before the hub exists, so no bar has been served.
+    bot_registry.expect(bots, 0)
     gate = RiskGate(
         RiskLimits(
             max_notional_per_bot=bot_balance / len(bots),
@@ -1041,6 +1133,15 @@ async def main():
             await publish_report(pub_socket, report)
 
         gate.start_bar(hub.bars)
+
+        for bot_id in bot_registry.newly_silent(hub.bars, BOT_SILENT_BARS):
+            log.error(f"[Master] {bot_id} has not reported for "
+                      f"{BOT_SILENT_BARS} bars — it has exited, stalled, or is "
+                      f"listening to another master. Its orders are stale.")
+        if hub.bars % BOT_STATUS_EVERY == 0:
+            for bot_id in bots:
+                log.info(f"[Bots] {bot_registry.summary_line(bot_id)}")
+
         state = await asyncio.to_thread(account_client.get_account_state)
         equity = state.balance + sum(p.market_value for p in state.positions)
         # Record before the gate looks at it: a bar that trips the kill switch
@@ -1059,7 +1160,8 @@ async def main():
     for s in cfg.symbols:
         hub.subscribe_price_feed(s)
 
-    asyncio.create_task(handle_orders(pull_socket, pub_socket, engine))
+    asyncio.create_task(handle_bot_messages(pull_socket, pub_socket, engine,
+                                            bot_registry, hub))
 
     try:
         await hub.start(pub_socket)
@@ -1079,6 +1181,12 @@ async def main():
             await proc.wait()
         except Exception:
             pass
+
+        # What each bot last said. Worth printing even on a clean run: a bot
+        # whose last word was 400 bars ago stopped reporting while master kept
+        # going, and the fill count alone would not show that.
+        for bot_id in bots:
+            log.info(f"[Bots] {bot_registry.summary_line(bot_id)}")
         log.info("[Master] Trading engine terminated.")
 
         # After the bots are gone so the report is not interleaved with their
