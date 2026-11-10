@@ -257,10 +257,18 @@ class ReplayClock:
         if not self.speed:
             return                         # flat out: no pacing at all
 
-        # Per bar, not per market second. The cursor can jump 19.5 hours of
-        # market time crossing a session boundary, and sleeping that over the
-        # speed would stall the run all "night" -- which is not what anyone
-        # means by replaying at 60x. A bar is the unit of simulation here.
+        # Charged per bar, not per market second, so `speed` is a WITHIN-SESSION
+        # rate. Inside a trading session the two are the same thing -- measured
+        # on 2317, 3958 of 3989 consecutive bars are exactly 60s apart -- so one
+        # market minute really does cost 60/speed real seconds there.
+        #
+        # Between sessions they are not. The cursor crosses 19.5 hours
+        # overnight, and 67.5 hours over a weekend, for the price of one bar.
+        # That is deliberate: pacing those faithfully would have a 60x replay
+        # sit idle for 19.5 real minutes every simulated night. The consequence
+        # is that end-to-end acceleration is higher than the number asked for --
+        # 3.9x higher over a 2-day window, 7.3x over 20 days -- which for_server
+        # reports at startup rather than leaving it to be discovered.
         wall = market_seconds / self.speed
         now = time.monotonic()
         if self._deadline is None:
@@ -310,16 +318,9 @@ class ReplayClock:
         mw.set_timeline_origin(mock_init_time=timestamps[0].isoformat(),
                            auto_start_progress=False, auto_preload_data=False)
 
-        # Say what the requested speed costs in wall-clock time, before the run
-        # starts. A 20-day replay at 1x is 66 hours, and nobody should have to
-        # discover that by watching a progress bar not move.
-        if speed:
-            budget_s = len(timestamps) * BAR_INTERVAL_SEC / speed
-            pace = f"{speed:g}x → about {_human_duration(budget_s)} of wall clock"
-        else:
-            pace = "flat out (no pacing)"
         log.info(f"[Clock] replay: {len(timestamps)} bars, "
-                 f"{timestamps[0]} .. {timestamps[-1]}, {pace}")
+                 f"{timestamps[0]} .. {timestamps[-1]}, "
+                 f"{_pace_summary(timestamps, speed)}")
         return cls(mw, timestamps, speed)
 
 
@@ -332,6 +333,35 @@ def _human_duration(seconds: float) -> str:
     if seconds < 48 * 3600:
         return f"{seconds / 3600:.1f} hours"
     return f"{seconds / 86400:.1f} days"
+
+
+def _pace_summary(timestamps: list[datetime], speed: float | None) -> str:
+    """What a requested speed actually means for this timeline.
+
+    Reports two numbers because they differ and only one of them is the one on
+    the label. `speed` is a within-session rate: it buys 60 market seconds for
+    60/speed real seconds, which is exact while the market is open. Over the
+    whole replay it understates the acceleration, because the hours the market
+    is shut are crossed for the price of one bar -- 19.5 of them overnight,
+    67.5 over a weekend.
+
+    A 20-day replay of 2317 spans 484 hours of market time in 3,989 bars, so
+    asking for 600x gets you about 4,400x end to end. Printing only the first
+    number would be the kind of true-but-misleading that costs an afternoon.
+    """
+    if not speed:
+        return "flat out (no pacing)"
+    wall_s = len(timestamps) * BAR_INTERVAL_SEC / speed
+    out = (f"{speed:g}x within a session → about {_human_duration(wall_s)} "
+           f"of wall clock")
+    if len(timestamps) >= 2 and wall_s > 0:
+        spanned_s = (timestamps[-1] - timestamps[0]).total_seconds()
+        # Only worth saying when the timeline actually crosses a closed market.
+        if spanned_s > len(timestamps) * BAR_INTERVAL_SEC * 1.05:
+            out += (f"; spans {spanned_s / 3600:.0f}h of market time, "
+                    f"so ~{spanned_s / wall_s:,.0f}x end to end "
+                    f"(closed sessions cost one bar each)")
+    return out
 
 
 def _bar_timestamps(mw, symbols, start, end, interval) -> list[datetime]:
