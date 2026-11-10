@@ -178,9 +178,13 @@ class ArenaX_BrokerSideServer:
         if backend is not None:
             self.backend = backend
         else:
-            print(internal_config)
-            print(external_config)
-            # time.sleep(30)
+            # Redacted, and through the logger rather than print(). This used
+            # to print external_config verbatim, so every start wrote the live
+            # Sinopac api_key, secret_key and CA password into the server log
+            # in plaintext. GET /api/v1/config was fixed to redact; the log was
+            # still handing the same values out.
+            log.info("internal_config: %s", _redact_secrets(internal_config))
+            log.info("external_config: %s", _redact_secrets(external_config))
             cost_model = CostModel(
                 commission_discount=float(internal_config.get('commission_discount', 1.0)),
                 slippage_model=internal_config.get('slippage_model', 'none'),
