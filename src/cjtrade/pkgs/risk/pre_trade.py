@@ -93,6 +93,18 @@ class RiskGate:
     def exposure(self, bot_id: str) -> float:
         return self._exposure[bot_id]
 
+    @property
+    def exposures(self) -> Dict[str, float]:
+        """Every bot's deployed notional, as a copy.
+
+        Here because ``exposure()`` indexes a defaultdict, so asking about a
+        bot that has not traded yet inserts a key. Harmless to the arithmetic,
+        but it means a read-only caller -- a status endpoint, a log line --
+        cannot look without writing, on an object documented above as not
+        thread-safe.
+        """
+        return dict(self._exposure)
+
     def start_bar(self, bar_index: int) -> None:
         """Reset per-bar counters. Call once per bar before any check()."""
         self._bar = bar_index
