@@ -21,6 +21,10 @@ from cjtrade.apps.ArenaX.paper_backend import ArenaX_Backend_PaperTrade
 from cjtrade.apps.ArenaX.real_backend import ArenaX_Backend_RealTrade
 from cjtrade.apps.ArenaX.demo_backend import ArenaX_Backend_None
 from cjtrade.pkgs.models.cost import CostModel
+# Explicit, even though the star import below also provides it: the one use
+# here is a module-level constant, and a name that only resolves via a star
+# import is a name nothing can check.
+from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
@@ -90,6 +94,14 @@ def prepare_price_db(price_db_path: Optional[str]):
 def regular_sort_price_db(price_db_path: Optional[str]):
     # Placeholder for scheduled maintenance
     return
+
+# Statuses an order cannot leave. Used by GET /api/v1/orders?open_only=true.
+# Spelled out as values because that is what Trade.status carries over the wire.
+_FINISHED_ORDER_STATUSES = frozenset((
+    OrderStatus.FILLED.value,
+    OrderStatus.CANCELLED.value,
+    OrderStatus.REJECTED.value,
+))
 
 BROKER_KBAR_DATA_AVAILABILITY = {
     "sinopac": { "start": "2020-03-20", "end": "3000-12-31" },
@@ -549,21 +561,60 @@ class ArenaX_BrokerSideServer:
             NOTE: equity_curve is intentionally NOT here. The client
             (cjtrade_system) records it locally during the run so the server
             does not accumulate unbounded in-memory data across sessions.
+
+            Query (both optional, and omitting both is the old behaviour):
+              session_id  only this run's fills. Clients filtered this
+                          themselves, which meant downloading every other
+                          run's fills in order to discard them.
+              limit       the most recent N only. fill_history only ever grows,
+                          so a client polling this during a long run was
+                          fetching a body that got bigger all day.
             """
             state = self.backend.account_state
+            fills = state.fill_history
+            wanted = request.args.get("session_id")
+            if wanted is not None:
+                fills = [f for f in fills if f.get("session_id") == wanted]
+            raw_limit = request.args.get("limit")
+            total = len(fills)
+            if raw_limit is not None:
+                try:
+                    limit = int(raw_limit)
+                except ValueError:
+                    return jsonify({"ok": False,
+                                    "error": f"bad limit: {raw_limit!r}"}), 400
+                if limit > 0:
+                    fills = fills[-limit:]
             return jsonify({
                 "ok": True,
                 "initial_balance": state.initial_balance,
                 "final_balance": state.balance,
-                "fill_history": state.fill_history,
+                "fill_history": fills,
+                # So a caller can tell a truncated answer from a complete one
+                # instead of inferring it from the length it asked for.
+                "total": total,
+                "truncated": len(fills) < total,
             })
 
         @app.get("/api/v1/orders")
         @app.doc(tags=["Orders"])
         def list_orders():
-            """Every order this session knows about, resting ones included."""
-            o = self.backend.list_trades()
-            return jsonify({"ok": True, "orders": o if o is not None else []})
+            """Every order this session knows about, resting ones included.
+
+            Query:
+              open_only=true   only orders that are not finished.
+
+            Worth knowing why that option exists: the full list is built fresh
+            on every call, one object per order the session has ever seen, so
+            its cost grows for the whole life of the server. A caller that only
+            wants to know what is still resting -- which is what polling for
+            fills actually needs -- can ask for that instead and pay for the
+            resting orders alone.
+            """
+            o = self.backend.list_trades() or []
+            if request.args.get("open_only", "").lower() in ("1", "true", "yes"):
+                o = [t for t in o if t.status not in _FINISHED_ORDER_STATUSES]
+            return jsonify({"ok": True, "orders": o})
 
         @app.post("/api/v1/orders")
         @app.doc(tags=["Orders"])

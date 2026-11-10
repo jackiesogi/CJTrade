@@ -223,9 +223,19 @@ class ArenaXMiddleWare:
                         isolation when the server has been running across multiple
                         backtest sessions or manual operations.
         """
-        res = self._get("api/v1/account/fills")
+        # Ask the server to filter. fill_history only grows, so filtering here
+        # meant downloading every other run's fills in order to throw them
+        # away -- and this gets polled during a run.
+        path = "api/v1/account/fills"
+        if session_id is not None:
+            path += f"?session_id={session_id}"
+        res = self._get(path)
         if res and res.get("ok"):
             fill_history = res.get("fill_history", [])
+            # Filtered again, deliberately. A server that predates the query
+            # parameter ignores it and answers with everything, and silently
+            # reporting another run's trades as this one's is worse than the
+            # wasted bytes. Filtering an already-filtered list costs nothing.
             if session_id is not None:
                 fill_history = [
                     f for f in fill_history
