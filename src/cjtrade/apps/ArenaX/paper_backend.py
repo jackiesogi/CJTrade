@@ -22,8 +22,28 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		state_file: Optional[str] = None,   # snapshot to resume from; None = fresh
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
+		# Declared so they are absorbed from the config rather than landing in
+		# **kwargs. load_cjsys() puts num_days_preload and skip_data_preload in
+		# internal_config unconditionally, and the server passes the whole dict
+		# through, so leaving them out of this signature meant they arrived
+		# twice and `arenaxd --backend=paper` died in its constructor:
+		#     TypeError: ArenaX_BackendBase.__init__() got multiple values for
+		#                keyword argument 'skip_data_preload'
+		# The two sibling backends declare them, which is why only paper broke.
+		num_days_preload: int = 0,
+		skip_data_preload: bool = True,
 		**kwargs
 	) -> None:
+		# Accepted and then ignored, deliberately. Paper prices come from the
+		# live broker one snapshot at a time (see snapshot() below), so there is
+		# no historical window to preload and ArenaX_RealMarket has no
+		# create_historical_market to preload it with. Honouring the config's
+		# 365 days here would ask the broker for a year of bars nothing reads.
+		if num_days_preload or not skip_data_preload:
+			print(f"[PaperTrade] ignoring preload config "
+			      f"(num_days_preload={num_days_preload}, "
+			      f"skip_data_preload={skip_data_preload}): paper mode reads "
+			      f"prices live, so there is nothing to preload")
 		super().__init__(
 			state_file=state_file,
 			real_account=real_account,

@@ -140,3 +140,89 @@ class TestGetMarketTime:
     def test_get_system_time_alias_still_works(self, api):
         """The old name is deprecated but must keep returning the same thing."""
         assert api.get_system_time() == api.get_market_time()
+
+
+# ── An unanswered account read ───────────────────────────────────────────────
+
+class _SilentMiddleWare(StubMiddleWare):
+    """A middleware that cannot reach the server.
+
+    This is exactly what ArenaXMiddleWare does on any transport failure: it
+    catches requests.exceptions.RequestException, prints, and returns None.
+    """
+
+    def account_summary(self):
+        return None
+
+
+class _HalfAnswerMiddleWare(StubMiddleWare):
+    """The server answered, but without a balance in it."""
+
+    def account_summary(self):
+        return {"positions": [], "orders": []}
+
+
+class TestUnreachableAccountRead:
+    """A read that got no answer must not look like a zero balance.
+
+    The engine samples the account every bar to feed its loss limit. When the
+    server went away this used to surface two frames deep as
+    `AttributeError: 'NoneType' object has no attribute 'get'`, which named
+    nothing useful and which no caller could catch by type -- so one unanswered
+    read ended an entire run.
+    """
+
+    def test_get_balance_raises_a_connection_error(self, tmp_db):
+        broker = ArenaXBrokerAPI_v2(middleware=_SilentMiddleWare(),
+                                    api_key="testkey", username="tester")
+        broker.db, broker._connected = tmp_db, True
+        with pytest.raises(ConnectionError) as excinfo:
+            broker.get_balance()
+        # The message has to say where, or it is no better than the
+        # AttributeError it replaced.
+        assert "did not answer" in str(excinfo.value)
+        assert "/api/v1/account" in str(excinfo.value)
+
+    def test_get_positions_raises_a_connection_error(self, tmp_db):
+        broker = ArenaXBrokerAPI_v2(middleware=_SilentMiddleWare(),
+                                    api_key="testkey", username="tester")
+        broker.db, broker._connected = tmp_db, True
+        with pytest.raises(ConnectionError):
+            broker.get_positions()
+
+    def test_it_is_not_an_attribute_error(self, tmp_db):
+        """Guards the specific regression: AttributeError is what a caller
+        cannot reasonably catch, so it must not come back."""
+        broker = ArenaXBrokerAPI_v2(middleware=_SilentMiddleWare(),
+                                    api_key="testkey", username="tester")
+        broker.db, broker._connected = tmp_db, True
+        for call in (broker.get_balance, broker.get_positions):
+            try:
+                call()
+            except ConnectionError:
+                pass
+            except AttributeError as exc:            # pragma: no cover
+                pytest.fail(f"{call.__name__} still raises AttributeError: {exc}")
+
+    def test_balance_is_never_defaulted_to_zero(self, tmp_db):
+        """0.0 would be acted on: it is below every loss limit, so the engine's
+        kill switch would trip on a network blip."""
+        broker = ArenaXBrokerAPI_v2(middleware=_HalfAnswerMiddleWare(),
+                                    api_key="testkey", username="tester")
+        broker.db, broker._connected = tmp_db, True
+        with pytest.raises(ConnectionError) as excinfo:
+            broker.get_balance()
+        assert "no balance" in str(excinfo.value)
+
+    def test_a_missing_position_list_is_empty_not_a_crash(self, tmp_db):
+        """Positions are different from balance: "the account holds nothing" is
+        a real answer a server can give, and `None` for the list is how it
+        says so."""
+        broker = ArenaXBrokerAPI_v2(middleware=_HalfAnswerMiddleWare(),
+                                    api_key="testkey", username="tester")
+        broker.db, broker._connected = tmp_db, True
+        assert broker.get_positions() == []
+
+    def test_a_good_answer_still_works(self, api):
+        assert api.get_balance() == 1_000_000.0
+        assert api.get_positions() == []
