@@ -35,6 +35,7 @@ Three clocks, same interface:
 Pick one with MODE near the bottom.
 """
 import asyncio
+import json
 import logging
 import os
 import random
@@ -129,6 +130,11 @@ CLOCK = "replay"             # "scaled" | "replay" | "realtime"
 RISK_MAX_ORDERS_PER_BAR = 3      # a strategy firing more than this per bar is a bug
 RISK_MAX_LOSS_PCT = 0.25         # equity down this far halts new orders
 RISK_DUPLICATE_WINDOW_BARS = 3   # identical order within this many bars is refused
+
+# Consecutive bars the account can be unreadable before the gate halts. In
+# bars rather than seconds because the quantity that matters is how many bars
+# the bots traded while the kill switch was blind.
+ACCOUNT_READ_MAX_FAILURES = 5
 
 # ── Bot monitoring ────────────────────────────────────────────────────────────
 # A bot reports once per bar, so silence is measured in bars here (the bot's own
@@ -755,7 +761,8 @@ class RunRecorder:
     cost lines have numbers in them.
     """
 
-    def __init__(self, session_id: str, initial_balance: float):
+    def __init__(self, session_id: str, initial_balance: float,
+                 journal_path: Path | None = None):
         self.session_id = session_id
         self.initial_balance = initial_balance
         # Market time of the first bar, filled in by the first observe(). Not
@@ -764,6 +771,25 @@ class RunRecorder:
         self.start_time: str | None = None
         self.equity_curve: list[dict] = []
         self._last_minute = ""
+        # Append-only copy of the curve on disk. The pickle and the HTML are
+        # written once, at the end, so anything that stops the process without
+        # reaching the teardown -- a kill, an OOM, a crash in a C extension --
+        # used to lose the entire run: the fills survive on the server, but the
+        # equity curve exists nowhere else.
+        #
+        # JSONL rather than re-pickling every N bars: one line per sample is
+        # O(1) per bar where a rewrite is O(n), it survives a process dying
+        # mid-write with only the last line lost, and it can be read by anything.
+        self._journal = None
+        self.journal_path = journal_path
+        if journal_path is not None:
+            try:
+                self._journal = open(journal_path, "a", buffering=1)
+                log.info(f"[Report] equity journal → {journal_path}")
+            except OSError as e:
+                # A run that cannot write its journal is still a run worth
+                # having; say so and carry on.
+                log.warning(f"[Report] no equity journal ({e})")
 
     def observe(self, as_of: datetime | None, equity: float) -> None:
         """Record one equity sample, at most one per minute of market time.
@@ -779,7 +805,44 @@ class RunRecorder:
         if minute == self._last_minute:
             return
         self._last_minute = minute
-        self.equity_curve.append({"time": minute, "value": round(equity, 2)})
+        sample = {"time": minute, "value": round(equity, 2)}
+        self.equity_curve.append(sample)
+        if self._journal is not None:
+            try:
+                # line_buffering=1 above, so this reaches the OS on the newline.
+                self._journal.write(json.dumps(sample) + "\n")
+            except OSError as e:
+                log.warning(f"[Report] equity journal write failed, dropping it: {e}")
+                self._journal = None
+
+    def close(self) -> None:
+        """Release the journal. Safe to call twice."""
+        if self._journal is not None:
+            try:
+                self._journal.close()
+            except OSError:
+                pass
+            self._journal = None
+
+    @staticmethod
+    def read_journal(path: Path) -> list[dict]:
+        """The curve from a journal, for rebuilding a report after a crash.
+
+        Skips a trailing partial line rather than raising: the last write is
+        exactly the one a kill interrupts.
+        """
+        curve = []
+        with open(path) as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    curve.append(json.loads(line))
+                except ValueError:
+                    log.warning(f"[Report] ignoring an incomplete journal line "
+                                f"at the end of {path}")
+        return curve
 
     def build_result(self, client: AccountClient) -> BacktestResult | None:
         """Assemble the result. Blocking HTTP — call it off the loop.
@@ -1092,7 +1155,9 @@ async def main():
     # it, a second run against a server that was not restarted would inherit
     # the first run's trades.
     session_id = uuid.uuid4().hex
-    recorder = RunRecorder(session_id=session_id, initial_balance=bot_balance)
+    recorder = RunRecorder(
+        session_id=session_id, initial_balance=bot_balance,
+        journal_path=paths.reports_dir() / f"engine_{session_id[:8]}.equity.jsonl")
     bot_registry = BotRegistry(history=BOT_STATUS_HISTORY)
     # Wall clock, for the status API's uptime. Taken here rather than at the
     # top of main() so it does not count the time the form spent waiting on
@@ -1130,6 +1195,10 @@ async def main():
                              initial_balance=cfg.initial_balance,
                              gate=gate)
 
+    # Consecutive failed account reads. Lives out here so report_resolved_orders
+    # can keep a count across bars.
+    account_read_failures = 0
+
     async def report_resolved_orders(as_of: datetime | None) -> None:
         """Tell each bot about any of its resting orders that just resolved,
         then let the risk gate see the bar.
@@ -1152,7 +1221,43 @@ async def main():
             for bot_id in bots:
                 log.info(f"[Bots] {bot_registry.summary_line(bot_id)}")
 
-        state = await asyncio.to_thread(account_client.get_account_state)
+        # Guarded, because this used to be the most fragile line in the engine:
+        # a single unanswered read ended the run. The broker going away for one
+        # bar raised out of here, out of _reload_loop, out of main(), and the
+        # whole run's equity curve went with it. Verified by killing the server
+        # mid-run -- it died on `account_summary().get("balance")`.
+        #
+        # A failure is skipped rather than retried: the next bar is one more
+        # attempt, sixty market seconds later, and a tight retry loop inside a
+        # bar would just hold the loop while the server is down.
+        nonlocal account_read_failures
+        try:
+            state = await asyncio.to_thread(account_client.get_account_state)
+        except Exception as e:
+            account_read_failures += 1
+            log.warning(f"[Master] could not read the account on bar {hub.bars} "
+                        f"({account_read_failures} in a row): {e}")
+            # Counted in bars, not seconds, because what the number measures is
+            # how many bars the bots have traded with nobody watching the
+            # account -- and bars are what they trade on.
+            if account_read_failures >= ACCOUNT_READ_MAX_FAILURES and not gate.halted:
+                # Halt rather than carry on. The kill switch is the only thing
+                # standing between a losing strategy and the whole account, and
+                # it cannot see anything without this read. Refusing new orders
+                # while blind is the conservative failure, and it is visible in
+                # /status instead of being a gap in a log.
+                gate.halt(f"the account has been unreadable for "
+                          f"{account_read_failures} bars — refusing new orders "
+                          f"until it can be seen again")
+                log.error(f"[Risk] KILL SWITCH — {gate.halt_reason}")
+                for report in await engine.cancel_open_orders(as_of, "account unreadable"):
+                    await publish_report(pub_socket, report)
+            return
+        if account_read_failures:
+            log.info(f"[Master] account readable again after "
+                     f"{account_read_failures} bar(s)")
+            account_read_failures = 0
+
         equity = state.balance + sum(p.market_value for p in state.positions)
         # Record before the gate looks at it: a bar that trips the kill switch
         # is the most interesting point on the curve, so it has to be on it.
@@ -1227,6 +1332,9 @@ async def main():
         except Exception as e:
             log.error(f"[Report] could not build the run report: {e}")
 
+        # After the report, so a failure above still leaves the journal intact
+        # on disk rather than half-flushed.
+        recorder.close()
         account_client.disconnect()
 
 

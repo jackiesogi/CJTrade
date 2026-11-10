@@ -94,13 +94,41 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return self._connected
 
 
+    def _account_summary(self) -> dict:
+        """The account, or a ConnectionError naming what went wrong.
+
+        ArenaXMiddleWare swallows every transport failure and returns None, so
+        a timeout, a refused connection or a restarting server all arrived here
+        as None and then became `AttributeError: 'NoneType' object has no
+        attribute 'get'` two frames further in -- which says nothing about the
+        broker being unreachable, and which no caller was ever going to catch
+        by name.
+
+        Not a default: an unanswered read is not a balance of 0.0 and not an
+        empty position list. Either one of those would be acted on -- 0.0 trips
+        the engine's loss limit, and no positions makes a held symbol look
+        available to buy again.
+        """
+        summary = self.middleware.account_summary()
+        if summary is None:
+            raise ConnectionError(
+                f"ArenaX server at {self.host}:{self.port} did not answer "
+                f"GET /api/v1/account")
+        return summary
+
+
     def get_positions(self) -> List[Position]:
-        pos = self.middleware.account_summary().get("positions")
-        return [Position(**p) for p in pos]
+        pos = self._account_summary().get("positions")
+        return [Position(**p) for p in (pos or [])]
 
 
     def get_balance(self) -> float:
-        return float(self.middleware.account_summary().get("balance"))
+        balance = self._account_summary().get("balance")
+        if balance is None:
+            raise ConnectionError(
+                f"ArenaX server at {self.host}:{self.port} answered "
+                f"GET /api/v1/account with no balance")
+        return float(balance)
 
 
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
