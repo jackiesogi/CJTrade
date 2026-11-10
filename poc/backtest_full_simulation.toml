@@ -23,14 +23,18 @@ options = ["backtest", "paper", "demo"]
 
 [[field]]
 name        = "playback_speed"
-label       = "Playback Speed (Ignore this if you choose paper mode)"
+# Market seconds per real second, and it is now honoured in backtest too --
+# it used to be discarded there, so every backtest ran flat out whatever you
+# picked. 0 asks for flat out explicitly. Ignored in paper mode, which tracks
+# the wall clock and has no speed to set.
+label       = "Playback Speed (0 = as fast as possible; ignored in paper mode)"
 type        = "select"
 default     = 1200.0
 env_out     = "CJSYS_BACKTEST_PLAYBACK_SPEED"
 persist_key = "playback_speed"
 cli_arg     = "--speed"
 [field.config]
-options = [0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
+options = [0, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 600.0, 1200.0, 3000.0, 6000.0, 12000.0, 30000.0]
 
 [[field]]
 name = "watch_list"

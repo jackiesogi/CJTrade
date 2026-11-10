@@ -218,8 +218,24 @@ class ReplayClock:
     def __init__(self, mw, timestamps: list[datetime], speed: float | None = None):
         self.mw = mw
         self.timestamps = timestamps
+        # None means flat out. Any positive number is market seconds per real
+        # second, so 1.0 replays at the speed the market actually moved.
         self.speed = speed
         self.i = 0
+        # Pacing is deadline-based rather than "sleep the budget each bar".
+        # Sleeping the budget adds the time the bar's own work took on top of
+        # it, so the error compounds: at 1200x the budget is 50ms and a bar
+        # costs ~16ms, which is a third of the requested rate lost. Tracking a
+        # deadline spends the work out of the budget instead of after it.
+        #
+        # ScaledClock has its own copy of this. Not shared, because it is not
+        # reachable on any current path (CLOCK is "replay" and live modes take
+        # RealtimeClock), and extracting a helper that only one caller uses is
+        # not worth touching code nothing exercises.
+        self._deadline: float | None = None
+        self._behind_bars = 0
+        self._behind_worst_ms = 0.0
+        self._last_behind_log = 0.0
         mw.set_market_time(timestamps[0])         # park the server on bar 0
 
     @property
@@ -238,8 +254,43 @@ class ReplayClock:
 
         # Blocking wait
         await asyncio.to_thread(self.mw.set_market_time, self.now)
-        if self.speed is not None:
-            await asyncio.sleep(market_seconds / self.speed)
+        if not self.speed:
+            return                         # flat out: no pacing at all
+
+        # Per bar, not per market second. The cursor can jump 19.5 hours of
+        # market time crossing a session boundary, and sleeping that over the
+        # speed would stall the run all "night" -- which is not what anyone
+        # means by replaying at 60x. A bar is the unit of simulation here.
+        wall = market_seconds / self.speed
+        now = time.monotonic()
+        if self._deadline is None:
+            self._deadline = now
+        self._deadline += wall
+
+        slack = self._deadline - now
+        if slack > 0:
+            await asyncio.sleep(slack)
+            return
+
+        # Asked for more than the machine can deliver. Said out loud, because
+        # the alternative is a run that silently goes at whatever rate it can
+        # and reports the speed you asked for.
+        self._behind_bars += 1
+        self._behind_worst_ms = max(self._behind_worst_ms, -slack * 1000)
+        # Rate-limited: at 30000x the budget is 2ms and every bar would be
+        # late, which is thousands of identical lines.
+        if now - self._last_behind_log >= 5.0:
+            self._last_behind_log = now
+            log.warning(
+                f"[Clock] cannot keep up with {self.speed:g}x — "
+                f"{self._behind_bars} bar(s) late, worst by "
+                f"{self._behind_worst_ms:.0f}ms against a "
+                f"{wall*1000:.1f}ms budget. The replay is running as fast as it "
+                f"can, which is slower than requested."
+            )
+            self._behind_bars = 0
+            self._behind_worst_ms = 0.0
+        self._deadline = time.monotonic()      # re-baseline, don't accrue debt
 
     @classmethod
     def for_server(cls, mw, symbols, start, end, interval="1m", speed=None) -> "ReplayClock":
@@ -259,10 +310,28 @@ class ReplayClock:
         mw.set_timeline_origin(mock_init_time=timestamps[0].isoformat(),
                            auto_start_progress=False, auto_preload_data=False)
 
+        # Say what the requested speed costs in wall-clock time, before the run
+        # starts. A 20-day replay at 1x is 66 hours, and nobody should have to
+        # discover that by watching a progress bar not move.
+        if speed:
+            budget_s = len(timestamps) * BAR_INTERVAL_SEC / speed
+            pace = f"{speed:g}x → about {_human_duration(budget_s)} of wall clock"
+        else:
+            pace = "flat out (no pacing)"
         log.info(f"[Clock] replay: {len(timestamps)} bars, "
-                 f"{timestamps[0]} .. {timestamps[-1]}, "
-                 f"{'full speed' if speed is None else f'{speed}x'}")
+                 f"{timestamps[0]} .. {timestamps[-1]}, {pace}")
         return cls(mw, timestamps, speed)
+
+
+def _human_duration(seconds: float) -> str:
+    """Rough wall-clock duration, for telling someone what they just asked for."""
+    if seconds < 90:
+        return f"{seconds:.0f}s"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.1f} min"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.1f} hours"
+    return f"{seconds / 86400:.1f} days"
 
 
 def _bar_timestamps(mw, symbols, start, end, interval) -> list[datetime]:
@@ -1120,13 +1189,25 @@ def load_config(schema: Path = FORM_SCHEMA) -> EngineConfig:
 
     start = (answers.get("start_date") or "").strip() or None
 
+    def answered(key: str, default: float) -> float:
+        """The answer, or the default only when there is no answer.
+
+        `float(answers.get(key) or default)` looks equivalent and is not: 0 is
+        falsy, so --speed=0 came out as the default. That matters now that 0 is
+        the way to ask for an unpaced replay.
+        """
+        raw = answers.get(key)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return default
+        return float(raw)
+
     return EngineConfig(
         broker=answers.get("broker", "arenax"),
         backend_mode=answers.get("mode", "backtest"),
         symbols=symbols,
-        initial_balance=float(answers.get("fund") or 1_000_000),
-        duration_days=int(float(answers.get("days") or 365)),
-        playback_speed=float(answers.get("playback_speed") or 1.0),
+        initial_balance=answered("fund", 1_000_000),
+        duration_days=int(answered("days", 365)),
+        playback_speed=answered("playback_speed", 1.0),
         start_date=start,
     )
 
@@ -1156,8 +1237,15 @@ def build_clock(client: AccountClient, clock: str, cfg: EngineConfig):
         start = cfg.start_date or client.get_market_time()["mock_init_time"].date().isoformat()
         end = (datetime.fromisoformat(start)
                + timedelta(days=cfg.duration_days)).date().isoformat()
-        # speed=None means flat out; the form's speed only paces a watchable demo.
-        speed = None if cfg.backend_mode == "backtest" else cfg.playback_speed
+        # The requested speed is honoured in every replayed mode, backtest
+        # included. It used to be discarded for backtest and the replay always
+        # ran flat out, so asking for 60x and asking for 30000x produced the
+        # identical run and neither was the speed on the label.
+        #
+        # 0 means flat out, matching the "0 == no limit" this codebase already
+        # uses for the status API's `limit`. There is no other sentinel: a mode
+        # cannot opt out of its own setting, which is what the branch here did.
+        speed = cfg.playback_speed if cfg.playback_speed > 0 else None
         return ReplayClock.for_server(mw, cfg.symbols, start, end,
                                       interval="1m", speed=speed)
 
