@@ -36,6 +36,7 @@ Pick one with MODE near the bottom.
 """
 import asyncio
 import logging
+import os
 import random
 import sys
 import time
@@ -51,6 +52,7 @@ from typing import Awaitable
 from typing import Callable
 
 import protocol
+import status_api
 import zmq.asyncio
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
@@ -134,6 +136,10 @@ RISK_DUPLICATE_WINDOW_BARS = 3   # identical order within this many bars is refu
 BOT_SILENT_BARS = 20             # no status for this many bars -> say so
 BOT_STATUS_HISTORY = 500         # per-bar snapshots kept, across all bots
 BOT_STATUS_EVERY = 500           # log a status line this often, with bars served
+
+# Where the read-only status API listens. The host is not settable -- see
+# status_api's module docstring. The port is, so two engines can coexist.
+STATUS_PORT = int(os.environ.get("CJ_ENGINE_STATUS_PORT", status_api.DEFAULT_STATUS_PORT))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1088,6 +1094,10 @@ async def main():
     session_id = uuid.uuid4().hex
     recorder = RunRecorder(session_id=session_id, initial_balance=bot_balance)
     bot_registry = BotRegistry(history=BOT_STATUS_HISTORY)
+    # Wall clock, for the status API's uptime. Taken here rather than at the
+    # top of main() so it does not count the time the form spent waiting on
+    # someone to answer it.
+    run_started_at = datetime.now()
     log.info(f"[Master] session {session_id}")
 
     proc = await asyncio.create_subprocess_exec(
@@ -1163,9 +1173,28 @@ async def main():
     asyncio.create_task(handle_bot_messages(pull_socket, pub_socket, engine,
                                             bot_registry, hub))
 
+    # Read-only HTTP view of the run, loopback only — see status_api's module
+    # docstring for why it is HTTP, why nothing here renders, and what the
+    # security posture is. Started last, so everything it reads already exists.
+    status_runner = await status_api.start(
+        status_api.EngineView(
+            session_id=session_id, started_at=run_started_at, cfg=cfg,
+            clock_name=clock_name, clock=clock, hub=hub, recorder=recorder,
+            registry=bot_registry, gate=gate, account_client=account_client,
+            bots=bots,
+        ),
+        STATUS_PORT,
+    )
+
     try:
         await hub.start(pub_socket)
     finally:
+        # First, so a poller cannot catch the engine half dismantled: what
+        # follows cancels orders and kills the bots, and a /status answered
+        # mid-teardown would describe a run that no longer exists.
+        if status_runner is not None:
+            await status_runner.cleanup()
+
         # Before anything else: the broker still holds whatever was resting,
         # and it outlives this process.
         try:

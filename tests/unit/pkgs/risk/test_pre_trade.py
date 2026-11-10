@@ -50,6 +50,25 @@ class TestNotionalPerBot:
         assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
         assert g.check("Bot_B", "2317", "BUY", 40, 250.0) is None
 
+    def test_exposures_reports_every_bot_that_traded(self):
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
+        g.record_submitted("Bot_B", "2317", "BUY", 20, 250.0)
+        assert g.exposures == {"Bot_A": 10_000.0, "Bot_B": 5_000.0}
+
+    def test_exposures_does_not_invent_a_bot(self):
+        """exposure() indexes a defaultdict and so inserts; this must not."""
+        g = _gate(max_notional_per_bot=10_000.0)
+        assert g.exposures == {}
+        g.exposures["Bot_Ghost"] = 1.0        # a copy, so this is discarded
+        assert g.exposures == {}
+
+    def test_exposures_tracks_release(self):
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
+        g.record_outcome("Bot_A", "BUY", 10_000.0, filled=False)
+        assert g.exposures == {"Bot_A": 0.0}
+
     def test_a_dead_buy_releases_its_capital(self):
         g = _gate(max_notional_per_bot=10_000.0)
         g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
