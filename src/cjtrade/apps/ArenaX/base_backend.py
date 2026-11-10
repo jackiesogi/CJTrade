@@ -1,3 +1,4 @@
+import itertools
 import json
 import os
 import uuid
@@ -973,7 +974,21 @@ class ArenaX_BackendBase:
         if not hasattr(self, "market"):
             return True
 
-        trades = self.list_trades()
+        # Read the order lists directly instead of going through list_trades().
+        #
+        # list_trades() builds a Trade object for every order the session has
+        # ever seen, and this runs on every place_order -- so the cost of
+        # placing an order grew with the number of orders already placed, under
+        # the server's global backend lock. Over a long paper run that is the
+        # thing that gets slow first. The sum below is the same sum; it just
+        # does not allocate the intermediate list.
+        #
+        # The two sweeps list_trades() ran on the way past are kept, because
+        # they were load-bearing and not incidental: expiry can move an order
+        # out of the counted set, which changes this total.
+        self._check_if_any_order_filled()
+        self.expire_resting_orders()
+
         today_str = self.market.get_market_time()["mock_current_time"].strftime("%Y-%m-%d")
         # Every status that still consumes the day's quota. WAIT_MARKET_OPEN and
         # PLACED were missing, so orders stacked up before the open did not
@@ -986,9 +1001,17 @@ class ArenaX_BackendBase:
             OrderStatus.FILLED.value,
         }
         traded_sum = 0.0
-        for trade in trades:
-            if trade.status in counted and trade.order_datetime.startswith(today_str):
-                traded_sum += trade.price * trade.quantity
+        # orders_cancelled is deliberately absent: CANCELLED and REJECTED are
+        # not in `counted`, so those orders contributed nothing before either.
+        for candidate in itertools.chain(self.account_state.orders_placed,
+                                         self.account_state.orders_committed,
+                                         self.account_state.orders_filled):
+            status = self.account_state.all_order_status.get(candidate.id)
+            if status is None or status.value not in counted:
+                continue
+            if candidate.created_at.strftime("%Y-%m-%d") != today_str:
+                continue
+            traded_sum += candidate.price * candidate.quantity
         return traded_sum + (order.price * order.quantity) <= trade_limit
 
     def _check_if_any_order_filled(self) -> bool:

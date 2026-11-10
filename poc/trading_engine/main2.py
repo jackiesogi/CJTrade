@@ -313,9 +313,23 @@ def _parse_server_datetime(raw) -> datetime | None:
 
 class EventHub:
     def __init__(self, account_client: AccountClient, clock,
-                 on_bar_end: Callable[[datetime | None], Awaitable[None]] | None = None):
+                 on_bar_end: Callable[[datetime | None], Awaitable[None]] | None = None,
+                 session_check: Callable[[], bool] | None = None):
         self.client = account_client
         self.clock = clock
+        # Asked once per bar, on the live path only: "is the market open?".
+        #
+        # None means publish every bar, which is what replay wants and what
+        # this used to do unconditionally. That mattered: a replay's bars come
+        # from real trading sessions, so they are all inside market hours
+        # anyway, and consulting the broker would add a fifth HTTP round trip
+        # to a loop that already makes four per bar.
+        #
+        # It is a callable rather than a mode flag because the engine owns no
+        # clock and makes no time judgements -- the broker is asked, and which
+        # broker it is does not appear here.
+        self.session_check = session_check
+        self._market_closed = False
         self.watch_list = set()
         self.pub_socket = None
         self._last_price: dict[str, float] = {}
@@ -382,6 +396,25 @@ class EventHub:
         """
         started = time.monotonic()
         while not self.clock.finished:
+            if not await self._market_is_open():
+                # Hold the feed. Nothing downstream has a session of its own:
+                # the hub published a bar every 60s around the clock, so a bot
+                # spent the night running on_bar against the broker's cached
+                # closing snapshot -- the same price, repeated, which a
+                # strategy reads as a real series and can signal on.
+                #
+                # The whole bar is skipped, not just the publish: there is no
+                # point polling orders or sampling equity on a market that has
+                # not moved, and `bars` counts bars served, so it correctly
+                # does not advance.
+                #
+                # One consequence worth knowing: a bot holding an in-flight
+                # order keeps holding it until the morning, because its own
+                # timeout is measured in bars and bars have stopped. It clears
+                # within UNACKED_MAX_BARS of the open.
+                await self.clock.sleep(BAR_INTERVAL_SEC)
+                continue
+
             # sorted(), not list(): fixed symbol order per bar, so a multi-symbol
             # run is reproducible instead of following set iteration order.
             for symbol in sorted(self.watch_list):
@@ -410,6 +443,36 @@ class EventHub:
         elapsed = time.monotonic() - started
         log.info(f"[Master] Replay complete — {self.bars} bars in {elapsed:.1f}s "
                  f"({self.bars/max(elapsed, 1e-9):.0f} bars/s)")
+
+    async def _market_is_open(self) -> bool:
+        """Is the market trading? True whenever there is no check configured.
+
+        An unanswerable check is treated as open rather than closed. Refusing
+        to publish because the broker did not reply would turn a transient
+        network error into a silently stalled feed; carrying on sends the loop
+        into the snapshot fetch, which already handles a dead broker by logging
+        and skipping the symbol.
+        """
+        if self.session_check is None:
+            return True
+        try:
+            is_open = await asyncio.to_thread(self.session_check)
+        except Exception as e:
+            log.warning(f"[Master] could not tell whether the market is open "
+                        f"({e}) — assuming it is")
+            return True
+        if is_open:
+            if self._market_closed:
+                log.info("[Master] market open — resuming the feed")
+                self._market_closed = False
+            return True
+        if not self._market_closed:
+            # Logged on the transition, not every minute: a closed market is
+            # the normal state for two thirds of every weekday.
+            log.info(f"[Master] market closed — holding the feed "
+                     f"({self.bars} bars served so far)")
+            self._market_closed = True
+        return False
 
     def subscribe_price_feed(self, symbol: str):
         self.watch_list.add(symbol)
@@ -1270,8 +1333,13 @@ async def main():
             for report in await engine.cancel_open_orders(as_of, "risk halt"):
                 await publish_report(pub_socket, report)
 
+    # Only the live path consults the trading session. Under replay the bars
+    # themselves came from real sessions, so there is nothing to gate and the
+    # check would only cost a round trip per bar.
     hub = EventHub(account_client=account_client, clock=clock,
-                   on_bar_end=report_resolved_orders)
+                   on_bar_end=report_resolved_orders,
+                   session_check=(account_client.is_market_open
+                                  if cfg.is_live else None))
     for s in cfg.symbols:
         hub.subscribe_price_feed(s)
 
