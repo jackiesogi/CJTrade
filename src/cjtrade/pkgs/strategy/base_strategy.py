@@ -12,6 +12,8 @@ Lifecycle
     on_start(context)                  ← called once before the first bar
     for each bar:
         on_bar(bar, context) → List[Signal]
+        monitors() → dict              ← optional; what to watch, and why the
+                                         bar did or did not produce a signal
     on_fill(fill, context)             ← called after each simulated fill
     on_end(context)                    ← called once after the last bar
 
@@ -200,3 +202,34 @@ class BaseStrategy(ABC):
     def on_end(self, ctx: StrategyContext) -> None:
         """Called once after the last bar.  Override for cleanup/logging."""
         pass
+
+    # ------------------------------------------------------------------
+    # Monitoring
+    # ------------------------------------------------------------------
+
+    def monitors(self) -> Dict[str, Any]:
+        """Named values this strategy wants watched. Read-only and cheap.
+
+        Called by a runner after on_bar, as often as once per bar. Return
+        whatever makes this strategy's behaviour legible: indicator levels,
+        counters, a regime label, and above all WHY the last bar did or did not
+        produce a signal -- on_bar returns an empty list for several different
+        reasons and the caller cannot tell them apart.
+
+        Returns
+        -------
+        dict[str, Any]
+            Scalars and strings only. A runner may put this on a wire or in a
+            table, so nothing here should be a numpy type, a model object, or
+            anything that needs the strategy alive to interpret.
+
+        Default is empty, so an existing strategy keeps working and simply has
+        nothing to show. Deliberately not abstract for the same reason.
+
+        Accumulated values (counters, running means) live on the strategy and
+        are updated in on_bar; this method only reads them. A caller that wants
+        rates or deltas keeps its own history of these snapshots -- that is why
+        there is no need to declare which values are counters and which are
+        gauges.
+        """
+        return {}
