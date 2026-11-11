@@ -106,7 +106,38 @@ log = logging.getLogger("poc.trading_engine2")
 log_feed = logging.getLogger("poc.trading_engine2.feed")
 log_feed.setLevel(FEED_LOG_LEVEL)
 
-BOT_C_SCRIPT = Path(__file__).resolve().parent / "bot_c.py"
+# Which bots this run spawns, and what each one trades.
+#
+# A bot is a strategy plus a symbol. The script decides the strategy (see
+# bot_a.py, bot_b.py, bot_c.py, each of which is a few lines over
+# bot_runner.run_bot); the symbol is passed on the command line, so pointing a
+# strategy at a different stock does not mean editing a bot file.
+#
+# The symbol is spelled out here rather than left to the bot file because
+# master is the only process that knows the watch list, and so the only one
+# that can catch a bot assigned a symbol nobody publishes. A bot file keeps its
+# own SYMBOL as the standalone default, for running it by hand without master.
+#
+# Only Bot_C ships enabled. The other two are one uncommented line away, and
+# the line is here rather than behind a flag because turning a bot on changes
+# the run in a way a flag would hide: the risk gate splits the account N ways
+# (see RiskLimits.max_notional_per_bot below), so adding a bot halves what
+# every existing bot may spend. Nothing about the engine stops you running all
+# three -- but the numbers from a one-bot run and a three-bot run are not
+# comparable, and that should be a deliberate edit.
+# `extra` is appended to the bot's argv. Only bot_custom.py uses it, to say
+# which strategy file to run; the three built-in bots carry their strategy in
+# the script itself and take nothing.
+BOT_ROSTER: list[tuple[str, str, str, tuple[str, ...]]] = [
+    # (bot_id, script, symbol, extra argv)
+    ("Bot_C", "bot_c.py", "2317", ()),     # Bollinger mean reversion
+    # ("Bot_A", "bot_a.py", "0050", ()),   # monthly DCA, never sells
+    # ("Bot_B", "bot_b.py", "2357", ()),   # ADX regime switch
+    # A strategy somebody wrote, loaded from a file. See bot_custom.py and
+    # cjtrade.pkgs.strategy.authoring.
+    # ("Bot_U", "bot_custom.py", "2317", ("/path/to/strategy.py",)),
+]
+BOT_DIR = Path(__file__).resolve().parent
 
 ARENAX_PORT = 8802
 BAR_INTERVAL_SEC = 60        # market seconds between samples == 1m bars
@@ -1377,16 +1408,34 @@ async def main():
     run_started_at = datetime.now()
     log.info(f"[Master] session {session_id}")
 
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, '-u', str(BOT_C_SCRIPT), "Bot_C", str(bot_balance), session_id
-    )
-    await asyncio.sleep(2)       # let the subprocess finish its ZMQ connect
+    # A bot whose symbol is not in the watch list would subscribe to a topic
+    # master never publishes, sit there until SILENCE_LIMIT_S and exit -- which
+    # in the log looks like a crash rather than a misconfiguration. Say so
+    # instead, before spawning anything.
+    procs: list[asyncio.subprocess.Process] = []
+    bots: list[str] = []
+    for bot_id, script, symbol, extra in BOT_ROSTER:
+        if symbol not in cfg.symbols:
+            log.error(f"[Master] {bot_id} is assigned {symbol}, which is not "
+                      f"in the watch list ({','.join(cfg.symbols)}) — it would "
+                      f"never receive a bar. Not starting it.")
+            continue
+        procs.append(await asyncio.create_subprocess_exec(
+            sys.executable, '-u', str(BOT_DIR / script),
+            bot_id, str(bot_balance), session_id, symbol, *extra))
+        bots.append(bot_id)
+        log.info(f"[Master] spawned {bot_id} ({script}, {symbol}"
+                 + (f", {' '.join(extra)}" if extra else "") + ")")
+    if not bots:
+        log.error("[Master] no bots started — nothing would trade. Aborting.")
+        account_client.disconnect()
+        return
+    await asyncio.sleep(2)       # let the subprocesses finish their ZMQ connect
 
-    # One bot today, so its allocation is the whole account and the budget
-    # never bites. Add a second and each gets half, which is the point: without
-    # an allocation every bot sizes against the full equity and N bots deploy
-    # N times the capital.
-    bots = ["Bot_C"]
+    # Each bot's allocation is the account divided by the roster. With one bot
+    # that is the whole account and the budget never bites; with three each
+    # gets a third, which is the point: without an allocation every bot sizes
+    # against the full equity and N bots deploy N times the capital.
     # Bar 0: bots are spawned before the hub exists, so no bar has been served.
     bot_registry.expect(bots, 0)
     gate = RiskGate(
@@ -1527,11 +1576,15 @@ async def main():
                       f"live at the broker: {e}")
 
         log.info("[Master] Terminating all bots...")
-        try:
-            proc.terminate()
-            await proc.wait()
-        except Exception:
-            pass
+        for proc in procs:
+            # Each in its own try: one bot that is already gone must not stop
+            # the others being reaped, or they outlive master and go on
+            # trading against a mirror nobody updates.
+            try:
+                proc.terminate()
+                await proc.wait()
+            except Exception:
+                pass
 
         # What each bot last said. Worth printing even on a clean run: a bot
         # whose last word was 400 bars ago stopped reporting while master kept
