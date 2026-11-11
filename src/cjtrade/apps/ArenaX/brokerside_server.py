@@ -700,7 +700,16 @@ class ArenaX_BrokerSideServer:
         @app.doc(tags=["Market"])
         def market_snapshot(symbol: str):
             """Latest OHLCV snapshot for one symbol."""
-            price = self.backend.snapshot(symbol)
+            try:
+                price = self.backend.snapshot(symbol)
+            except Exception as e:
+                # A broker whose session dropped is an upstream failure, not a
+                # bug in this route. Unwrapped, it came out as a 500 carrying a
+                # Flask traceback for every snapshot for the rest of the
+                # session -- which buries the one line that says what broke.
+                log.warning("snapshot for %s failed: %s", symbol, e)
+                return jsonify({"ok": False, "symbol": symbol,
+                                "error": str(e)}), 503
             resp = {"ok": True, "symbol": symbol, "price": price.to_dict() if price else None}
             if self._data_readiness != DataReadiness.ALL_SET:
                 resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"

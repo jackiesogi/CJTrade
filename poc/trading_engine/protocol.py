@@ -20,15 +20,16 @@ to put a dataclass through msgpack.
 
 What goes on each socket
 ------------------------
-    PUB  tcp://...:5555   topic = symbol   PriceUpdate
-    PUB  tcp://...:5555   topic = bot_id   OrderReport
-    PULL tcp://...:5556                    OrderIntent
-    PULL tcp://...:5556                    BotStatus
+    PUB  tcp://...:5555   topic = symbol     PriceUpdate
+    PUB  tcp://...:5555   topic = bot_id     OrderReport
+    PUB  tcp://...:5555   topic = __feed__   FeedStatus
+    PULL tcp://...:5556                      OrderIntent
+    PULL tcp://...:5556                      BotStatus
 
-Four envelopes, because pkgs/models has no type for "a tick plus a sequence
-number", "an order event plus the account state it produced", or "what a bot
-and its strategy currently look like". Everything inside them is a pkgs/models
-type or a plain scalar.
+Five envelopes, because pkgs/models has no type for "a tick plus a sequence
+number", "an order event plus the account state it produced", "what a bot and
+its strategy currently look like", or "why there are no bars right now".
+Everything inside them is a pkgs/models type or a plain scalar.
 
 Codec
 -----
@@ -83,8 +84,14 @@ SOCKET_HOST = "127.0.0.1"
 # side by side. They used to be two literals copied into five files, which is
 # why the legacy main.py and the new main2.py silently share a port pair while
 # speaking incompatible wire formats.
-DEFAULT_PRICE_FEED_PORT = 5555     # master PUB  -> bot SUB   (topic = symbol | bot_id)
+DEFAULT_PRICE_FEED_PORT = 5555     # master PUB  -> bot SUB   (topic = symbol | bot_id | __feed__)
 DEFAULT_ORDER_INTENT_PORT = 5556   # bot    PUSH -> master PULL
+
+# Topic every bot subscribes to, for news about the feed itself rather than
+# about a symbol or an order. Underscored so it cannot collide with a ticker or
+# a bot id: ZMQ SUB matches topics by prefix, and "2317" would also match
+# "2317X" if such a symbol ever existed.
+FEED_STATUS_TOPIC = "__feed__"
 
 
 def price_feed_address(port: int = DEFAULT_PRICE_FEED_PORT) -> str:
@@ -98,7 +105,7 @@ def order_intent_address(port: int = DEFAULT_ORDER_INTENT_PORT) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Envelopes — the three things that actually travel, and nothing else.
+#  Envelopes — the things that actually travel, and nothing else.
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -192,6 +199,37 @@ class BotStatus:
     inflight: dict
     balance: float
     monitors: dict
+
+
+@dataclass
+class FeedStatus:
+    """Master -> every bot: why there are no bars right now.
+
+    This exists because silence is ambiguous and a bot has to resolve the
+    ambiguity pessimistically. A bot that hears nothing cannot tell a dead
+    master from a master that is deliberately quiet, and it must assume the
+    worst -- a bot acting on a stale ledger mirror is worse than a bot that
+    stopped -- so it exits after SILENCE_LIMIT_S.
+
+    That is correct when master has crashed and wrong when master is holding
+    the feed because the market is shut, which is two thirds of every weekday
+    and all weekend. The two behaviours met in a real paper run: the bot
+    started at 01:46, master held the feed, and the bot killed itself 185
+    seconds later. Master then published 169 bars, seven hours later, to
+    nobody.
+
+    So master says so instead of going quiet. Any message resets the bot's
+    silence timer, which is all that is strictly needed; the fields let the bot
+    log something more useful than "still waiting".
+
+    Published on FEED_STATUS_TOPIC rather than per bot id, because master does
+    not need to know who is listening and a bot that starts later still gets
+    the next one.
+    """
+    market_open: bool
+    reason: str
+    bars_served: int
+    sent_at: datetime
 
 
 _WIRE_SAFE = (bool, int, float, str)
@@ -374,7 +412,7 @@ _WIRE_TYPES: Dict[str, type] = {
     cls.__name__: cls
     for cls in (
         # envelopes
-        PriceUpdate, OrderIntent, OrderReport, BotStatus,
+        PriceUpdate, OrderIntent, OrderReport, BotStatus, FeedStatus,
         # pkgs/models
         BidAsk, FillEvent, Order, OrderEvent, OrderResult,
         Position, Product, Quote, Snapshot, TickEvent, Trade,

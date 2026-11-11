@@ -495,6 +495,8 @@ class EventHub:
         """
         started = time.monotonic()
         while not self.clock.finished:
+            # Read before _market_is_open(), which clears it on the flip.
+            was_closed = self._market_closed
             if not await self._market_is_open():
                 # Hold the feed. Nothing downstream has a session of its own:
                 # the hub published a bar every 60s around the clock, so a bot
@@ -511,8 +513,21 @@ class EventHub:
                 # order keeps holding it until the morning, because its own
                 # timeout is measured in bars and bars have stopped. It clears
                 # within UNACKED_MAX_BARS of the open.
+                #
+                # Said out loud rather than simply held. A bot reads silence as
+                # a dead master and exits -- correctly, because it cannot tell
+                # the difference and acting on a stale mirror is worse. In a
+                # real paper run that cost the whole session: the bot started
+                # at 01:46, this branch held the feed, and the bot gave up 185s
+                # later. Seven hours on, 169 bars went out to nobody.
+                await self._publish_feed_status(False, "market closed")
                 await self.clock.sleep(BAR_INTERVAL_SEC)
                 continue
+
+            if was_closed:
+                # One message on the way back, so a bot's log shows the gap
+                # ending rather than just bars reappearing.
+                await self._publish_feed_status(True, "market open")
 
             # sorted(), not list(): fixed symbol order per bar, so a multi-symbol
             # run is reproducible instead of following set iteration order.
@@ -542,6 +557,22 @@ class EventHub:
         elapsed = time.monotonic() - started
         log.info(f"[Master] Replay complete — {self.bars} bars in {elapsed:.1f}s "
                  f"({self.bars/max(elapsed, 1e-9):.0f} bars/s)")
+
+    async def _publish_feed_status(self, market_open: bool, reason: str) -> None:
+        """Tell every bot why the feed looks the way it does.
+
+        On its own topic, so master does not have to know which bots exist --
+        the same reason PriceUpdate goes out on the symbol rather than per
+        subscriber.
+        """
+        if self.pub_socket is None:
+            return
+        await self.pub_socket.send_multipart([
+            protocol.FEED_STATUS_TOPIC.encode('utf-8'),
+            protocol.encode(protocol.FeedStatus(
+                market_open=market_open, reason=reason,
+                bars_served=self.bars, sent_at=datetime.now())),
+        ])
 
     async def _market_is_open(self) -> bool:
         """Is the market trading? True whenever there is no check configured.

@@ -50,6 +50,7 @@ from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 from cjtrade.pkgs.strategy.bb import BollingerStrategy
 from protocol import BotStatus
+from protocol import FeedStatus
 from protocol import OrderIntent
 from protocol import OrderReport
 from protocol import PriceUpdate
@@ -228,6 +229,11 @@ def main():
     # Order reports from master are published on our own bot_id topic (see
     # main2.py's publish_report) — subscribe to that too, same socket.
     sub_socket.set(zmq.SUBSCRIBE, bot_id.encode('utf-8'))
+    # News about the feed itself. Without this the bot cannot tell a master
+    # that died from a master holding the feed over a closed market, and
+    # SILENCE_LIMIT_S resolves that ambiguity by exiting -- which overnight is
+    # the wrong answer. See protocol.FeedStatus.
+    sub_socket.set(zmq.SUBSCRIBE, protocol.FEED_STATUS_TOPIC.encode('utf-8'))
     # So recv can return instead of blocking forever; see SILENCE_LIMIT_S.
     sub_socket.set(zmq.RCVTIMEO, RECV_TIMEOUT_MS)
 
@@ -252,6 +258,7 @@ def main():
     bars_dropped = 0
     inflight: dict[str, InFlight] = {}
     silent_since: float | None = None
+    feed_held = False            # master has told us the market is shut
     try:
         while True:
             try:
@@ -271,6 +278,23 @@ def main():
                 continue
             silent_since = None
             msg = protocol.decode(payload)
+
+            if isinstance(msg, FeedStatus):
+                # Receiving it is the point -- silent_since was already cleared
+                # above, which is what keeps this bot alive through a closed
+                # market. The logging is just so the gap is legible: one line
+                # when it starts and one when it ends, not one per minute all
+                # night.
+                if msg.market_open:
+                    if feed_held:
+                        log.info(f"[{bot_id}] feed resumed ({msg.reason}) — "
+                                 f"master has served {msg.bars_served} bar(s)")
+                        feed_held = False
+                elif not feed_held:
+                    log.info(f"[{bot_id}] master is holding the feed "
+                             f"({msg.reason}) — waiting, not exiting")
+                    feed_held = True
+                continue
 
             if isinstance(msg, OrderReport):
                 ledger.apply(msg)
