@@ -1,50 +1,41 @@
-import logging
-import sys
+"""
+poc/trading_engine/bot_b.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ADX-gated regime switching: Donchian breakout while a trend holds, support and
+resistance while the price ranges.
 
-import msgpack
-import zmq
+Everything that is not the strategy choice lives in bot_runner.py.
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-log = logging.getLogger("poc.bot_b")
+Know what you are running: the regime is chosen by an efficiency ratio (net
+move over total path, 0-100), not the Wilder ADX. A real ADX needs each bar's
+own high and low, and this feed does not carry them -- the Snapshot's high and
+low are the trading day's so far, not the bar's. The thresholds below are the
+conventional ADX ones and they do transfer, because the efficiency ratio is
+scale-free; see adx.py's _calculate_adx for the measurement that establishes
+that.
+"""
+from bot_runner import run_bot
+from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
 
-# Config
-CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
-CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
+SYMBOL = "2357"
 
-def main():
-    bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
-    target_symbol = "2357"
-    log.info(f"[{bot_id}] started! ({target_symbol})")
+PARAMS = {
+    "adx__period": 14,
+    "adx__strong_threshold": 40.0,
+    "adx__weak_threshold": 20.0,
+    "adx__donchian_period": 20,
+    # In days, multiplied by bars-per-day inside the strategy. 20 days of 1m
+    # bars is 5,400 points, which this bot will not have until late in a long
+    # run; until then the strategy falls back to however much history it has.
+    "adx__snr_lookback_days": 20,
+    "adx__snr_threshold_pct": 0.01,
+    # Same reasoning as bot_c: 0.05 of a small account sizes an order that pays
+    # the NT$20 commission floor instead of the 0.1425% rate.
+    "risk__max_position_pct": 0.20,
+    # Tells the strategy how many bars make a day, for the S/R lookback above.
+    "adx__interval": "1m",
+}
 
-    context = zmq.Context()
-
-    sub_socket = context.socket(zmq.SUB)
-    sub_socket.connect(CJ_ENGINE_SOCKET_SUB_PRICE)
-    sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
-
-    push_socket = context.socket(zmq.PUSH)
-    push_socket.connect(CJ_ENGINE_SOCKET_PUSH_STATE)
-
-    try:
-        while True:
-            topic, payload = sub_socket.recv_multipart()
-            data = msgpack.unpackb(payload)
-
-            # --- Tick / K線 策略邏輯 ---
-            price = data["p"] # 建議欄位名稱縮寫 (p=price, v=volume) 減少 Tick 帶寬
-
-            if price > 105.0:
-                # Order intent, not an already-executed report — master's
-                # ExecutionEngine is the one that actually fills/records it.
-                order = {"b_id": bot_id, "action": "BUY", "symbol": target_symbol,
-                         "qty": 1, "price": price, "reason": "price>105", "t": data["t"]}
-                push_socket.send(msgpack.packb(order))
-
-    except KeyboardInterrupt:
-        log.info(f"[{bot_id}] exited without error")
 
 if __name__ == "__main__":
-    main()
+    run_bot(ADXAdaptiveStrategy(), SYMBOL, PARAMS)

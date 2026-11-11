@@ -1,55 +1,26 @@
-import logging
-import sys
+"""
+poc/trading_engine/bot_a.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Monthly dollar-cost averaging on a broad-market ETF.
 
-import msgpack
-import zmq
+Buys a fixed NT$ amount on the first bar of each calendar month and never
+sells, so it is the accumulate-and-hold baseline the other two bots are
+measured against. Everything that is not the strategy choice lives in
+bot_runner.py.
+"""
+from bot_runner import run_bot
+from cjtrade.pkgs.strategy.dca import DCA_Monthly
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-log = logging.getLogger("poc.bot_a")
+SYMBOL = "0050"
 
-# Config
-CJ_ENGINE_SOCKET_SUB_PRICE = "tcp://127.0.0.1:5555"
-CJ_ENGINE_SOCKET_PUSH_STATE = "tcp://127.0.0.1:5556"
+PARAMS = {
+    # NT$ per purchase, not a fraction of equity. That is the point of DCA:
+    # the instalment is a property of the saver's income, not of how the
+    # portfolio has done since the last one, so it must not scale with equity
+    # the way calc_qty would make it.
+    "dca__amount": 10_000.0,
+}
 
-def main():
-    bot_id = sys.argv[1] if len(sys.argv) > 1 else "Bot_Generic"
-    # 假設這個機器人只關心 0050
-    target_symbol = "0050"
-    log.info(f"[{bot_id}] started! ({target_symbol})")
-
-    context = zmq.Context()
-
-    # 1. 訂閱行情 - 精準訂閱特定商品 (Topic)
-    sub_socket = context.socket(zmq.SUB)
-    sub_socket.connect(CJ_ENGINE_SOCKET_SUB_PRICE)
-    # 關鍵：只接收開頭為商品名稱的字節流
-    sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
-
-    # 2. 回報狀態
-    push_socket = context.socket(zmq.PUSH)
-    push_socket.connect(CJ_ENGINE_SOCKET_PUSH_STATE)
-
-    try:
-        while True:
-            # ZeroMQ 會自動幫我們過濾，這裡收到的絕對只有 BTCUSDT 的資料
-            topic, payload = sub_socket.recv_multipart()
-            data = msgpack.unpackb(payload) # 極速解包
-
-            # --- Tick / K線 策略邏輯 ---
-            price = data["p"] # 建議欄位名稱縮寫 (p=price, v=volume) 減少 Tick 帶寬
-
-            if price > 105.0:
-                # Order intent, not an already-executed report — master's
-                # ExecutionEngine is the one that actually fills/records it.
-                order = {"b_id": bot_id, "action": "BUY", "symbol": target_symbol,
-                         "qty": 1, "price": price, "reason": "price>105", "t": data["t"]}
-                push_socket.send(msgpack.packb(order))
-
-    except KeyboardInterrupt:
-        log.info(f"[{bot_id}] exited without error")
 
 if __name__ == "__main__":
-    main()
+    run_bot(DCA_Monthly(), SYMBOL, PARAMS)
