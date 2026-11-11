@@ -103,7 +103,24 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if self.real_account:
 			if not self.real_account.is_connected():
 				self.real_account.connect()
-			return self.real_account.get_snapshots([Product(symbol=symbol)])[0]
+			snapshots = self.real_account.get_snapshots([Product(symbol=symbol)])
+			if not snapshots:
+				# This used to be a bare [0], so a broker that answered with
+				# nothing surfaced as `IndexError: list index out of range` --
+				# which names neither the symbol nor the broker, and which the
+				# route below turned into a 500 with a Flask traceback. Seen in
+				# a live paper run when the shioaji session lost its transport:
+				# "could not open transport for tcp_TxRx", then every snapshot
+				# timed out for the rest of the session.
+				#
+				# Deliberately not a fallback price. _create_fallback_snapshot
+				# invents a random value around 100, and that number would go
+				# straight into position marks, account equity and the engine's
+				# kill switch.
+				raise ConnectionError(
+					f"the broker returned no snapshot for {symbol} — its "
+					f"session is probably down")
+			return snapshots[0]
 		return super().snapshot(symbol)
 
 	def _refresh_kbar_buffer(self, symbol: str) -> None:
