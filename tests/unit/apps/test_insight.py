@@ -1014,3 +1014,216 @@ def test_the_terminal_summary_warns_when_provenance_is_absent(
                         lambda: tmp_path / "absent.db")
     main(["aaaa", "--out", str(tmp_path / "out")])
     assert "no provenance" in capsys.readouterr().out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Risk-adjusted performance
+# ══════════════════════════════════════════════════════════════════════════
+#
+# These come from the same quantstats the HTML tearsheet uses. They are in the
+# report so that comparing two runs does not require opening a browser or
+# importing the library -- the omission was what sent a reviewer looking for
+# quantstats.py in the first place.
+
+def _curve(values, start="2025-01-02", daily=True):
+    """An equity curve, one point per day or per minute."""
+    out = []
+    base = datetime.fromisoformat(f"{start}T09:01:00")
+    for i, value in enumerate(values):
+        stamp = base + (timedelta(days=i) if daily else timedelta(minutes=i))
+        out.append({"time": stamp.isoformat(), "value": float(value)})
+    return out
+
+
+def _walk(n=140, seed=3, drift=-2.0):
+    rng = random.Random(seed)
+    value, out = 100_000.0, []
+    for _ in range(n):
+        value += drift + rng.uniform(-60, 60)
+        out.append(value)
+    return out
+
+
+def _with_curve(curve):
+    return BacktestResult(initial_balance=100_000.0, final_balance=curve[-1]["value"],
+                          equity_curve=curve, fill_history=[], session_id="perf",
+                          final_equity=curve[-1]["value"])
+
+
+def test_performance_reports_the_metrics_a_tearsheet_would():
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert perf["available"] is True
+    for key in ("sharpe", "sortino", "calmar", "cagr", "volatility_annual",
+                "max_drawdown", "best_period", "worst_period",
+                "winning_periods_pct", "value_at_risk_95", "cvar_95",
+                "skew", "kurtosis", "recovery_factor", "ulcer_index"):
+        assert key in perf, key
+
+
+def test_performance_states_its_resolution_and_annualisation():
+    """Every annualised number depends on these two, and to_returns() switches
+    resolution silently depending on how long the run was."""
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert perf["resolution"] == "daily"
+    assert perf["periods_per_year"] == 252
+    assert perf["observations"] == 139
+
+
+def test_a_single_day_run_is_marked_as_minute_resolution():
+    """to_returns() falls back to minute returns for an intraday run and
+    annualises at 252x270, which is not comparable with a daily figure."""
+    perf = insight.performance(_with_curve(_curve(_walk(60), daily=False)))
+    assert perf["resolution"] == "minute"
+    assert perf["periods_per_year"] == 252 * 270
+
+
+def test_the_minute_resolution_caveat_is_rendered(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk(60), daily=False)),
+                               tmp_path / "x.pkl"))
+    assert "too short to resample" in md
+
+
+@pytest.mark.parametrize("curve", [[], [100_000.0], [100_000.0, 100_500.0]])
+def test_performance_declines_rather_than_inventing_a_number(curve):
+    """One return observation has no dispersion. Saying so beats printing a
+    Sharpe computed from it."""
+    perf = insight.performance(_with_curve(_curve(curve)) if curve
+                               else _result(equity_curve=[]))
+    assert perf["available"] is False
+    assert perf["reason"]
+
+
+def test_an_undefined_ratio_is_null_not_infinity():
+    """Calmar is CAGR / max drawdown, and a run that never drew down divides
+    by zero. quantstats returns inf; `json.dumps(inf)` writes the bare token
+    `Infinity`, which is not valid JSON and breaks a strict parser -- and the
+    JSON document exists precisely to be parsed by something else."""
+    rising = _curve([100_000.0 + i * 10 for i in range(40)])
+    perf = insight.performance(_with_curve(rising))
+    assert perf["max_drawdown"] == 0.0
+    assert perf["calmar"] is None
+
+
+def test_no_metric_is_ever_a_non_finite_float():
+    for curve in (_curve([100_000.0 + i * 10 for i in range(40)]),
+                  _curve(_walk()),
+                  _curve([100_000.0] * 40)):
+        perf = insight.performance(_with_curve(curve))
+        for key, value in perf.items():
+            if isinstance(value, float):
+                assert math.isfinite(value), f"{key} = {value}"
+
+
+def test_the_document_survives_a_strict_json_parser(tmp_path, monkeypatch):
+    """`Infinity` and `NaN` are Python conveniences, not JSON. An agent
+    parsing this in another language would reject them."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    rising = _curve([100_000.0 + i * 10 for i in range(40)])
+    text = json.dumps(build(_with_curve(rising), tmp_path / "x.pkl"), default=str)
+    for token in ("Infinity", "-Infinity", "NaN"):
+        assert token not in text
+
+    def reject(constant):
+        raise AssertionError(f"illegal JSON constant {constant}")
+    json.loads(text, parse_constant=reject)
+
+
+def test_performance_survives_a_completely_flat_curve():
+    perf = insight.performance(_with_curve(_curve([100_000.0] * 40)))
+    assert perf["available"] is True
+    assert perf["flat_periods"] == 39
+
+
+def test_flat_periods_counts_days_the_equity_did_not_move():
+    values = [100_000.0, 100_000.0, 100_500.0, 100_500.0, 101_000.0]
+    perf = insight.performance(_with_curve(_curve(values)))
+    assert perf["flat_periods"] == 2
+
+
+def test_markdown_renders_the_metrics_table(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk())), tmp_path / "x.pkl"))
+    assert "## Risk-adjusted performance" in md
+    for label in ("Sharpe", "Sortino", "Calmar", "CAGR", "max drawdown",
+                  "CVaR 95%", "skew", "kurtosis"):
+        assert label in md, label
+
+
+def test_markdown_pluralises_the_period_unit_correctly(tmp_path, monkeypatch):
+    """"daily" reads as an adverb in prose and a noun in a table header."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk())), tmp_path / "x.pkl"))
+    assert "winning days" in md and "best day" in md
+    assert "dailys" not in md
+
+
+def test_markdown_warns_that_sharpe_moves_with_position_size(tmp_path, monkeypatch):
+    """The measured trap: the same 113 signals sized 3% to 40% of equity span
+    a Sharpe of -9.59 to -2.41 while the P&L moves the other way, so ranking
+    sizes by Sharpe inverts the answer."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk())), tmp_path / "x.pkl"))
+    assert "position size" in md
+    assert "inverts the answer" in md
+
+
+def test_the_size_dependence_is_also_in_the_caveats(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    doc = build(_with_curve(_curve(_walk())), tmp_path / "x.pkl")
+    assert any("capital at risk" in c for c in doc["caveats"])
+
+
+def test_markdown_says_why_when_metrics_are_unavailable(tmp_path, monkeypatch):
+    """An empty section would read as "no risk here"."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_result(equity_curve=[], fill_history=[],
+                                       final_equity=None), tmp_path / "x.pkl"))
+    assert "## Risk-adjusted performance" in md
+    assert "Not measured" in md
+
+
+def test_the_terminal_summary_shows_the_headline_metrics(
+        reports, tmp_path, capsys, monkeypatch):
+    """So a sweep can be read off the terminal without opening either file."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    path = reports / "engine_aaaa1111.pkl"
+    _with_curve(_curve(_walk())).save(str(path))
+    main(["aaaa", "--out", str(tmp_path / "out")])
+    printed = capsys.readouterr().out
+    assert "Sharpe" in printed and "max drawdown" in printed
+
+
+def test_insight_agrees_with_the_shared_reporting_layer():
+    """Same source, so the numbers must match what the tearsheet prints --
+    otherwise there are two Sharpes in the project."""
+    from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
+    result = _with_curve(_curve(_walk()))
+    mine = insight.performance(result)
+    theirs = BacktestReport(result).metrics()
+    assert mine["sharpe"] == pytest.approx(theirs["sharpe"], abs=1e-3)
+    assert mine["cagr"] == pytest.approx(theirs["cagr"], abs=1e-3)
+    assert mine["max_drawdown"] == pytest.approx(theirs["max_drawdown"], abs=1e-3)
+
+
+def test_daily_and_round_trip_statistics_are_not_confused(tmp_path, monkeypatch):
+    """quantstats also has win_rate and profit_factor, computed per DAY. This
+    report already gives both per ROUND TRIP, which is the level a trader
+    means. The daily ones are named for their unit; the ambiguous duplicates
+    are left out entirely."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert "winning_periods_pct" in perf
+    for ambiguous in ("win_rate", "profit_factor", "avg_win", "avg_loss",
+                      "payoff_ratio", "consecutive_losses", "exposure",
+                      "kelly_criterion"):
+        assert ambiguous not in perf, ambiguous
