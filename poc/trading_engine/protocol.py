@@ -45,6 +45,7 @@ the way back, so an OrderAction comes back an OrderAction and not the bare
 string msgpack would otherwise hand you.
 """
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import fields
 from dataclasses import is_dataclass
 from datetime import datetime
@@ -186,10 +187,11 @@ class BotStatus:
     count. One message answers both questions, so the two cannot disagree
     about whether a bot is alive.
 
-    `monitors` is whatever the strategy chose to expose (BaseStrategy.monitors)
-    and is therefore not a fixed shape. Put it through wire_safe() before
-    sending: a strategy is free to return a numpy scalar, and a monitoring
-    field must never be able to kill the trading loop.
+    `monitors` and `plots` are whatever the strategy chose to expose
+    (BaseStrategy.monitors and .plots) and are therefore not a fixed shape. Put
+    both through wire_safe() before sending: a strategy is free to return a
+    numpy scalar, and a monitoring field must never be able to kill the trading
+    loop.
     """
     bot_id: str
     seq: int                    # last PriceUpdate.seq this bot saw
@@ -204,6 +206,17 @@ class BotStatus:
     inflight: dict
     balance: float
     monitors: dict
+    # The close this bot acted on, and the series its strategy asked to have
+    # drawn. Both have defaults so an older bot talking to a newer master
+    # decodes rather than failing on a missing key.
+    #
+    # The price is here because a chart of indicator values without the price
+    # they were computed from is unreadable, and the bot is the only process
+    # that definitely has the number: master publishes a Snapshot and the bot
+    # is what turns it into the bar the strategy saw. Asking the broker for it
+    # afterwards would be a different price at a different time.
+    close: float = 0.0
+    plots: dict = field(default_factory=dict)
 
 
 @dataclass

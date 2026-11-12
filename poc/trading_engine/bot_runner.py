@@ -461,6 +461,12 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                 inflight={s: f.order_id[:8] for s, f in inflight.items()},
                 balance=ledger.balance,
                 monitors=protocol.wire_safe(strategy.monitors()),
+                # The price this bar, always, whatever the strategy chose to
+                # expose. A chart of indicator values with no price to read
+                # them against is not a chart, and this is the only process
+                # that has the number the strategy actually saw.
+                close=float(bar.close),
+                plots=protocol.wire_safe(strategy.plots()),
             )))
 
     except KeyboardInterrupt:

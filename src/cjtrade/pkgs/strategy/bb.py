@@ -95,6 +95,21 @@ class BollingerStrategy(BaseStrategy):
         self._bw_sum += bw
         self._bw_n += 1
 
+    def plots(self) -> dict:
+        """The three bands, to be drawn against the price.
+
+        The same numbers monitors() reports, named for the chart rather than
+        for the table. Separate because a runner samples these once per bar and
+        keeps the series, while monitors are read as they are.
+
+        Empty until the bands exist, so the chart has no leading run of zeros
+        that squashes the price into the top of the frame.
+        """
+        if not self._bw_n:
+            return {}
+        return {"upper": self._upper, "middle": self._middle,
+                "lower": self._lower}
+
     def monitors(self) -> dict:
         """See BaseStrategy.monitors. Plain floats, ints and strings only."""
         bw_avg = self._bw_sum / self._bw_n if self._bw_n else 0.0
