@@ -308,12 +308,17 @@ class ADXAdaptiveStrategy(BaseStrategy):
         """Donchian breakout in strong trends: BUY on breakout above high, SELL below low."""
         prices = ctx.prices(symbol)
 
-        if len(prices) < self._donchian_period:
+        if len(prices) < self._donchian_period + 1:
             self._levels = {}
             return None
 
-        # Get Donchian high and low
-        recent_closes = prices[-self._donchian_period:]
+        # The channel excludes the current bar. price_history already holds
+        # this bar's close, so a window of prices[-period:] contains `close`
+        # itself and max() is then >= close -- which makes the
+        # `close > donchian_high` test below unsatisfiable. The breakout could
+        # never fire, and that is the second reason this regime's parameters
+        # measured as having no effect on a run.
+        recent_closes = prices[-self._donchian_period - 1:-1]
         donchian_high = max(recent_closes)
         donchian_low = min(recent_closes)
         self._levels = {"donchian_high": donchian_high,

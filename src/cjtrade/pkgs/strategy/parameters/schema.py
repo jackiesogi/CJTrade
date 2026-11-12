@@ -37,7 +37,10 @@ PARAM_SCHEMA: Dict[str, Dict[str, Any]] = {
         "min": 1.0,
         "max": 3.0,
         "default": 2.0,
-        "fixed": True,  # Usually fixed at 2.0, not optimized
+        # Not fixed: this is the band-width knob and the main lever on signal
+        # frequency, so a sweep has to be able to move it. `fixed` here meant
+        # ParameterManager silently dropped any override of it (manager.py:109),
+        # which compounded bb.py ignoring the value in the first place.
         "description": "Standard deviation multiplier for bands",
         "strategies": ["BollingerStrategy"],
     },
@@ -84,14 +87,13 @@ PARAM_SCHEMA: Dict[str, Dict[str, Any]] = {
         "strategies": ["SupportResistanceStrategy"],
     },
     # ========== DCA ==========
-    "dca__buy_frequency_days": {
+    "dca__buy_frequency_months": {
         "type": "int",
         "min": 1,
-        "max": 365,
+        "max": 24,
         "step": 1,
-        "default": 30,
-        "fixed": True,  # Auto-set based on interval
-        "description": "Days between buys",
+        "default": 1,
+        "description": "Calendar months between instalments",
         "strategies": ["DCA_Monthly"],
     },
     "dca__max_position_pct": {
@@ -100,7 +102,7 @@ PARAM_SCHEMA: Dict[str, Dict[str, Any]] = {
         "max": 0.5,
         "step": 0.01,
         "default": 0.03,
-        "description": "Max position size as fraction of equity",
+        "description": "Instalment size as a fraction of equity",
         "strategies": ["DCA_Monthly"],
     },
     # ========== Donchian Breakout ==========
@@ -110,7 +112,7 @@ PARAM_SCHEMA: Dict[str, Dict[str, Any]] = {
         "max": 100,
         "step": 5,
         "default": 20,
-        "description": "Donchian channel lookback period (days)",
+        "description": "Donchian channel lookback in bars, current bar excluded",
         "strategies": ["DonchianBreakoutStrategy"],
     },
     "donchian__breakout_mode": {
@@ -126,7 +128,7 @@ PARAM_SCHEMA: Dict[str, Dict[str, Any]] = {
         "max": 0.5,
         "step": 0.01,
         "default": 0.0,
-        "description": "Trailing stop as % of entry price (0.0 = disabled)",
+        "description": "Trailing stop as % below the peak since entry (0.0 = disabled)",
         "strategies": ["DonchianBreakoutStrategy"],
     },
     # ========== ADX Adaptive ==========
