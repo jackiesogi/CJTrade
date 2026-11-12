@@ -334,6 +334,107 @@ def summarise_activity(fills: List[dict]) -> Activity:
     return act
 
 
+def performance(result: BacktestResult) -> Dict[str, Any]:
+    """The risk-adjusted metrics, from the same quantstats the tearsheet uses.
+
+    Here rather than left to the HTML because an experimenter comparing runs
+    should not have to open a browser or import the library to read a Sharpe.
+    `BacktestReport.metrics()` already computed three of these; the rest come
+    off quantstats directly.
+
+    WHAT IS DELIBERATELY NOT HERE
+    -----------------------------
+    quantstats' full tearsheet has around fifty metrics. These are the ones
+    that mean something on a few hundred daily points, and four kinds are left
+    out on purpose:
+
+    * Anything quantstats computes per DAY that this report already gives per
+      ROUND TRIP -- profit factor, average win and loss, payoff ratio,
+      consecutive wins and losses. Daily `profit_factor` is 0.12 on the run
+      this was built against while the round-trip figure is 1.07; the same
+      name over two different units is worse than one number.
+    * `exposure`, which quantstats defines as the share of days with a
+      non-zero return, not the share of capital at risk. The name invites
+      exactly the wrong reading.
+    * `kelly_criterion`. Position sizing derived from 130 observations is not
+      advice.
+    * The benchmark-relative family (alpha, beta, information ratio) -- there
+      is no benchmark in a BacktestResult to be relative to.
+    """
+    out: Dict[str, Any] = {"available": False}
+    try:
+        import quantstats as qs
+    except ImportError:
+        out["reason"] = "quantstats is not installed"
+        return out
+
+    try:
+        returns = result.to_returns()
+    except Exception as exc:
+        out["reason"] = f"no return series ({type(exc).__name__})"
+        return out
+    if returns is None or len(returns) < 2:
+        out["reason"] = (f"only {0 if returns is None else len(returns)} "
+                         f"return observation(s); a dispersion measured from "
+                         f"fewer than two is not a number worth printing")
+        return out
+
+    periods = result._returns_periods_per_year
+    # 252 means the curve was resampled to days; the other value is the
+    # single-day fallback in to_returns(), where every annualised number below
+    # is extrapolated from one session and should not be compared with a
+    # multi-day run's.
+    daily = periods == 252
+
+    def stat(name, **kwargs):
+        """One metric, or None if it is not a finite number.
+
+        The finiteness check is load-bearing, not defensive tidying. Calmar is
+        CAGR over max drawdown, and a run that never drew down divides by zero
+        -- quantstats returns inf, and `json.dumps(inf)` emits the literal
+        `Infinity`, which is not valid JSON and fails a strict parser. Since
+        the whole point of the JSON document is that something else parses it,
+        an undefined ratio has to be reported as null rather than as a value.
+        """
+        fn = getattr(qs.stats, name, None)
+        if fn is None:
+            return None
+        try:
+            value = float(fn(returns, **kwargs))
+        except Exception:
+            return None
+        return round(value, 6) if math.isfinite(value) else None
+
+    out.update({
+        "available": True,
+        "resolution": "daily" if daily else "minute",
+        "periods_per_year": periods,
+        "observations": int(len(returns)),
+        "sharpe": stat("sharpe", periods=periods),
+        "sortino": stat("sortino", periods=periods),
+        "calmar": stat("calmar", periods=periods),
+        "cagr": stat("cagr", periods=periods),
+        "volatility_annual": stat("volatility", periods=periods),
+        "max_drawdown": stat("max_drawdown"),
+        "recovery_factor": stat("recovery_factor"),
+        "ulcer_index": stat("ulcer_index"),
+        "best_period": stat("best"),
+        "worst_period": stat("worst"),
+        # Named for the unit they are in, because this report also carries a
+        # win rate over round trips and the two are not the same quantity.
+        "winning_periods_pct": stat("win_rate"),
+        "value_at_risk_95": stat("value_at_risk"),
+        "cvar_95": stat("cvar"),
+        # A Sharpe summarises a distribution by two moments. These two say
+        # whether that was a reasonable thing to do.
+        "skew": stat("skew"),
+        "kurtosis": stat("kurtosis"),
+    })
+    nonzero = int((returns.abs() > 1e-12).sum())
+    out["flat_periods"] = int(len(returns)) - nonzero
+    return out
+
+
 @dataclass
 class TripStats:
     """Round trips, described the way a trader would ask about them."""
@@ -670,6 +771,11 @@ CAVEATS = [
     "Volatility and regime come from this machine's 1-minute history for the "
     "same window, not from what the engine fed the strategy. They agree when "
     "the run was a replay of that history.",
+    "Sharpe, Sortino and Calmar are computed on the ACCOUNT's equity, not on "
+    "the capital at risk, so position size moves them on its own. The same "
+    "113 signals sized from 3% to 40% of equity span a Sharpe of -9.59 to "
+    "-2.41 while the P&L moves the opposite way. Compare them across signal "
+    "parameters, not across sizing.",
     "`regime` is one number about one trading day, set against a random walk "
     "of the same length, with cut-offs chosen from how 3,987 real sessions "
     "actually distribute. It says whether a day went somewhere, not why, and "
@@ -692,6 +798,16 @@ def cannot_see(provenance: Optional[dict]) -> List[tuple]:
             continue
         out.append((title, body))
     return out
+
+
+def _num(value: Optional[float]) -> str:
+    """A number, or an em dash when quantstats could not produce one."""
+    return "—" if value is None else f"{value:,.3f}"
+
+
+def _pct(value: Optional[float]) -> str:
+    """A fraction rendered as a percentage. None becomes an em dash."""
+    return "—" if value is None else f"{value * 100:,.2f}%"
 
 
 def _bar(value: float, scale: float, width: int = 18) -> str:
@@ -827,6 +943,67 @@ def render_markdown(doc: dict) -> str:
             + ", ".join(f"{k} {v}" for k, v in trips["hold_buckets"].items()))
         add(f"- longest losing streak {trips['longest_losing_streak']}")
         add("")
+
+    # ── risk-adjusted metrics ────────────────────────────────────────────
+    perf = doc.get("performance") or {}
+    add("## Risk-adjusted performance")
+    add("")
+    if not perf.get("available"):
+        add(f"_Not measured: {perf.get('reason', 'unavailable')}._")
+        add("")
+    else:
+        # "daily"/"minute" reads as an adverb in the prose above and as a
+        # noun in the table below, so the table gets its own word.
+        unit = "day" if perf["resolution"] == "daily" else "minute"
+        add(f"From quantstats over {perf['observations']} "
+            f"{perf['resolution']} observations, annualised at "
+            f"{perf['periods_per_year']} periods/year.")
+        add("")
+        add("| | | | |")
+        add("|---|---:|---|---:|")
+        add(f"| Sharpe | {_num(perf['sharpe'])} "
+            f"| max drawdown | {_pct(perf['max_drawdown'])} |")
+        add(f"| Sortino | {_num(perf['sortino'])} "
+            f"| Calmar | {_num(perf['calmar'])} |")
+        add(f"| CAGR | {_pct(perf['cagr'])} "
+            f"| annualised volatility | {_pct(perf['volatility_annual'])} |")
+        add(f"| best {unit} | {_pct(perf['best_period'])} "
+            f"| worst {unit} | {_pct(perf['worst_period'])} |")
+        add(f"| winning {unit}s | "
+            f"{_pct(perf['winning_periods_pct'])} "
+            f"| flat {unit}s | {perf['flat_periods']} |")
+        add(f"| VaR 95% | {_pct(perf['value_at_risk_95'])} "
+            f"| CVaR 95% | {_pct(perf['cvar_95'])} |")
+        add(f"| skew | {_num(perf['skew'])} "
+            f"| kurtosis | {_num(perf['kurtosis'])} |")
+        add(f"| recovery factor | {_num(perf['recovery_factor'])} "
+            f"| Ulcer index | {_num(perf['ulcer_index'])} |")
+        add("")
+        if perf["resolution"] != "daily":
+            add("> ⚠ The run was too short to resample to days, so every "
+                "annualised figure above is extrapolated from minute returns "
+                "within a single session. Do not compare them with a "
+                "multi-day run's.")
+            add("")
+        add("**Read the Sharpe with the position size in mind.** It is "
+            "computed on the whole account's equity, not on the capital "
+            "actually at risk, so a strategy that deploys 3% of the account "
+            "has a tiny denominator and an inflated |Sharpe|. Measured on "
+            "this codebase: the same 113 signals sized at 3%, 5%, 10%, 20% "
+            "and 40% of equity give Sharpe −9.59, −5.79, −3.13, −2.41, −2.41 "
+            "while net P&L goes the other way, −2,552 to −10,260. Ranking "
+            "position sizes by Sharpe inverts the answer. It is safe to "
+            "compare runs that differ only in signal parameters, and unsafe "
+            "across runs that differ in sizing.")
+        add("")
+        if perf.get("skew") is not None and perf.get("kurtosis") is not None \
+                and (abs(perf["skew"]) > 1 or perf["kurtosis"] > 3):
+            add(f"The return distribution is skewed {perf['skew']:+.2f} with "
+                f"kurtosis {perf['kurtosis']:.2f}, so it is not normal and a "
+                f"Sharpe — which keeps only the first two moments — hides "
+                f"most of what the tail is doing. The worst "
+                f"{unit} and the CVaR describe that better.")
+            add("")
 
     # ── the join: market against strategy ────────────────────────────────
     market = doc["market"]
@@ -1015,6 +1192,7 @@ def build(result: BacktestResult, result_path: Path) -> dict:
         "provenance": getattr(result, "provenance", None),
         "activity": act.to_dict(),
         "round_trips": trips.to_dict(),
+        "performance": performance(result),
         "market": market,
         "by_day": [d.to_dict() for d in days],
         "by_regime": by_regime(days),
@@ -1159,6 +1337,11 @@ def main(argv: Optional[List[str]] = None) -> int:
           f"{doc['activity']['fills']} fill(s), "
           f"{doc['round_trips']['count']} round trip(s), "
           f"net {doc['run']['net_pnl']:+,.2f}")
+    perf = doc.get("performance") or {}
+    if perf.get("available"):
+        print(f"  Sharpe {_num(perf['sharpe'])} · Sortino "
+              f"{_num(perf['sortino'])} · CAGR {_pct(perf['cagr'])} · "
+              f"max drawdown {_pct(perf['max_drawdown'])}")
     if not prov:
         print("  ⚠ no provenance recorded — which execution path produced "
               "this is unknown")
