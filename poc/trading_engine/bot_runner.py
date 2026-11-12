@@ -57,6 +57,7 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
+from protocol import BotCommand
 from protocol import BotStatus
 from protocol import FeedStatus
 from protocol import OrderIntent
@@ -285,6 +286,9 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
     inflight: dict[str, InFlight] = {}
     silent_since: float | None = None
     feed_held = False            # master has told us the market is shut
+    # Set when master tells this bot to stop, so the last log line says who
+    # ended the run rather than leaving it looking like a crash.
+    stopped_by: str | None = None
     try:
         while True:
             try:
@@ -305,6 +309,22 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
             silent_since = None
             msg = protocol.decode(payload)
 
+            if isinstance(msg, BotCommand):
+                # Addressed by topic, so this can only be ours -- but checked
+                # anyway, because a wrong id here would mean one bot stopping
+                # on another's behalf and that should be loud, not silent.
+                if msg.bot_id != bot_id:
+                    log.warning(f"[{bot_id}] ignoring a {msg.action} meant for "
+                                f"{msg.bot_id}")
+                    continue
+                if msg.action != protocol.BOT_STOP:
+                    log.warning(f"[{bot_id}] unknown command "
+                                f"{msg.action!r} — ignoring")
+                    continue
+                log.warning(f"[{bot_id}] stopping on master's instruction: "
+                            f"{msg.reason}")
+                stopped_by = msg.reason
+                break
             if isinstance(msg, FeedStatus):
                 # Receiving it is the point -- silent_since was already cleared
                 # above, which is what keeps this bot alive through a closed
@@ -456,7 +476,8 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
     mon = strategy.monitors()
     log.info(f"[{bot_id}] exiting after {bar_index} bar(s), "
              f"balance={ledger.balance:.0f}, dropped={bars_dropped}"
-             + (f", {mon.get('signals_emitted', '?')} signal(s)" if mon else ""))
+             + (f", {mon.get('signals_emitted', '?')} signal(s)" if mon else "")
+             + (f" — stopped: {stopped_by}" if stopped_by else ""))
     if mon:
         log.info(f"[{bot_id}] final monitors: "
                  + "  ".join(f"{k}={v}" for k, v in mon.items()))

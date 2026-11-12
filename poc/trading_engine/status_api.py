@@ -2,9 +2,10 @@
 Name:
   Trading engine status API
 Description:
-  A read-only HTTP surface on the master engine, so something outside the
-  process can see what a run is doing while it is doing it. Loopback only,
-  GET only, no route mutates engine state.
+  An HTTP surface on the master engine, so something outside the process can
+  see what a run is doing while it is doing it, and stop a bot that is doing
+  the wrong thing. Loopback only. Reads are GET; the one write route is gated
+  on a per-run token.
 Usecase:
   Polled by the cjtrade shell and, later, by a separate web UI process.
 
@@ -23,12 +24,12 @@ process that holds the broker session. So this module exposes JSON and stops.
 
 SECURITY POSTURE, STATED PLAINLY
 --------------------------------
-This is a local developer listener carrying account data: balances, positions,
-fills and a session id. It is private by binding, not by authentication:
+This is a local developer listener carrying account data -- balances,
+positions, fills, a session id -- and, since the control plane was added, the
+ability to stop a strategy.
 
 * `STATUS_HOST` is 127.0.0.1 and is deliberately NOT configurable. Only the
   port is, because two engines may want to run side by side.
-* Every route is GET and reads in-memory state. There is no order path here.
 * **No CORS header is sent, on purpose.** The browser is not meant to talk to
   this port -- the separate web process does, server-side, where CORS does not
   apply. Sending `Access-Control-Allow-Origin: *` would let any page the user
@@ -38,12 +39,35 @@ fills and a session id. It is private by binding, not by authentication:
   authentication and must not be mistaken for it; it is the standard guard
   against DNS rebinding, where a hostile page points a domain it controls at
   127.0.0.1 so that its requests become same-origin and CORS stops helping.
+* `CJ_ENGINE_CONTROL_TOKEN` is the per-run capability. Whoever starts the
+  engine mints it and passes it in the environment, so it never travels on a
+  network and never reaches a browser. **Writes require it and fail closed:**
+  an engine started without one has no control plane, and the route answers
+  503 rather than standing open. Reads require it too whenever one is set,
+  which is how a FinHub-started run is closed to every other process on the
+  machine while a hand-started engine stays curl-able on loopback.
+
+Why a locally-minted token and not a real auth mechanism: the only caller is
+the process that spawned this one, on the same machine, and the credential is
+handed over at fork time. That is a capability, not an identity scheme -- the
+same shape as a Jupyter token. If this ever needs to prove *who* is calling
+rather than *that they started the run*, this is the wrong mechanism and the
+right one is a unix socket with filesystem permissions, letting the OS do the
+check instead of this module.
+
+A write path was a deliberate reversal. It used to say "no route mutates
+engine state", and the reason it now does is that disabling a strategy has to
+take effect while money is moving. The blast radius was kept one-directional:
+the only route makes a strategy do *less* -- stop, and pull its resting orders
+back. Nothing here can open a position.
 
 If this ever needs to be reachable from another machine, the answer is an SSH
 local port-forward, not a wider bind.
 """
 import asyncio
+import hmac
 import logging
+import os
 import time
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -59,6 +83,13 @@ log = logging.getLogger("CJTrade.Engine")
 
 # Not configurable. See the module docstring.
 STATUS_HOST = "127.0.0.1"
+
+# The per-run capability that admits a caller to the control plane. Minted by
+# whoever starts the engine (FinHub's supervisor does) and handed over in the
+# environment at spawn, so it never travels on a network and never reaches a
+# browser. Absent means there is no control plane -- the write routes refuse,
+# they do not open. See the _authenticated middleware.
+CONTROL_TOKEN_ENV = "CJ_ENGINE_CONTROL_TOKEN"
 # 8801/8802 are ArenaX, 8899 is cjtrade_system's API, 9876 is the form
 # renderer, 5555/5556 are the engine's ZMQ pair. 8898 is clear.
 DEFAULT_STATUS_PORT = 8898
@@ -95,6 +126,10 @@ class EngineView:
     gate: Any                    # RiskGate -- halted, halt_reason, exposures
     account_client: Any          # only for its control_plane, in a thread
     bots: list[str]
+    # The one thing here that is not read-only: `await stop_bot(bot_id, reason)`
+    # stops a bot mid-run. Named on the view like everything else so the whole
+    # surface the HTTP layer can reach stays written down in one place.
+    stop_bot: Any = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -207,7 +242,19 @@ def _bot_block(view: EngineView) -> dict:
     from the response.
     """
     latest = view.registry.latest
-    return {bot_id: _jsonable(latest.get(bot_id)) for bot_id in view.bots}
+    stopped = getattr(view.registry, "stopped", {}) or {}
+    out = {}
+    for bot_id in view.bots:
+        status = _jsonable(latest.get(bot_id))
+        if bot_id in stopped:
+            # Reported alongside its last state rather than instead of it: a
+            # bot that was switched off should still show what it was doing
+            # when it was, and should not read as a bot that went silent.
+            status = dict(status or {})
+            status["stopped"] = True
+            status["stopped_reason"] = stopped[bot_id]
+        out[bot_id] = status
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -302,6 +349,7 @@ def build_app(view: EngineView, port: int = DEFAULT_STATUS_PORT) -> web.Applicat
 
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
     cache = _RoundTripCache()
+    control_token = os.environ.get(CONTROL_TOKEN_ENV, "").strip()
 
     @web.middleware
     async def _loopback_only(request: web.Request, handler):
@@ -318,6 +366,58 @@ def build_app(view: EngineView, port: int = DEFAULT_STATUS_PORT) -> web.Applicat
                 {"error": "this endpoint only answers to a loopback Host header"},
                 status=403)
         return await handler(request)
+
+    def _unauthorised(detail: str, status: int = 401):
+        return web.json_response({"ok": False, "error": detail}, status=status)
+
+    def _check_token(request: web.Request):
+        """Verify the per-run capability. Returns a response to send, or None.
+
+        Compared with compare_digest rather than `==` so a wrong token cannot
+        be narrowed down by timing. The header is required rather than a query
+        parameter or a cookie, which also makes this CSRF-proof: a custom
+        Authorization header forces a CORS preflight, and this API answers no
+        preflight and sends no Access-Control-Allow-Origin, so a page cannot
+        make a browser send one.
+        """
+        offered = request.headers.get("Authorization", "")
+        prefix = "Bearer "
+        if not offered.startswith(prefix):
+            return _unauthorised("this route needs an Authorization: Bearer "
+                                 "header carrying the run's control token")
+        if not hmac.compare_digest(offered[len(prefix):], control_token):
+            return _unauthorised("that control token is not this run's")
+        return None
+
+    @web.middleware
+    async def _authenticated(request: web.Request, handler):
+        """Gate on the per-run control token.
+
+        Writes always need it. With no token configured the write routes are
+        refused outright rather than left open -- fail closed -- so an engine
+        started by hand has no control plane at all instead of one anybody on
+        the machine can drive.
+
+        Reads need it too, but only when a token is configured. That keeps the
+        posture honest in both directions: a FinHub-started run (which always
+        sets one) is closed to every other process on the box, and an engine
+        someone started by hand to watch a replay stays curl-able on loopback,
+        exactly as it has always been. The read API carries balances and
+        positions, not the ability to change them.
+        """
+        if request.method in ("GET", "HEAD"):
+            if not control_token:
+                return await handler(request)
+            failed = _check_token(request)
+            return failed or await handler(request)
+
+        if not control_token:
+            return _unauthorised(
+                f"this engine has no control plane: it was started without "
+                f"{CONTROL_TOKEN_ENV}, so there is no token to check against "
+                f"and the route refuses rather than opening", status=503)
+        failed = _check_token(request)
+        return failed or await handler(request)
 
     async def health(_request):
         return web.json_response({
@@ -390,17 +490,53 @@ def build_app(view: EngineView, port: int = DEFAULT_STATUS_PORT) -> web.Applicat
     async def roundtrips(_request):
         return web.json_response(await cache.get(view))
 
-    app = web.Application(middlewares=[_loopback_only])
-    # GET only. Nothing here places, cancels or amends an order: the engine's
-    # control surface is the ZMQ intent socket, and widening this one to accept
-    # writes would make a drive-by request from the user's browser able to
-    # trade, which no amount of CORS policy would stop.
+    async def stop_bot(request: web.Request):
+        """Stop one bot, now, without ending the run.
+
+        The only write route, and the reason this API is no longer GET-only.
+        It exists because "disable this strategy" has to mean something during
+        a paper or real run: whoever presses it has just found a problem, and
+        "it will not be in the next run" is not an answer to that.
+
+        Still nothing here places an order. The widest thing a caller can do is
+        make a strategy stop and pull its resting orders back, which is the
+        safe direction -- there is no route that can open a position.
+        """
+        bot_id = request.match_info["bot_id"]
+        if view.stop_bot is None:
+            return web.json_response(
+                {"ok": False, "error": "this engine was built without a stop "
+                                       "hook, so there is nothing to call"},
+                status=503)
+        if bot_id not in view.bots:
+            return web.json_response(
+                {"ok": False, "error": f"no bot {bot_id!r} in this run",
+                 "bots": list(view.bots)}, status=404)
+
+        body = {}
+        if request.can_read_body:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+        reason = str(body.get("reason") or "disabled by the operator")[:200]
+
+        result = await view.stop_bot(bot_id, reason)
+        return web.json_response(_jsonable(result),
+                                 status=200 if result.get("ok") else 400)
+
+    app = web.Application(middlewares=[_loopback_only, _authenticated])
+    # Read routes. Everything that answers a question about the run.
     app.router.add_get("/health", health)
     app.router.add_get("/status", status)
     app.router.add_get("/bots", bots)
     app.router.add_get("/bots/{bot_id}/history", bot_history)
     app.router.add_get("/equity", equity)
     app.router.add_get("/roundtrips", roundtrips)
+    # The control plane. One route, and it only ever makes a strategy do less.
+    # Gated on the per-run token by _authenticated, which refuses outright when
+    # no token was configured rather than letting the route stand open.
+    app.router.add_post("/bots/{bot_id}/stop", stop_bot)
     return app
 
 
@@ -429,6 +565,11 @@ async def start(view: EngineView, port: int = DEFAULT_STATUS_PORT):
         log.warning(f"[Status] no status API on {STATUS_HOST}:{port} ({e}) — "
                     f"another engine may already have it")
         return None
+    # Says which posture this run actually has, because "loopback only" meant
+    # two different things before and after the control plane. Never logs the
+    # token itself -- a credential in a log file is a credential leaked.
+    gated = "token-gated" if os.environ.get(CONTROL_TOKEN_ENV, "").strip() \
+        else "open reads, no control plane"
     log.info(f"[Status] http://{STATUS_HOST}:{port}/status  "
-             f"(read-only, loopback only)")
+             f"(loopback only, {gated})")
     return runner

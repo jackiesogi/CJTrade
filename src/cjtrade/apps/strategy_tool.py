@@ -9,7 +9,8 @@ the engine and the broker over HTTP and starts them with `uv run` in this
 checkout -- so it cannot import user_strategy to validate what someone typed.
 This is the same boundary the supervisor already crosses, crossed the same way.
 
-    strategy-tool template --name "My strategy" --symbol 2317
+    strategy-tool templates
+    strategy-tool template --kind dca --name "My savings" --symbol 0050
     strategy-tool check < strategy.py
     strategy-tool api
 
@@ -27,7 +28,8 @@ import sys
 from cjtrade.pkgs.strategy.user_strategy import api_reference
 from cjtrade.pkgs.strategy.user_strategy import check
 from cjtrade.pkgs.strategy.user_strategy import collect_params
-from cjtrade.pkgs.strategy.user_strategy import starter_source
+from cjtrade.pkgs.strategy.user_strategy import template
+from cjtrade.pkgs.strategy.user_strategy import TEMPLATE_KINDS
 
 
 def _read_source(path: str | None) -> str:
@@ -47,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
         "template", help="a complete starter strategy, filled in")
     p_template.add_argument("--name", default="My strategy")
     p_template.add_argument("--symbol", default="2317")
+    p_template.add_argument("--kind", default="bb", choices=TEMPLATE_KINDS,
+                            help="bb, dca and adx are the strategies the "
+                                 "engine's bot_c, bot_a and bot_b run")
+
+    sub.add_parser("templates", help="which templates there are")
 
     p_check = sub.add_parser(
         "check", help="diagnostics and declared parameters for a source file")
@@ -58,7 +65,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "template":
-        payload = {"source": starter_source(args.name, args.symbol)}
+        payload = {"kind": args.kind,
+                   "source": template(args.kind, args.name, args.symbol)}
+
+    elif args.command == "templates":
+        # Labels live here rather than in the caller so a new template is one
+        # edit, not two in two repositories.
+        payload = {"templates": [
+            {"kind": "bb", "label": "Bollinger mean reversion",
+             "note": "what the engine's bot_c runs"},
+            {"kind": "dca", "label": "Monthly dollar-cost averaging",
+             "note": "what bot_a runs — buys monthly, never sells"},
+            {"kind": "adx", "label": "Regime switch: breakout or range",
+             "note": "what bot_b runs"},
+            {"kind": "blank", "label": "Nearly blank",
+             "note": "an on_bar that holds"},
+        ]}
 
     elif args.command == "check":
         source = _read_source(args.file)

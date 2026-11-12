@@ -22,14 +22,19 @@ What goes on each socket
 ------------------------
     PUB  tcp://...:5555   topic = symbol     PriceUpdate
     PUB  tcp://...:5555   topic = bot_id     OrderReport
+    PUB  tcp://...:5555   topic = bot_id     BotCommand
     PUB  tcp://...:5555   topic = __feed__   FeedStatus
     PULL tcp://...:5556                      OrderIntent
     PULL tcp://...:5556                      BotStatus
 
-Five envelopes, because pkgs/models has no type for "a tick plus a sequence
+Six envelopes, because pkgs/models has no type for "a tick plus a sequence
 number", "an order event plus the account state it produced", "what a bot and
-its strategy currently look like", or "why there are no bars right now".
-Everything inside them is a pkgs/models type or a plain scalar.
+its strategy currently look like", "why there are no bars right now", or "stop
+trading now". Everything inside them is a pkgs/models type or a plain scalar.
+
+Note the direction of the only command: master tells a bot to stop, and a bot
+never tells master anything but an intent and a status. Nothing a bot can send
+makes another bot do something.
 
 Codec
 -----
@@ -232,6 +237,42 @@ class FeedStatus:
     sent_at: datetime
 
 
+# The only action there is. Spelled as a constant rather than left as a bare
+# string so a typo in a caller is a NameError here instead of a command the
+# bot silently ignores.
+BOT_STOP = "stop"
+
+
+@dataclass
+class BotCommand:
+    """Master -> one bot: stop trading, now.
+
+    The one thing master ever tells a bot to do. It exists because "disable
+    this strategy" has to mean something during a paper or real run: a person
+    pressing it has just found a problem, and "it will not be in the next run"
+    is not an answer.
+
+    Published on the bot's own topic, which it already subscribes to for order
+    reports, so this needs no new socket and no new subscription. A bot that
+    receives it leaves its loop through the same shutdown path as every other
+    exit, so on_end still runs and its final state is still reported.
+
+    What this does NOT do is flatten the position. Stopping a strategy and
+    liquidating what it holds are different decisions -- the second one sells
+    at whatever price happens to be there -- so master cancels the bot's
+    resting orders and leaves its holdings alone. Anything else has to be an
+    explicit instruction.
+
+    `reason` is carried so the bot's last log line says who stopped it and why,
+    which is the difference between reading "exiting" and reading "stopped by
+    the operator from FinHub".
+    """
+    bot_id: str
+    action: str                  # BOT_STOP
+    reason: str
+    sent_at: datetime
+
+
 _WIRE_SAFE = (bool, int, float, str)
 
 
@@ -413,6 +454,7 @@ _WIRE_TYPES: Dict[str, type] = {
     for cls in (
         # envelopes
         PriceUpdate, OrderIntent, OrderReport, BotStatus, FeedStatus,
+        BotCommand,
         # pkgs/models
         BidAsk, FillEvent, Order, OrderEvent, OrderResult,
         Position, Product, Quote, Snapshot, TickEvent, Trade,
