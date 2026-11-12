@@ -53,7 +53,9 @@ from typing import Union
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
 from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
@@ -147,22 +149,98 @@ def run_oneshot(
     all_kbars.sort(key=lambda k: k.timestamp)
 
     session_id = str(uuid.uuid4())
+    cost_model = CostModel()
     engine = BacktestEngine(
         kbars=all_kbars,
         symbol=None,
         initial_balance=initial_balance,
         params=merged_params,
         session_id=session_id,
+        cost_model=cost_model,
     )
     result = engine.run(strategy)
 
+    strategy_title = getattr(strategy, 'name', 'UnnamedStrategy')
+
+    # What produced this result, and under what assumptions.
+    #
+    # Recorded because the two paths that can produce a BacktestResult do not
+    # agree and cannot be made to: this one fills a signal inside the same bar
+    # at the signal's own price, while the trading engine sends a limit order
+    # that fills only when some later close crosses it -- and only this one has
+    # no risk gate, no per-bot capital split and no order-rate cap. Identical
+    # strategy and parameters give different numbers, so a reader who does not
+    # know which path produced the numbers cannot interpret them.
+    result.provenance = {
+        "path": "oneshot",
+        "produced_by": "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest",
+        "strategy": strategy_title,
+        "strategy_long_name": strategy_name,
+        "symbols": symbols,
+        "interval": interval,
+        "requested_start": start_str,
+        "requested_end": end_str,
+        "duration_days": duration_days,
+        "start_was_explicit": bool(start),
+        "bars": len(all_kbars),
+        "initial_balance": initial_balance,
+        "params": dict(merged_params),
+        "params_hash": param_config.params_hash,
+        "cost_model": {
+            "commission_rate": cost_model.commission_rate,
+            "commission_discount": cost_model.commission_discount,
+            "min_commission": cost_model.min_commission,
+            "stock_tax_rate": cost_model.stock_tax_rate,
+            "etf_tax_rate": cost_model.etf_tax_rate,
+            "slippage_model": cost_model.slippage_model,
+            "slippage_pct": cost_model.slippage_pct,
+        },
+        # Stated rather than implied. These are the assumptions that make this
+        # path fast and that make it disagree with the trading engine.
+        "execution_model": (
+            "A signal fills in the bar that produced it, at the signal's own "
+            "price, with no limit check and no latency. Rejected only for "
+            "insufficient cash or shares. No risk gate, no per-bot capital "
+            "allocation, no order-rate cap and no drawdown halt."
+        ),
+        "comparable_to_engine": False,
+    }
+
     # 6. Report
     safe_label = sym_label.replace(",", "_")
-    html_path = report_path or f"oneshot_{safe_label}_{session_id[:8]}.html"
+    stem = paths.reports_dir() / f"oneshot_{safe_label}_{session_id[:8]}"
+    html_path = report_path or f"{stem}.html"
+    pkl_path = f"{stem}.pkl"
+
     report = BacktestReport(result)
     report.summary()
-    strategy_title = getattr(strategy, 'name', 'UnnamedStrategy')
-    report.full_report(path=html_path, open_browser=open_browser, title=f"Backtest Report: {strategy_title}")
+
+    # Pickle first, and independently of the tearsheet: it is the cheap one,
+    # it is what `insight` reads, and full_report() raises on a run with too
+    # few equity samples to have a return series. A failed chart should not
+    # cost the run its data.
+    try:
+        result.save(pkl_path)
+        log.info(f"[OneShot] result saved → {pkl_path}")
+    except Exception as exc:
+        log.warning(f"[OneShot] could not save the result: {exc}")
+        pkl_path = None
+
+    try:
+        report.full_report(path=html_path, open_browser=open_browser,
+                           title=f"Backtest Report: {strategy_title}")
+    except Exception as exc:
+        log.warning(f"[OneShot] no HTML tearsheet ({exc})")
+        html_path = None
+
+    # Said on stdout, last, because this is what a caller needs next.
+    print()
+    if pkl_path:
+        print(f"  result  {pkl_path}")
+    if html_path:
+        print(f"  report  {html_path}")
+    if pkl_path:
+        print(f"\n  Structured report:  insight {session_id[:8]}")
 
 def run_compare_strategies(
     symbol: Union[str, List[str], None] = None,
