@@ -277,25 +277,9 @@ def collect_params(source: str) -> List[dict]:
     return [spec.to_dict() for spec in authoring.param._drain()]
 
 
-def starter_source(name: str = "My strategy", symbol: str = "2317") -> str:
-    """A working strategy, filled in with what the user just told us.
-
-    Lives here rather than in FinHub because it is a demonstration of this
-    module's API: if `buy()` grows an argument or `ta` loses an indicator, the
-    template that teaches it should be the thing that changes with it.
-
-    It is deliberately a complete, runnable strategy rather than a skeleton of
-    comments -- the first thing anyone does is press run, and a file that does
-    nothing teaches nothing about what went wrong.
-    """
-    title = name.strip() or "My strategy"
-    return f'''"""{title} — {symbol}
-
-Bollinger mean reversion, as a starting point. Buy when the price touches the
-lower band, sell when it touches the upper, and sit out while the bands are
-too narrow for the move to pay for its own costs.
-
-What you can use here:
+# The cheat sheet every template carries. One copy, because three templates
+# with three drifting summaries of the same API is how a reference goes stale.
+_CHEAT_SHEET = """What you can use here:
   bar      .close .open .volume .time .closes .ago(n) .bars_seen
            .day_high .day_low  (the DAY's extremes, not this bar's)
   account  .cash .equity .shares .avg_cost .holding
@@ -307,7 +291,51 @@ What you can use here:
   hold("why")   do nothing, and say why — it shows up in the bot's status
   watch(x=...)  numbers to display         plot(x=...)  lines on the chart
   state.x       survives from bar to bar
-  param.int/float/bool/choice  tunable, and rendered as a form field
+  param.int/float/bool/choice  tunable, and rendered as a form field"""
+
+TEMPLATE_KINDS = ("bb", "dca", "adx", "blank")
+
+
+def template(kind: str = "bb", name: str = "My strategy",
+             symbol: str = "2317") -> str:
+    """A complete, runnable strategy of the asked-for kind.
+
+    These live here rather than in FinHub because they are demonstrations of
+    this module's API: if `buy()` grows an argument or `ta` loses an indicator,
+    the files that teach it should be the thing that changes with it.
+
+    Each one is a working strategy rather than a skeleton of comments. The
+    first thing anyone does is press run, and a file that does nothing teaches
+    nothing about what went wrong.
+
+    `bb`, `dca` and `adx` are the same three strategies the engine's built-in
+    bot_c, bot_a and bot_b run -- written against this API instead of as
+    BaseStrategy subclasses, which is what makes them editable in a browser.
+    They are not the same code: a subclass with 200 lines of machinery and a
+    25-line on_bar are different artifacts for different readers, and these are
+    the ones a person is meant to read.
+    """
+    if kind not in TEMPLATE_KINDS:
+        raise ValueError(f"unknown template {kind!r}; "
+                         f"try one of {', '.join(TEMPLATE_KINDS)}")
+    title = name.strip() or "My strategy"
+    body = _TEMPLATES[kind]
+    return body.replace("%TITLE%", title).replace("%SYMBOL%", symbol) \
+               .replace("%CHEAT_SHEET%", _CHEAT_SHEET)
+
+
+# Kept as plain strings with %PLACEHOLDERS% rather than f-strings, so the
+# strategy code inside them can use braces freely -- an f-string template
+# means doubling every brace in the thing you are teaching.
+_BB = '''"""%TITLE% — %SYMBOL%
+
+Bollinger mean reversion. Buy when the price touches the lower band, sell when
+it touches the upper, and sit out while the bands are too narrow for the move
+to pay for its own costs.
+
+The engine's bot_c runs this strategy.
+
+%CHEAT_SHEET%
 """
 from cjtrade.pkgs.strategy.authoring import *
 
@@ -315,32 +343,178 @@ WINDOW = param.int(100, "Bollinger window", min=5, max=500)
 MIN_WIDTH = param.float(0.01, "Minimum band width", min=0.0, max=0.5)
 
 
-def init():
-    state.touches = 0
-
-
 def on_bar(bar, account):
     upper, middle, lower = ta.bb(bar.closes, WINDOW)
     if upper is None:
-        return hold(f"warming up: {{bar.bars_seen}} of {{WINDOW}} bars")
+        return hold(f"warming up: {bar.bars_seen} of {WINDOW} bars")
 
     width = (upper - lower) / middle
     watch(upper=upper, middle=middle, lower=lower, width=width,
-          touches=state.touches)
+          touches=state.touches or 0)
     plot(upper=upper, middle=middle, lower=lower)
 
+    # A squeeze is not worth trading: one tick on a 250 stock is 0.4%, and a
+    # round trip costs 0.585% in commission and tax before any slippage.
     if width < MIN_WIDTH:
-        return hold(f"squeeze: {{width:.3%}} under {{MIN_WIDTH:.3%}}")
+        return hold(f"squeeze: {width:.3%} under {MIN_WIDTH:.3%}")
 
     if bar.close <= lower and not account.holding:
         state.touches = (state.touches or 0) + 1
-        return buy(reason=f"lower band touch at {{bar.close:.2f}}")
+        return buy(reason=f"lower band touch at {bar.close:.2f}")
 
     if bar.close >= upper and account.holding:
-        return sell(reason=f"upper band touch at {{bar.close:.2f}}")
+        return sell(reason=f"upper band touch at {bar.close:.2f}")
 
-    return hold(f"price {{bar.close:.2f}} inside [{{lower:.2f}}, {{upper:.2f}}]")
+    return hold(f"price {bar.close:.2f} inside [{lower:.2f}, {upper:.2f}]")
 '''
+
+_DCA = '''"""%TITLE% — %SYMBOL%
+
+Monthly dollar-cost averaging. Buy a fixed NT$ amount on the first bar of each
+calendar month and never sell, so this is the accumulate-and-hold baseline the
+other strategies are measured against.
+
+The engine's bot_a runs this strategy.
+
+Why calendar months and not "every 30 days": 30 days drifts. From 5 January it
+pays on 4 February, then 6 March, and 12.2 instalments fit in a year instead of
+12. "The first bar of the month" also needs no holiday calendar -- a 1st that
+is a weekend or a holiday resolves itself, because the month rolls over on
+whatever bar actually arrives.
+
+%CHEAT_SHEET%
+"""
+from cjtrade.pkgs.strategy.authoring import *
+
+AMOUNT = param.float(10000.0, "NT$ per instalment", min=100.0)
+
+
+def on_bar(bar, account):
+    this_month = (bar.time.year, bar.time.month)
+
+    watch(instalments=state.instalments or 0,
+          deployed=state.deployed or 0.0,
+          shares=account.shares,
+          avg_cost=account.avg_cost,
+          amount=AMOUNT)
+
+    if state.last_month == this_month:
+        return hold(f"already bought in {bar.time:%Y-%m}")
+
+    # Whole shares of a fixed sum: the remainder is simply not spent. The
+    # instalment does not scale with equity, which is the whole point of DCA --
+    # it is a property of your income, not of how the portfolio has done.
+    shares = int(AMOUNT // bar.close)
+    if shares <= 0:
+        return hold(f"one share at {bar.close:.2f} costs more than "
+                    f"an instalment of {AMOUNT:,.0f}")
+
+    # Marked now, not when it fills. A rejected order loses this month's
+    # instalment; marking it on the fill instead would re-signal every bar
+    # until one filled and collect a dozen duplicates.
+    state.last_month = this_month
+    state.instalments = (state.instalments or 0) + 1
+    state.deployed = (state.deployed or 0.0) + shares * bar.close
+
+    return buy(shares, reason=f"DCA instalment for {bar.time:%Y-%m}")
+'''
+
+_ADX = '''"""%TITLE% — %SYMBOL%
+
+Regime switching. While the price is moving directionally, trade Donchian
+breakouts with it; while it is ranging, buy near the bottom of the range and
+sell near the top. In between, do nothing.
+
+The engine's bot_b runs this strategy.
+
+What measures the trend is an efficiency ratio -- how much of the path the
+price travelled was net displacement -- on a 0-100 scale. A random walk sits
+near 100/sqrt(PERIOD), about 27 at the default; a clean trend approaches 100.
+It is scale-free, so the thresholds below mean the same thing on a 50 ETF and
+a 1,000 semiconductor, and on 1m bars as on daily ones.
+
+This is NOT the Wilder ADX, which needs each bar's own high and low. The feed
+samples one price per bar, so bar.day_high and bar.day_low are the trading
+day's extremes rather than this bar's, and feeding them to an indicator that
+wants bar ranges computes it off a flat line. ta.adx refuses for that reason.
+
+%CHEAT_SHEET%
+"""
+from cjtrade.pkgs.strategy.authoring import *
+
+PERIOD = param.int(14, "Trend-strength lookback", min=5, max=200)
+STRONG = param.float(40.0, "Trending above", min=0.0, max=100.0)
+WEAK = param.float(20.0, "Ranging below", min=0.0, max=100.0)
+DONCHIAN = param.int(20, "Breakout lookback", min=5, max=200)
+EDGE = param.float(0.01, "How near an edge counts", min=0.0, max=0.2)
+
+
+def on_bar(bar, account):
+    strength = ta.efficiency(bar.closes, PERIOD)
+    if strength is None:
+        return hold(f"warming up: {bar.bars_seen} of {PERIOD + 1} bars")
+
+    # The window must EXCLUDE this bar. Including it makes the high at least
+    # this close, so "broke above the high" could never be true.
+    earlier = bar.closes[:-1]
+    high = ta.highest(earlier, DONCHIAN)
+    low = ta.lowest(earlier, DONCHIAN)
+    if high is None or low is None or high <= low:
+        return hold("no range to trade yet")
+
+    regime = ("trending" if strength > STRONG
+              else "ranging" if strength < WEAK else "neutral")
+    watch(trend_strength=strength, regime=regime, high=high, low=low)
+    plot(high=high, low=low)
+
+    previous = bar.ago(1)
+    if previous is None:
+        return hold("no previous bar to compare against")
+
+    if regime == "trending":
+        # Go with it: a break of the range in a directional market tends to
+        # continue, which is the only reason breakouts are worth taking.
+        if previous <= high and bar.close > high and not account.holding:
+            return buy(reason=f"broke above {high:.2f} while trending "
+                              f"(strength {strength:.0f})")
+        if previous >= low and bar.close < low and account.holding:
+            return sell(reason=f"broke below {low:.2f} while trending")
+        return hold(f"trending at {strength:.0f}, price {bar.close:.2f} "
+                    f"inside [{low:.2f}, {high:.2f}]")
+
+    if regime == "ranging":
+        # Fade it: in a market going nowhere the edges are where it turns.
+        near_low = low * (1 + EDGE)
+        near_high = high * (1 - EDGE)
+        if bar.close <= near_low and not account.holding:
+            return buy(reason=f"near the floor {low:.2f} while ranging")
+        if bar.close >= near_high and account.holding:
+            return sell(reason=f"near the ceiling {high:.2f} while ranging")
+        return hold(f"ranging at {strength:.0f}, price {bar.close:.2f} "
+                    f"away from both edges")
+
+    return hold(f"neutral at {strength:.0f} — between {WEAK:.0f} and "
+                f"{STRONG:.0f}, so neither mode applies")
+'''
+
+_BLANK = '''"""%TITLE% — %SYMBOL%
+
+%CHEAT_SHEET%
+"""
+from cjtrade.pkgs.strategy.authoring import *
+
+
+def on_bar(bar, account):
+    watch(price=bar.close)
+    return hold("nothing decided yet")
+'''
+
+_TEMPLATES = {"bb": _BB, "dca": _DCA, "adx": _ADX, "blank": _BLANK}
+
+
+def starter_source(name: str = "My strategy", symbol: str = "2317") -> str:
+    """The Bollinger template. Kept as the name the first callers used."""
+    return template("bb", name, symbol)
 
 
 def api_reference() -> List[dict]:

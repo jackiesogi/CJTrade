@@ -139,6 +139,66 @@ BOT_ROSTER: list[tuple[str, str, str, tuple[str, ...]]] = [
 ]
 BOT_DIR = Path(__file__).resolve().parent
 
+# Where a caller can hand in a roster instead of using the one above.
+#
+#     --roster=/path/to/roster.json
+#
+#     [{"bot_id": "Bot_U1", "script": "bot_custom.py", "symbol": "2317",
+#       "extra": ["/path/to/strategy.py"]}]
+#
+# A file rather than a flag per bot, because N bots in one flag is a quoting
+# problem and a roster is structured anyway. Read straight from argv rather
+# than through the form: the form asks a person questions, and this is one
+# process telling another what to run.
+ROSTER_FLAG = "--roster="
+
+
+def roster_from_argv(argv: list[str] | None = None) -> list[tuple] | None:
+    """The roster `--roster=` points at, or None to use BOT_ROSTER.
+
+    Raises on a file that exists but cannot be used. A caller that asked for a
+    specific set of bots and silently got the default instead would be the
+    worst outcome here -- it would look like a successful run of the wrong
+    thing.
+    """
+    args = sys.argv if argv is None else argv
+    path = next((a[len(ROSTER_FLAG):] for a in args
+                 if a.startswith(ROSTER_FLAG)), None)
+    if not path:
+        return None
+
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{path} must hold a non-empty list of bots")
+
+    out: list[tuple] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path}[{i}] is not an object")
+        try:
+            bot_id = str(entry["bot_id"])
+            script = str(entry["script"])
+            symbol = str(entry["symbol"])
+        except KeyError as missing:
+            raise ValueError(f"{path}[{i}] has no {missing}") from None
+        if bot_id in seen:
+            # Two bots on one id would share a PUB topic, so each would act on
+            # the other's order reports.
+            raise ValueError(f"{path} lists {bot_id!r} twice")
+        seen.add(bot_id)
+        # The script must be one of ours. A roster is written by another
+        # process, and "run this file" with an arbitrary path would make the
+        # roster a way to execute anything -- the strategy file is the thing
+        # that is allowed to be arbitrary, and it is data to bot_custom rather
+        # than the program being run.
+        if script not in {p.name for p in BOT_DIR.glob("bot_*.py")}:
+            raise ValueError(f"{path}[{i}] names {script!r}, which is not a "
+                             f"bot script in {BOT_DIR}")
+        extra = tuple(str(x) for x in (entry.get("extra") or ()))
+        out.append((bot_id, script, symbol, extra))
+    return out
+
 ARENAX_PORT = 8802
 BAR_INTERVAL_SEC = 60        # market seconds between samples == 1m bars
 
@@ -349,6 +409,10 @@ class ReplayClock:
         mw.set_timeline_origin(mock_init_time=timestamps[0].isoformat(),
                            auto_start_progress=False, auto_preload_data=False)
 
+        # After set_timeline_origin, because that is the call that moves the
+        # server's start_date, and its price window is measured from it.
+        _assert_server_data_covers(mw, timestamps)
+
         log.info(f"[Clock] replay: {len(timestamps)} bars, "
                  f"{timestamps[0]} .. {timestamps[-1]}, "
                  f"{_pace_summary(timestamps, speed)}")
@@ -410,6 +474,55 @@ def _bar_timestamps(mw, symbols, start, end, interval) -> list[datetime]:
             if ts is not None:
                 seen.add(ts)
     return sorted(seen)
+
+
+def _assert_server_data_covers(mw, timestamps: list[datetime]) -> None:
+    """Refuse to replay past the end of the server's price data.
+
+    The two ranges are built independently: the engine replays
+    `start + --days`, the server loads `start_date + AX_BACKTEST_DURATION_DAYS`
+    from its own .cjsys, and nothing passes --days along. When the engine's is
+    larger the overrun is silent -- /market/<symbol>/snapshot cannot say it has
+    run out, so it repeats its last price for every remaining bar. Session
+    738a640c replayed 365 days against a 300-day server and broadcast an
+    unchanged 709.0 for its final 11,799 bars, which the strategy read as a
+    zero-volatility market and the tearsheet priced a held position at.
+
+    Raises rather than warns: a warning lets the run finish and write a report
+    that looks like any other, with the flat tail findable only by hand.
+    """
+    cfg = mw.get_config()
+    days = (cfg or {}).get("internal_config", {}).get("backtest_duration_days")
+    if not isinstance(days, int):
+        # Not evidence of a mismatch, so not fatal -- but say the check was
+        # skipped rather than pass silently.
+        log.warning("[Clock] the server did not report backtest_duration_days "
+                    "— cannot verify it holds data for the whole replay")
+        return
+
+    # Mirrors the server: set_historical_time_abs snaps start_date to 09:00,
+    # create_historical_market loads start_date + days_preload.
+    server_end = timestamps[0].replace(hour=9, minute=0, second=0,
+                                       microsecond=0) + timedelta(days=days)
+    if timestamps[-1] <= server_end:
+        log.info(f"[Clock] server holds {days} day(s) of prices from "
+                 f"{timestamps[0]:%Y-%m-%d} (through {server_end:%Y-%m-%d}) — "
+                 f"covers this replay")
+        return
+
+    needed = (timestamps[-1] - timestamps[0]).days + 1
+    raise RuntimeError(
+        f"the server holds {days} day(s) of prices from "
+        f"{timestamps[0]:%Y-%m-%d}, ending {server_end:%Y-%m-%d}, but this "
+        f"replay runs to {timestamps[-1]:%Y-%m-%d} — "
+        f"{(timestamps[-1] - server_end).days} day(s) past it. Every bar past "
+        f"the server's end would silently repeat its last price.\n"
+        f"Fix either side:\n"
+        f"  - replay less: --days={days} or lower, or\n"
+        f"  - load more: AX_BACKTEST_DURATION_DAYS={needed} (env, or "
+        f"src/cjtrade/apps/ArenaX/configs/<mode>.cjsys) and RESTART the "
+        f"server — it reads that only at startup."
+    )
 
 
 def _parse_server_datetime(raw) -> datetime | None:
@@ -810,8 +923,14 @@ class ExecutionEngine:
         return reports
 
     async def cancel_open_orders(self, as_of: datetime | None,
-                                 reason: str = "cancelled at shutdown") -> list[OrderReport]:
-        """Pull every resting order back from the broker.
+                                 reason: str = "cancelled at shutdown",
+                                 only_bot: str | None = None) -> list[OrderReport]:
+        """Pull resting orders back from the broker. All of them, or one bot's.
+
+        `only_bot` is for stopping a single bot mid-run: its resting orders
+        have to come back, because once the bot is gone nothing is mirroring
+        the reports and an order that fills later would move the account with
+        no strategy aware of it.
 
         Resting orders outlive this process. Under ReplayClock that is
         harmless -- the simulated session ends with the run -- but a paper or
@@ -827,6 +946,8 @@ class ExecutionEngine:
         reports = []
         for order_id in list(self._open):
             bot_id, order = self._open[order_id]
+            if only_bot is not None and bot_id != only_bot:
+                continue
             try:
                 result = await asyncio.to_thread(self.client.cancel_order, order_id)
             except Exception as e:
@@ -844,10 +965,14 @@ class ExecutionEngine:
                 timestamp=as_of,
             ))
 
-        if self._open:
-            log.error(f"[Master] {len(self._open)} order(s) still live at the "
+        # Scoped to what this call was asked to cancel. Unscoped, stopping one
+        # bot would report every other bot's live orders as a failure.
+        leftover = [oid for oid, (bid, _) in self._open.items()
+                    if only_bot is None or bid == only_bot]
+        if leftover:
+            log.error(f"[Master] {len(leftover)} order(s) still live at the "
                       f"broker and could not be cancelled: "
-                      f"{', '.join(i[:8] for i in self._open)}")
+                      f"{', '.join(i[:8] for i in leftover)}")
         return reports
 
     def _filled_qty(self, order: Order, status: OrderStatus) -> int:
@@ -1168,6 +1293,11 @@ class BotRegistry:
         self._latest: dict[str, protocol.BotStatus] = {}
         self._heard_at_bar: dict[str, int] = {}
         self._reported_silent: set[str] = set()
+        # Bots master told to stop, and why. They stay in `latest` and in the
+        # status API's bot list: a bot that was switched off should still show
+        # its last state and say that it was switched off, not disappear and
+        # not be reported as stalled.
+        self._stopped: dict[str, str] = {}
         self.history: deque = deque(maxlen=history)
 
     def expect(self, bot_ids: list[str], engine_bar: int) -> None:
@@ -1190,11 +1320,34 @@ class BotRegistry:
     def latest(self) -> dict[str, protocol.BotStatus]:
         return dict(self._latest)
 
+    def mark_stopped(self, bot_id: str, reason: str) -> None:
+        """Record that this bot was told to stop, so its silence is expected."""
+        self._stopped[bot_id] = reason
+
+    def is_stopped(self, bot_id: str) -> bool:
+        return bot_id in self._stopped
+
+    def stop_reason(self, bot_id: str) -> str | None:
+        return self._stopped.get(bot_id)
+
+    @property
+    def stopped(self) -> dict[str, str]:
+        return dict(self._stopped)
+
     def newly_silent(self, engine_bar: int, max_silent_bars: int) -> list[str]:
-        """Bots that have gone quiet, each reported once rather than per bar."""
+        """Bots that have gone quiet, each reported once rather than per bar.
+
+        A bot master stopped on purpose is not silent in the sense this is
+        looking for. Without the exclusion, switching one off would log "it has
+        exited, stalled, or is listening to another master. Its orders are
+        stale." once per run -- an alarm about the thing the operator just
+        asked for, which is how people learn to ignore alarms.
+        """
         out = []
         for bot_id, bar in self._heard_at_bar.items():
-            if engine_bar - bar < max_silent_bars or bot_id in self._reported_silent:
+            if (engine_bar - bar < max_silent_bars
+                    or bot_id in self._reported_silent
+                    or bot_id in self._stopped):
                 continue
             self._reported_silent.add(bot_id)
             out.append(bot_id)
@@ -1412,9 +1565,22 @@ async def main():
     # master never publishes, sit there until SILENCE_LIMIT_S and exit -- which
     # in the log looks like a crash rather than a misconfiguration. Say so
     # instead, before spawning anything.
+    try:
+        roster = roster_from_argv() or BOT_ROSTER
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        # Aborted rather than falling back: a caller that asked for a specific
+        # set of bots and silently got the built-in default would be a
+        # successful run of the wrong thing.
+        log.error(f"[Master] --roster could not be read: {exc}")
+        account_client.disconnect()
+        return
+    if roster is not BOT_ROSTER:
+        log.info("[Master] roster from --roster: "
+                 + ", ".join(f"{b}({s})" for b, _, s, _ in roster))
+
     procs: list[asyncio.subprocess.Process] = []
     bots: list[str] = []
-    for bot_id, script, symbol, extra in BOT_ROSTER:
+    for bot_id, script, symbol, extra in roster:
         if symbol not in cfg.symbols:
             log.error(f"[Master] {bot_id} is assigned {symbol}, which is not "
                       f"in the watch list ({','.join(cfg.symbols)}) — it would "
@@ -1432,10 +1598,14 @@ async def main():
         return
     await asyncio.sleep(2)       # let the subprocesses finish their ZMQ connect
 
-    # Each bot's allocation is the account divided by the roster. With one bot
-    # that is the whole account and the budget never bites; with three each
-    # gets a third, which is the point: without an allocation every bot sizes
-    # against the full equity and N bots deploy N times the capital.
+    # Each bot's allocation is the account divided by the bots that started.
+    # With one bot that is the whole account and the budget never bites; with
+    # three each gets a third, which is the point: without an allocation every
+    # bot sizes against the full equity and N bots deploy N times the capital.
+    #
+    # Divided by what actually started, not by what the roster asked for, so a
+    # bot skipped for a symbol nobody publishes does not quietly hold back a
+    # share of the account nothing can spend.
     # Bar 0: bots are spawned before the hub exists, so no bar has been served.
     bot_registry.expect(bots, 0)
     gate = RiskGate(
@@ -1455,6 +1625,104 @@ async def main():
     engine = ExecutionEngine(account_client=account_client,
                              initial_balance=cfg.initial_balance,
                              gate=gate)
+
+    async def stop_bot(bot_id: str, reason: str) -> dict:
+        """Stop one bot without ending the run. The engine's only write path.
+
+        Three things have to happen, in this order:
+
+        1. Mark it stopped, BEFORE the command goes out. A status report
+           already in flight would otherwise arrive and clear the mark.
+        2. Tell the bot, on its own topic. It leaves its loop through the same
+           shutdown path as any other exit, so on_end runs and its final state
+           is still reported.
+        3. Cancel its resting orders. Once the bot is gone nothing mirrors the
+           reports, so an order that fills later would move the account with no
+           strategy aware of it.
+
+        Two things deliberately do NOT happen:
+
+        * The position is not flattened. Stopping a strategy and liquidating
+          what it holds are different decisions, and the second one sells at
+          whatever price happens to be there. Whoever wants that has to ask
+          for it.
+        * The other bots' risk budget is not widened. `max_notional_per_bot`
+          was divided by the roster at startup and it stays that way --
+          quietly giving the survivors more room because somebody switched a
+          bot off is the opposite of what pressing that button means.
+        """
+        if bot_id not in bots:
+            return {"ok": False,
+                    "error": f"no bot {bot_id!r} in this run",
+                    "bots": list(bots)}
+
+        if bot_registry.is_stopped(bot_id):
+            # Idempotent: pressing it twice is the same as pressing it once,
+            # which matters because the first press may have looked like it
+            # did nothing while the bot finished its bar.
+            return {"ok": True, "bot_id": bot_id, "already_stopped": True,
+                    "reason": bot_registry.stop_reason(bot_id)}
+
+        bot_registry.mark_stopped(bot_id, reason)
+        await pub_socket.send_multipart([
+            bot_id.encode('utf-8'),
+            protocol.encode(protocol.BotCommand(
+                bot_id=bot_id, action=protocol.BOT_STOP, reason=reason,
+                sent_at=datetime.now())),
+        ])
+
+        cancelled: list[str] = []
+        try:
+            for report in await engine.cancel_open_orders(
+                    hub.market_time, reason=f"{bot_id} stopped: {reason}",
+                    only_bot=bot_id):
+                await publish_report(pub_socket, report)
+                cancelled.append(report.event.order_id)
+        except Exception as e:
+            # Said loudly and not raised: the bot is already stopping, and the
+            # worst outcome here is a resting order nobody is watching, which
+            # the operator needs to know about rather than see as a 500.
+            log.error(f"[Master] {bot_id} stopped but its resting orders could "
+                      f"not be cancelled — they are still live at the broker: "
+                      f"{e}")
+
+        asyncio.create_task(_reap_bot(bot_id))
+        log.warning(f"[Master] {bot_id} stopped on request: {reason} "
+                    f"({len(cancelled)} resting order(s) cancelled, "
+                    f"position left alone)")
+        return {"ok": True, "bot_id": bot_id, "reason": reason,
+                "orders_cancelled": cancelled, "position_flattened": False}
+
+    async def _reap_bot(bot_id: str, grace_s: float = 10.0) -> None:
+        """Make sure a stopped bot's process actually goes away.
+
+        A bot wedged inside its own strategy -- an infinite loop in on_bar, say
+        -- never reads the socket and so never sees the command. Signalling it
+        is the only thing left. Bounded by `grace_s` and then escalated,
+        because a stop that silently does not stop is worse than a kill.
+        """
+        try:
+            proc = procs[bots.index(bot_id)]
+        except (ValueError, IndexError):
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=grace_s)
+            return
+        except asyncio.TimeoutError:
+            pass
+        log.warning(f"[Master] {bot_id} has not exited {grace_s:.0f}s after "
+                    f"being told to stop — signalling it")
+        try:
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=grace_s)
+        except asyncio.TimeoutError:
+            log.error(f"[Master] {bot_id} ignored SIGTERM — killing it")
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     # Consecutive failed account reads. Lives out here so report_resolved_orders
     # can keep a count across bars.
@@ -1552,7 +1820,7 @@ async def main():
             session_id=session_id, started_at=run_started_at, cfg=cfg,
             clock_name=clock_name, clock=clock, hub=hub, recorder=recorder,
             registry=bot_registry, gate=gate, account_client=account_client,
-            bots=bots,
+            bots=bots, stop_bot=stop_bot,
         ),
         STATUS_PORT,
     )
