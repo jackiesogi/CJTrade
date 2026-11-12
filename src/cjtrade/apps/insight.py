@@ -441,7 +441,85 @@ def performance(result: BacktestResult) -> Dict[str, Any]:
     nonzero = int((returns.abs() > 1e-12).sum())
     out["flat_periods"] = int(len(returns)) - nonzero
     out["tearsheet"] = tearsheet(returns, periods)
+    # The HTML report renders three data tables, not one: the metrics table
+    # above, a drawdown-periods table and a monthly/EOY returns table. All
+    # three are here so this document is a complete substitute for it.
+    out["drawdowns"] = drawdown_periods(returns)
+    out["monthly_returns"] = monthly_returns(returns)
     return out
+
+
+def drawdown_periods(returns) -> List[Dict[str, Any]]:
+    """Every completed drawdown, worst first.
+
+    The HTML's "Worst 10 Drawdowns" table. A single max-drawdown number says
+    how deep the worst one went and nothing about how long it lasted, which is
+    the half a reader actually needs: on one synthetic curve here the worst
+    drawdown was 316 days, and no scalar in the metrics table says so.
+
+    Empty for a run still underwater at the close -- quantstats only reports
+    drawdowns that ended -- which is why `longest_dd_days` in the metrics
+    table is null for a losing run rather than wrong.
+    """
+    try:
+        import quantstats as qs
+        series = qs.stats.to_drawdown_series(returns)
+        frame = qs.stats.drawdown_details(series)
+    except Exception:
+        return []
+    if frame is None or len(frame) == 0:
+        return []
+
+    # quantstats is inconsistent about the unit here, so it is normalised once
+    # on the way in rather than at each place something reads it.
+    # `qs.stats.max_drawdown()` returns a FRACTION (-0.0116) while the
+    # `max drawdown` column of `drawdown_details` is a PERCENT (-1.1586) --
+    # verified to be exactly a factor of 100 apart on the same series, and
+    # against a peak-to-trough computed straight off the equity curve. Left
+    # alone it renders as "-115.86%", a drawdown deeper than total ruin, which
+    # is the kind of number that makes a reader stop believing the document.
+    percent_columns = {"max_drawdown", "99_pct_max_drawdown"}
+
+    out: List[Dict[str, Any]] = []
+    try:
+        ordered = frame.sort_values(by="max drawdown", ascending=True)
+        for _, row in ordered.iterrows():
+            entry: Dict[str, Any] = {}
+            for label in frame.columns:
+                key = _metric_key(str(label))
+                value = _metric_value(row[label])
+                if key in percent_columns and isinstance(value, float):
+                    value = value / 100.0
+                entry[key] = value
+            out.append(entry)
+    except Exception:
+        return []
+    return out
+
+
+def monthly_returns(returns) -> Dict[str, Any]:
+    """The month-by-month matrix with a year-end column.
+
+    Both the heatmap and the EOY table in the HTML come from this. It is the
+    only place a reader can see that a result came from one good month, which
+    is the same question `by_day`/`by_regime` answer for the market side.
+    """
+    try:
+        import quantstats as qs
+        frame = qs.stats.monthly_returns(returns, eoy=True, compounded=True)
+    except Exception as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+    if frame is None or len(frame) == 0:
+        return {"available": False, "reason": "no complete month in the run"}
+
+    try:
+        columns = [str(c) for c in frame.columns]
+        rows = {str(year): {str(col): _metric_value(frame.loc[year, col])
+                            for col in frame.columns}
+                for year in frame.index}
+    except Exception as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+    return {"available": True, "columns": columns, "years": rows}
 
 
 def _metric_key(label: str) -> str:
@@ -1121,6 +1199,47 @@ def render_markdown(doc: dict) -> str:
                 "of them. The table above has the full precision, and its key "
                 "names are ours rather than quantstats' labels, so a script "
                 "should read that one._")
+            add("")
+
+        # ── the drawdown-periods table ───────────────────────────────────
+        drawdowns = perf.get("drawdowns") or []
+        add("### Drawdowns")
+        add("")
+        if not drawdowns:
+            add("_No drawdown ever ended, so quantstats reports none. A run "
+                "still below its high-water mark at the close has no "
+                "completed drawdown to describe — which is also why "
+                "`Longest DD Days` is blank in the table above._")
+            add("")
+        else:
+            add("Worst first. The depth is in the metrics table; the "
+                "duration is only here.")
+            add("")
+            add("| start | valley | end | days | max drawdown |")
+            add("|---|---|---|---:|---:|")
+            for dd in drawdowns:
+                add(f"| {dd.get('start', '—')} | {dd.get('valley', '—')} "
+                    f"| {dd.get('end', '—')} | {dd.get('days', '—')} "
+                    f"| {_pct(dd.get('max_drawdown'))} |")
+            add("")
+
+        # ── the monthly / EOY returns table ──────────────────────────────
+        months = perf.get("monthly_returns") or {}
+        add("### Returns by month")
+        add("")
+        if not months.get("available"):
+            add(f"_Not available: {months.get('reason', 'unknown')}._")
+            add("")
+        else:
+            columns = months["columns"]
+            add("| year | " + " | ".join(columns) + " |")
+            add("|---" * (len(columns) + 1) + "|")
+            for year, cells in months["years"].items():
+                values = " | ".join(_pct(cells.get(c)) for c in columns)
+                add(f"| {year} | {values} |")
+            add("")
+            add("_This is the only place a result built out of one good "
+                "month shows itself._")
             add("")
 
         if perf.get("skew") is not None and perf.get("kurtosis") is not None \

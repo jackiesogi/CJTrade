@@ -1428,3 +1428,148 @@ def test_a_failed_tearsheet_does_not_take_the_core_with_it(monkeypatch):
     perf = insight.performance(_with_curve(_curve(_walk())))
     assert perf["available"] is True
     assert perf["sharpe"] is not None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  The other two tables the HTML report renders
+# ══════════════════════════════════════════════════════════════════════════
+#
+# qs.reports.html builds three data tables, not one: {{metrics}}, {{dd_info}}
+# and {{eoy_table}}. Mirroring only the first still left the document short of
+# the report it is meant to replace.
+
+
+def _recovering(n=400, seed=3):
+    """Long enough to contain drawdowns that end, which is what makes a
+    drawdown-periods table non-empty."""
+    rng = random.Random(seed)
+    value, out = 100_000.0, []
+    for _ in range(n):
+        value += -2.0 + rng.uniform(-60, 60)
+        out.append(value)
+    return out
+
+
+def test_completed_drawdowns_are_listed_with_their_duration():
+    """A max-drawdown scalar says how deep, never how long. On this curve the
+    worst drawdown ran 316 days and no metric in the table says so."""
+    periods = insight.performance(
+        _with_curve(_curve(_recovering())))["drawdowns"]
+    assert periods
+    worst = periods[0]
+    for key in ("start", "valley", "end", "days", "max_drawdown"):
+        assert key in worst, key
+    assert worst["days"] > 0
+
+
+def test_drawdowns_are_ordered_worst_first():
+    periods = insight.performance(
+        _with_curve(_curve(_recovering())))["drawdowns"]
+    depths = [d["max_drawdown"] for d in periods]
+    assert depths == sorted(depths)
+
+
+def test_the_drawdown_depth_uses_the_same_unit_as_the_rest_of_the_document():
+    """quantstats is inconsistent: `max_drawdown()` is a fraction (-0.0116)
+    and the `max drawdown` column of `drawdown_details` is a percent
+    (-1.1586) -- exactly 100x apart. Unnormalised it renders as "-115.86%", a
+    drawdown worse than total ruin."""
+    result = _with_curve(_curve(_recovering()))
+    perf = insight.performance(result)
+    # The core rounds to six decimals; the table keeps what quantstats gave,
+    # so they agree to the core's resolution rather than exactly.
+    assert perf["drawdowns"][0]["max_drawdown"] == pytest.approx(
+        perf["max_drawdown"], abs=1e-6)
+    assert -1.0 <= perf["drawdowns"][0]["max_drawdown"] <= 0.0
+
+
+def test_every_listed_drawdown_is_a_plausible_fraction():
+    for dd in insight.performance(_with_curve(_curve(_recovering())))["drawdowns"]:
+        assert -1.0 <= dd["max_drawdown"] <= 0.0, dd
+
+
+def test_a_run_that_never_recovered_lists_no_drawdown_periods():
+    assert insight.performance(_with_curve(_curve(_sinking())))["drawdowns"] == []
+
+
+def test_the_markdown_explains_an_empty_drawdown_table(tmp_path, monkeypatch):
+    """Rather than printing an empty table, which reads as "no drawdowns"."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_sinking())),
+                               tmp_path / "x.pkl"))
+    assert "### Drawdowns" in md
+    assert "No drawdown ever ended" in md
+
+
+def test_the_markdown_renders_the_drawdown_periods(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_recovering())),
+                               tmp_path / "x.pkl"))
+    assert "### Drawdowns" in md
+    assert "valley" in md
+    assert "-115" not in md, "a drawdown deeper than ruin was rendered"
+
+
+# ── monthly / EOY returns ────────────────────────────────────────────────
+
+def test_monthly_returns_carries_a_year_by_month_matrix():
+    months = insight.performance(
+        _with_curve(_curve(_recovering())))["monthly_returns"]
+    assert months["available"] is True
+    assert "JAN" in months["columns"] and "EOY" in months["columns"]
+    assert len(months["columns"]) == 13
+    assert months["years"]
+
+
+def test_monthly_returns_values_are_fractions():
+    months = insight.performance(
+        _with_curve(_curve(_recovering())))["monthly_returns"]
+    for year, cells in months["years"].items():
+        for column, value in cells.items():
+            if value is not None:
+                assert -1.0 <= value <= 1.0, f"{year} {column} = {value}"
+
+
+def test_the_markdown_renders_the_monthly_table(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_recovering())),
+                               tmp_path / "x.pkl"))
+    assert "### Returns by month" in md
+    for month in ("JAN", "JUN", "DEC", "EOY"):
+        assert month in md
+
+
+def test_monthly_returns_says_why_when_it_has_no_month(tmp_path, monkeypatch):
+    """A run shorter than a month has no row to show."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk(4))), tmp_path / "x.pkl"))
+    assert "### Returns by month" in md
+
+
+def test_all_three_html_tables_are_present_together(tmp_path, monkeypatch):
+    """The completeness claim, asserted in one place: the metrics table, the
+    drawdown-periods table and the monthly/EOY table."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    perf = build(_with_curve(_curve(_recovering())),
+                 tmp_path / "x.pkl")["performance"]
+    assert perf["tearsheet"]["available"] and perf["tearsheet"]["metrics"]
+    assert perf["drawdowns"]
+    assert perf["monthly_returns"]["available"]
+
+
+def test_the_extra_tables_are_json_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    text = json.dumps(build(_with_curve(_curve(_recovering())),
+                            tmp_path / "x.pkl"), default=str)
+    for token in ("Infinity", "-Infinity", "NaN"):
+        assert token not in text
+
+    def reject(constant):
+        raise AssertionError(f"illegal JSON constant {constant}")
+    json.loads(text, parse_constant=reject)
