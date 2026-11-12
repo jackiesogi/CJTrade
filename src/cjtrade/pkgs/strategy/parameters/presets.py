@@ -24,7 +24,7 @@ INTERVAL_PRESETS = {
         "sr__interval": "1m",
 
         # DCA
-        "dca__buy_frequency_days": 1,
+        "dca__buy_frequency_months": 1,
         "dca__max_position_pct": 0.03,
 
         # Donchian Breakout
@@ -54,7 +54,7 @@ INTERVAL_PRESETS = {
         "sr__breakout_mode": False,
         "sr__interval": "5m",
 
-        "dca__buy_frequency_days": 3,
+        "dca__buy_frequency_months": 1,
         "dca__max_position_pct": 0.03,
 
         # Donchian Breakout (short term)
@@ -83,7 +83,7 @@ INTERVAL_PRESETS = {
         "sr__breakout_mode": False,
         "sr__interval": "1h",
 
-        "dca__buy_frequency_days": 7,
+        "dca__buy_frequency_months": 1,
         "dca__max_position_pct": 0.04,
 
         # Donchian Breakout (intermediate term)
@@ -112,7 +112,7 @@ INTERVAL_PRESETS = {
         "sr__breakout_mode": False,
         "sr__interval": "1d",
 
-        "dca__buy_frequency_days": 30,
+        "dca__buy_frequency_months": 1,
         "dca__max_position_pct": 0.05,
 
         # Donchian Breakout (standard for daily)

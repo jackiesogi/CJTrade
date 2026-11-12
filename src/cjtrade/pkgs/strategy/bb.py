@@ -40,6 +40,7 @@ class BollingerStrategy(BaseStrategy):
     # on a timer will do.
     _window = 0
     _min_bw = 0.0
+    _std = 2.0
     _max_pct = 0.0
     _n_bars = 0
     _n_upper = 0
@@ -60,6 +61,11 @@ class BollingerStrategy(BaseStrategy):
         # Read from params (support both old and new param names for backward compatibility)
         self._window = int(p.get("bb__window_size", p.get("bb_window_size", 20)))
         self._min_bw = float(p.get("bb__min_width_pct", p.get("bb_min_width_pct", 0.01)))
+        # How many standard deviations out the bands sit. This was advertised
+        # by the interval presets and ignored here while ta.bb() was called
+        # with a hardcoded 2, so the single most important knob for signal
+        # frequency did nothing: 2.0 and 5.0 produced identical runs.
+        self._std = float(p.get("bb__std_dev", p.get("bb_std_dev", 2.0)))
         self._max_pct = float(p.get("risk__max_position_pct", p.get("risk_max_position_pct", 0.05)))
         self._n_bars = self._n_upper = self._n_lower = 0
         self._n_cross = self._n_signals = 0
@@ -67,7 +73,8 @@ class BollingerStrategy(BaseStrategy):
         self._bw_sum, self._bw_n = 0.0, 0
         self._prev_above_mid = None
         self._last_reason = "no bars yet"
-        log.info(f"[{self.name}] window={self._window} min_bw={self._min_bw*100:.2f}%")
+        log.info(f"[{self.name}] window={self._window} std_dev={self._std} "
+                 f"min_bw={self._min_bw*100:.2f}%")
 
     # ── monitoring ────────────────────────────────────────────────────────────
 
@@ -159,8 +166,8 @@ class BollingerStrategy(BaseStrategy):
         upper_bands, middle_bands, lower_bands = ta.bb(
             prices_array,
             timeperiod=self._window,
-            nbdevup=2,
-            nbdevdn=2
+            nbdevup=self._std,
+            nbdevdn=self._std
         )
 
         # Get the latest BB values

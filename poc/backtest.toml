@@ -46,7 +46,10 @@ min = 1
 name        = "interval"
 label       = "Interval"
 type        = "select"
-default     = "1d"
+# 1m to match what the trading engine replays. A window parameter means bars,
+# not days, so a default of 1d silently reinterpreted bb_window_size=100 as 100
+# days here and 100 minutes there -- a different strategy, not a coarser one.
+default     = "1m"
 env_out     = "INTERVAL"
 persist_key = "interval"
 cli_arg     = "--interval"

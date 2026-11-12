@@ -55,6 +55,10 @@ class DCA_Monthly(BaseStrategy):
 
     Parameters (constructor, or via ctx.params in on_start)
     - dca__amount: NT$ to spend per instalment, per symbol.
+    - dca__max_position_pct: size the instalment as this fraction of current
+      equity instead of a fixed sum. Takes precedence over dca__amount when
+      present, because it is the one the interval presets actually ship.
+    - dca__buy_frequency_months: months between instalments (default 1).
     - dca__last_buy_time: optional {symbol: ISO timestamp} of the last purchase
       made before this run, so a resumed run does not buy twice in one month.
     """
@@ -62,8 +66,15 @@ class DCA_Monthly(BaseStrategy):
     name = "DCA"
     long_name = "DCA_Monthly"
 
-    def __init__(self, amount: float = DCA_MONTHLY_AMOUNT) -> None:
+    def __init__(self, amount: float = DCA_MONTHLY_AMOUNT,
+                 max_position_pct: float = 0.0,
+                 buy_frequency_months: int = 1) -> None:
         self._amount = float(amount)
+        # 0.0 means "size by a fixed amount". Anything else overrides it and
+        # sizes each instalment against equity, which is what the interval
+        # presets have always advertised and what this strategy never read.
+        self._pct = float(max_position_pct)
+        self._months = max(1, int(buy_frequency_months))
         # The (year, month) each symbol was last bought in. A month rather than
         # a timestamp because that is the whole of the decision: comparing
         # months cannot drift, and two bars in the same month are the same
@@ -86,6 +97,28 @@ class DCA_Monthly(BaseStrategy):
         # Support the older spellings so an existing config keeps working.
         self._amount = float(p.get("dca__amount",
                                    p.get("dca_amount", self._amount)))
+        # Equity-fraction sizing. Read from the dca__ key first and fall back
+        # to the shared risk__ one, so a run that only sets the global
+        # position limit still sizes its instalments by it.
+        self._pct = float(p.get("dca__max_position_pct",
+                                p.get("dca_max_position_pct",
+                                      p.get("risk__max_position_pct",
+                                            self._pct))))
+        self._months = max(1, int(p.get("dca__buy_frequency_months",
+                                        p.get("dca_buy_frequency_months",
+                                              self._months))))
+        # dca__buy_frequency_days was shipped by every interval preset and read
+        # by nothing. It is not wired up now either, because a day count is the
+        # drifting behaviour this strategy deliberately replaced with calendar
+        # months -- see the module docstring. Said out loud rather than ignored
+        # a second time, so a parameter sweep does not explore a dead axis.
+        if any(k in p for k in ("dca__buy_frequency_days",
+                                "dca_buy_frequency_days")):
+            log.warning(
+                "[%s] dca__buy_frequency_days is not used: instalments are "
+                "keyed to calendar months, which cannot drift. Use "
+                "dca__buy_frequency_months (currently %d).",
+                self.name, self._months)
 
         seed = p.get("dca__last_buy_time", p.get("dca_last_buy_time"))
         if isinstance(seed, dict):
@@ -100,7 +133,10 @@ class DCA_Monthly(BaseStrategy):
                 self._last_buy_month[sym] = (when.year, when.month)
 
         self._last_reason = "no bars yet"
-        log.info(f"[{self.name}] amount={self._amount:,.0f} per month per symbol")
+        sizing = (f"{self._pct * 100:.2f}% of equity" if self._pct > 0
+                  else f"{self._amount:,.0f}")
+        log.info(f"[{self.name}] instalment={sizing} every "
+                 f"{self._months} month(s) per symbol")
 
     # ── monitoring ───────────────────────────────────────────────────────────
 
@@ -121,6 +157,8 @@ class DCA_Monthly(BaseStrategy):
         return {
             "bars_seen":        self._n_bars,
             "amount":           round(self._amount, 2),
+            "instalment_pct":   round(self._pct, 4),
+            "frequency_months": self._months,
             "instalments":      self._n_signals,
             "shares_bought":    self._shares,
             "cash_deployed":    round(self._deployed, 2),
@@ -144,19 +182,31 @@ class DCA_Monthly(BaseStrategy):
         price = bar.close
         this_month = (now.year, now.month)
 
-        if self._last_buy_month.get(sym) == this_month:
-            self._last_reason = (f"already bought {sym} in "
-                                 f"{now.year}-{now.month:02d}")
-            return []
+        # Months elapsed rather than "is it the same month", so a frequency of
+        # more than one month is expressible. Counted in whole months so it
+        # cannot drift, for the reason in the module docstring.
+        last = self._last_buy_month.get(sym)
+        if last is not None:
+            elapsed = (now.year * 12 + now.month) - (last[0] * 12 + last[1])
+            if elapsed < self._months:
+                # The elapsed count only tells a reader something when the
+                # cadence is longer than a month; at the default it is noise.
+                self._last_reason = (
+                    f"already bought {sym} in {now.year}-{now.month:02d}"
+                    if self._months == 1 else
+                    f"bought {sym} in {last[0]}-{last[1]:02d}, "
+                    f"{elapsed} of {self._months} month(s) elapsed")
+                return []
 
         if price <= 0:
             self._last_reason = f"no usable price for {sym} ({price})"
             return []
 
-        # Whole shares of a fixed sum, so the instalment is at most `amount`
-        # and the remainder is simply not spent. Odd lots, which is what the
-        # engine submits anyway (bot_runner's OrderLot.IntraDayOdd).
-        qty = int(self._amount // price)
+        # Whole shares of one instalment, so the purchase is at most the
+        # instalment and the remainder is simply not spent. Odd lots, which is
+        # what the engine submits anyway (bot_runner's OrderLot.IntraDayOdd).
+        instalment = ctx.equity * self._pct if self._pct > 0 else self._amount
+        qty = int(instalment // price)
         if qty <= 0:
             # One share costs more than a whole instalment. Reported rather
             # than retried silently: nothing will change within the month, and
@@ -166,11 +216,11 @@ class DCA_Monthly(BaseStrategy):
             if marker not in self._unaffordable:
                 self._unaffordable.add(marker)
                 log.warning(f"[{self.name}] {sym} at {price:.2f} costs more "
-                            f"than one instalment of {self._amount:,.0f} — "
+                            f"than one instalment of {instalment:,.0f} — "
                             f"skipping {now.year}-{now.month:02d} unless it "
                             f"falls before the month is out")
             self._last_reason = (f"unaffordable: one share of {sym} at "
-                                 f"{price:.2f} exceeds {self._amount:,.0f}")
+                                 f"{price:.2f} exceeds {instalment:,.0f}")
             return []
 
         # Consume the month when the signal is ISSUED, not when it fills.
@@ -194,7 +244,7 @@ class DCA_Monthly(BaseStrategy):
         return [Signal(
             action="BUY", symbol=sym, quantity=qty, price=price,
             reason=f"DCA instalment for {now.year}-{now.month:02d}",
-            meta={"amount": self._amount, "month": f"{now.year}-{now.month:02d}"},
+            meta={"amount": instalment, "month": f"{now.year}-{now.month:02d}"},
         )]
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
