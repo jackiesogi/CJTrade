@@ -342,24 +342,28 @@ def performance(result: BacktestResult) -> Dict[str, Any]:
     `BacktestReport.metrics()` already computed three of these; the rest come
     off quantstats directly.
 
-    WHAT IS DELIBERATELY NOT HERE
-    -----------------------------
-    quantstats' full tearsheet has around fifty metrics. These are the ones
-    that mean something on a few hundred daily points, and four kinds are left
-    out on purpose:
+    TWO LAYERS, ON PURPOSE
+    ----------------------
+    The top level holds a short, explicitly named core. `tearsheet` holds
+    EVERY row quantstats puts in its HTML report, mirrored by calling
+    `qs.reports.metrics(mode="full")` rather than by naming metrics here, so
+    the two can never drift and a quantstats upgrade that adds a metric is
+    picked up without a change to this file.
 
-    * Anything quantstats computes per DAY that this report already gives per
-      ROUND TRIP -- profit factor, average win and loss, payoff ratio,
-      consecutive wins and losses. Daily `profit_factor` is 0.12 on the run
-      this was built against while the round-trip figure is 1.07; the same
-      name over two different units is worse than one number.
-    * `exposure`, which quantstats defines as the share of days with a
-      non-zero return, not the share of capital at risk. The name invites
-      exactly the wrong reading.
-    * `kelly_criterion`. Position sizing derived from 130 observations is not
-      advice.
-    * The benchmark-relative family (alpha, beta, information ratio) -- there
-      is no benchmark in a BacktestResult to be relative to.
+    Both exist because they answer different questions. The core keys are ours
+    and will not move, which is what a script sweeping parameters needs.
+    `tearsheet` keys are derived from quantstats' display labels, so they can
+    change when quantstats does -- and its values carry display precision
+    (Sharpe -9.59, not -9.589301), because matching the HTML is the point of
+    it. Read the core when you are comparing runs; read `tearsheet` when you
+    are checking this against the tearsheet.
+
+    An earlier version of this curated the list and left out `exposure` --
+    quantstats labels it "Time in Market" in the HTML -- on the grounds that
+    the name reads like capital at risk when it counts periods with a non-zero
+    return. That was the wrong call twice over: it is the metric an
+    experimenter looks for first, and it is the one that explains why the
+    Sharpe below moves with position size. It is in the core now.
     """
     out: Dict[str, Any] = {"available": False}
     try:
@@ -416,6 +420,10 @@ def performance(result: BacktestResult) -> Dict[str, Any]:
         "cagr": stat("cagr", periods=periods),
         "volatility_annual": stat("volatility", periods=periods),
         "max_drawdown": stat("max_drawdown"),
+        # quantstats calls this "Time in Market" in the HTML report. It counts
+        # the share of periods with a non-zero return, which is not the share
+        # of capital deployed -- but it is the standard name, so it keeps it.
+        "time_in_market": stat("exposure"),
         "recovery_factor": stat("recovery_factor"),
         "ulcer_index": stat("ulcer_index"),
         "best_period": stat("best"),
@@ -432,6 +440,97 @@ def performance(result: BacktestResult) -> Dict[str, Any]:
     })
     nonzero = int((returns.abs() > 1e-12).sum())
     out["flat_periods"] = int(len(returns)) - nonzero
+    out["tearsheet"] = tearsheet(returns, periods)
+    return out
+
+
+def _metric_key(label: str) -> str:
+    """A quantstats display label as a stable-ish snake_case key.
+
+    The labels are meant for a browser, so they carry characters a key should
+    not: "CAGR﹪" uses a full-width percent sign, "Sortino/√2" a root, "3Y
+    (ann.)" a leading digit and a dot.
+    """
+    text = (label.strip()
+            .replace("√", "sqrt")
+            .replace("﹪", "_pct")
+            .replace("%", "_pct")
+            .replace("/", "_")
+            .replace("&", "_and_"))
+    out = []
+    for char in text.lower():
+        out.append(char if char.isalnum() else "_")
+    key = "".join(out)
+    while "__" in key:
+        key = key.replace("__", "_")
+    return key.strip("_")
+
+
+def _metric_value(value: Any) -> Any:
+    """Keep numbers as numbers, dates as strings, and blanks as null."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return value if math.isfinite(float(value)) else None
+    text = str(value).strip()
+    # quantstats writes "-" for a metric it could not compute, and leaves a
+    # cell empty for some. Neither is a value.
+    if text in ("", "-", "nan", "NaN", "None"):
+        return None
+    try:
+        number = float(text.rstrip("%"))
+    except ValueError:
+        return text
+    return number if math.isfinite(number) else None
+
+
+def tearsheet(returns, periods: int) -> Dict[str, Any]:
+    """Every row of quantstats' full HTML report, as a dict.
+
+    Mirrored from `qs.reports.metrics(mode="full")` -- the same call the HTML
+    is built from -- rather than assembled from a list of metric names here,
+    so this cannot fall behind the tearsheet it is supposed to match.
+    """
+    try:
+        import quantstats as qs
+        frame = qs.reports.metrics(returns, mode="full", display=False,
+                                   periods_per_year=periods)
+    except Exception as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+    out: Dict[str, Any] = {"available": True, "metrics": {}, "labels": {}}
+    try:
+        column = frame.columns[0]
+        for label, value in frame[column].items():
+            key = _metric_key(str(label))
+            if not key:
+                continue
+            out["metrics"][key] = _metric_value(value)
+            # The original label kept alongside, so a reader can match a row
+            # against the HTML without reversing the key mangling.
+            out["labels"][key] = str(label).strip()
+    except Exception as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+    # One backfill, for one reason: `metrics()` leaves the Max Drawdown cell
+    # empty while the HTML report shows a figure, because that block is built
+    # from drawdown_details() -- which is empty whenever the series ends still
+    # underwater, as a losing run does. `max_drawdown()` answers directly, so
+    # the blank is a formatting artefact rather than a missing quantity, and
+    # the cell a reader checks first should not be the one that is empty.
+    #
+    # The other blanks in that block -- Max DD Date, Period Start, Period End,
+    # Longest DD Days, Avg. Drawdown Days -- are NOT backfilled. They describe
+    # a completed drawdown, and a run that never recovered does not have one.
+    # Null is the true answer there.
+    if out["metrics"].get("max_drawdown") is None:
+        try:
+            value = float(qs.stats.max_drawdown(returns))
+            if math.isfinite(value):
+                out["metrics"]["max_drawdown"] = round(value, 4)
+                out["labels"].setdefault("max_drawdown", "Max Drawdown")
+        except Exception:
+            pass
     return out
 
 
@@ -967,6 +1066,8 @@ def render_markdown(doc: dict) -> str:
             f"| Calmar | {_num(perf['calmar'])} |")
         add(f"| CAGR | {_pct(perf['cagr'])} "
             f"| annualised volatility | {_pct(perf['volatility_annual'])} |")
+        add(f"| time in market | {_pct(perf.get('time_in_market'))} "
+            f"| observations | {perf['observations']} |")
         add(f"| best {unit} | {_pct(perf['best_period'])} "
             f"| worst {unit} | {_pct(perf['worst_period'])} |")
         add(f"| winning {unit}s | "
@@ -996,6 +1097,32 @@ def render_markdown(doc: dict) -> str:
             "compare runs that differ only in signal parameters, and unsafe "
             "across runs that differ in sizing.")
         add("")
+        # Every row of the tearsheet, so this file is a complete substitute
+        # for opening the HTML. Collapsed because it is long and most of it is
+        # not what a reader came for.
+        sheet = perf.get("tearsheet") or {}
+        if sheet.get("available") and sheet.get("metrics"):
+            labels = sheet.get("labels") or {}
+            add(f"<details><summary>Every quantstats metric "
+                f"({len(sheet['metrics'])} rows, the same set as the HTML "
+                f"tearsheet)</summary>")
+            add("")
+            add("| metric | value | key |")
+            add("|---|---:|---|")
+            for key, value in sheet["metrics"].items():
+                shown = "—" if value is None else (
+                    f"{value:,.4f}" if isinstance(value, float) else value)
+                add(f"| {labels.get(key, key)} | {shown} | `{key}` |")
+            add("")
+            add("</details>")
+            add("")
+            add("_Those carry the tearsheet's display precision (Sharpe "
+                "-9.59, not -9.589301) because matching the HTML is the point "
+                "of them. The table above has the full precision, and its key "
+                "names are ours rather than quantstats' labels, so a script "
+                "should read that one._")
+            add("")
+
         if perf.get("skew") is not None and perf.get("kurtosis") is not None \
                 and (abs(perf["skew"]) > 1 or perf["kurtosis"] > 3):
             add(f"The return distribution is skewed {perf['skew']:+.2f} with "
