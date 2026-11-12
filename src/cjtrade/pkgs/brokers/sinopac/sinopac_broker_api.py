@@ -12,6 +12,10 @@ from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.base_broker_api import *
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_bidask
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_kbar
+# Named explicitly rather than taken from one of this module's star imports,
+# so the annotation in get_kbars resolves to something a reader (and a linter)
+# can follow back to its definition.
+from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_result
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_snapshot
 from cjtrade.pkgs.brokers.sinopac._internal_func import _retrieve_sinopac_trade_by_cj_order_id
@@ -192,34 +196,80 @@ class SinopacBrokerAPI(BrokerAPIBase):
         return _from_sinopac_bidask(received_bidask[-1])
 
 
+    # Shioaji refuses a kbars request whose start/end span more than 30 days.
+    # 28 rather than 30 because the documented limit does not say whether it
+    # counts the end date, and one extra request per 28 days of history is not
+    # a cost worth the ambiguity.
+    _KBAR_MAX_DAYS = 28
+
     # start: str in "YYYY-MM-DD" format
     # end: str in "YYYY-MM-DD" format (exclusive - will not include this date)
     # interval: str (e.g. 1m/3m/5m/15m/30m/1h/1d)
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
+        """Kbars for any date range, in windows Shioaji will accept.
+
+        The 30-day cap is a property of the Sinopac API, so the splitting
+        belongs here rather than in each caller. It was previously done by
+        ArenaX_BackendBase.kbars (30-day chunks) and by
+        market_data._fetch_from_real_account (28-day chunks) and by nobody
+        else -- so the same rule was written twice with two different numbers,
+        while real_backend.kbars and every direct client caller passed the
+        range straight through. `cjtrade_shell`'s kbars command takes the range
+        from the user, and the example in pkgs/analytics/technical asks for a
+        whole year.
+
+        Those two callers now hand this an already-short range and the loop
+        below runs once, so they are redundant rather than wrong.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        # Convert end date from exclusive to inclusive for Shioaji API
         from datetime import datetime, timedelta
-        end_date = datetime.strptime(end, '%Y-%m-%d')
-        adjusted_end_date = end_date - timedelta(days=1)
-        adjusted_end = adjusted_end_date.strftime('%Y-%m-%d')
+
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        if end_dt <= start_dt:
+            return []
 
         sinopac_product = _to_sinopac_product(self.api, product)
+        base_kbars: List[Kbar] = []
+        window_start = start_dt
 
-        try:
-            # Always fetch 1-minute data from Shioaji (only supported interval)
-            kbars_1m = self.api.kbars(contract=sinopac_product, start=start, end=adjusted_end)
-            base_kbars = _from_sinopac_kbar(kbars_1m, product.symbol)
-        except Exception as e:
-            print(f"Error fetchin sinopac kbars: {e}")
-            raise   # re-raise so callers can handle / fallback properly
+        while window_start < end_dt:
+            window_end = min(window_start + timedelta(days=self._KBAR_MAX_DAYS),
+                             end_dt)
+            # `end` is exclusive in this method's contract and inclusive in
+            # Shioaji's, so every window converts the same way the whole range
+            # used to. Windows are half-open and advance by their own end, so
+            # no bar is fetched twice and none is skipped.
+            try:
+                kbars_1m = self.api.kbars(
+                    contract=sinopac_product,
+                    start=window_start.strftime("%Y-%m-%d"),
+                    end=(window_end - timedelta(days=1)).strftime("%Y-%m-%d"),
+                )
+                base_kbars.extend(_from_sinopac_kbar(kbars_1m, product.symbol))
+            except Exception as e:
+                # Still raised rather than returning what arrived so far.
+                # Callers depend on it: ArenaX_BackendBase.kbars falls through
+                # to yfinance on an exception, and it records cache coverage
+                # for whatever it was handed -- a silent partial result would
+                # be written to the price cache and marked complete.
+                print(f"Error fetching sinopac kbars for {product.symbol} "
+                      f"[{window_start:%Y-%m-%d} to {window_end:%Y-%m-%d}]: {e}")
+                raise
+
+            window_start = window_end
+
+        base_kbars.sort(key=lambda k: k.timestamp)
 
         # If requesting 1m data, return as-is
         if interval == "1m":
             return base_kbars
 
-        # For other intervals, use internal aggregation
+        # Aggregated once over the whole range, never per window: a bar longer
+        # than a window -- 1w, 1M -- would otherwise be cut at the boundary and
+        # emitted as two partial bars.
         try:
             from ._internal_func import _aggregate_kbars
             return _aggregate_kbars(base_kbars, interval)
