@@ -372,13 +372,54 @@ class ArenaX_BackendBase:
                                 source="broker_api",
                                 overwrite=False
                             )
-                            self.market.price_db.record_coverage(
-                                symbol=symbol,
-                                timeframe=interval,
-                                start_ts=chunk_start_dt,
-                                end_ts=chunk_end_dt,
-                                source="broker_api"
-                            )
+                            # Claim only the range the bars actually cover.
+                            #
+                            # This used to record the whole requested chunk
+                            # unconditionally, which marks a range "covered"
+                            # even when the broker returned nothing. Coverage
+                            # is what compute_missing_ranges() consults, so a
+                            # range wrongly marked covered is never asked for
+                            # again: every later run skips the broker and
+                            # serves a truncated set of bars, permanently and
+                            # silently. Found in the live cache -- 2317's 1m
+                            # coverage claimed 282 days past its last real bar,
+                            # out to 2027-08-18, so any request inside that
+                            # window reported zero gaps and returned zero bars.
+                            #
+                            # Nothing fetched means nothing is known about the
+                            # range, so it stays a gap and a later run can try
+                            # again -- which is what should happen for a window
+                            # whose data does not exist yet.
+                            if fetched:
+                                # The requested chunk, clamped so it never
+                                # reaches into the future.
+                                #
+                                # Deliberately NOT narrowed to the bars' own
+                                # first/last timestamps: bars exist only
+                                # 09:01-13:30, so a request for a whole day
+                                # would leave 00:00-09:01 and 13:30-23:59
+                                # permanently "missing" and every later run
+                                # would re-ask the broker for the margins of
+                                # every day it already has. Once a fetch comes
+                                # back with bars, the broker has answered for
+                                # that window and the quiet parts of it are the
+                                # market being closed, not data we lack.
+                                #
+                                # The future is the one thing a successful
+                                # fetch cannot vouch for, and that is exactly
+                                # what went wrong here.
+                                self.market.price_db.record_coverage(
+                                    symbol=symbol,
+                                    timeframe=interval,
+                                    start_ts=chunk_start_dt,
+                                    end_ts=min(chunk_end_dt, datetime.now()),
+                                    source="broker_api"
+                                )
+                            else:
+                                print(f"[kbars] {symbol} [{range_start} to "
+                                      f"{range_end}] returned no bars — "
+                                      f"leaving it uncovered so it can be "
+                                      f"retried")
                         except Exception as e:
                             print(f"[kbars] Error caching fetched data: {e}")
 

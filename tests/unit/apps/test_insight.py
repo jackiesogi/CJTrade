@@ -817,3 +817,200 @@ def test_main_reports_an_unreadable_result_file_rather_than_a_traceback(
     monkeypatch.setattr(insight.paths, "reports_dir", lambda: tmp_path)
     with pytest.raises(SystemExit, match="could not read"):
         main([str(broken)])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Provenance — which execution path produced the numbers
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The two paths that write a BacktestResult disagree, measured: on the same
+# 32,229 bars of 2357 with the same Bollinger parameters, same-bar unconditional
+# fills give 113 fills and -2,774, while limit orders that must wait for a close
+# to cross give 101 and -3,016. So a report that does not say which path it came
+# from is not interpretable, and the field has to survive a save/load cycle.
+
+ONESHOT_PROVENANCE = {
+    "path": "oneshot",
+    "strategy": "BB",
+    "interval": "1m",
+    "symbols": ["2317"],
+    "requested_start": "2023-01-16",
+    "requested_end": "2023-01-20",
+    "duration_days": 4,
+    "start_was_explicit": True,
+    "bars": 19,
+    "params": {"bb__window_size": 100, "bb__std_dev": 2.0},
+    "params_hash": "abc12345",
+    "cost_model": {"commission_rate": 0.001425, "commission_discount": 1.0,
+                   "min_commission": 20.0, "stock_tax_rate": 0.003,
+                   "etf_tax_rate": 0.001, "slippage_model": "none",
+                   "slippage_pct": 0.0005},
+    "execution_model": "A signal fills in the bar that produced it.",
+    "comparable_to_engine": False,
+}
+
+
+def test_provenance_survives_a_save_and_load(tmp_path):
+    path = tmp_path / "oneshot_2317_abc12345.pkl"
+    result = _result()
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    result.save(str(path))
+    assert BacktestResult.load(str(path)).provenance == ONESHOT_PROVENANCE
+
+
+def test_a_result_pickled_before_provenance_existed_still_loads(tmp_path):
+    """The field defaults to None, so an older run reports "unknown" rather
+    than failing to open."""
+    path = tmp_path / "engine_old.pkl"
+    _result().save(str(path))
+    assert BacktestResult.load(str(path)).provenance is None
+
+
+def test_build_carries_provenance_through(priced, tmp_path):
+    result = _result()
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    doc = build(result, tmp_path / "oneshot_x.pkl")
+    assert doc["provenance"]["path"] == "oneshot"
+    assert doc["provenance"]["interval"] == "1m"
+
+
+def test_markdown_states_the_execution_path_before_the_numbers(priced, tmp_path):
+    """Placed ahead of the run summary on purpose: it governs how every number
+    below it should be read."""
+    result = _result()
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    md = render_markdown(build(result, tmp_path / "oneshot_x.pkl"))
+    assert "## How this run was produced" in md
+    assert md.index("## How this run was produced") < md.index("## The run")
+    assert "oneshot" in md
+
+
+def test_markdown_warns_that_a_oneshot_is_not_engine_comparable(priced, tmp_path):
+    result = _result()
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    md = render_markdown(build(result, tmp_path / "oneshot_x.pkl"))
+    assert "not** comparable" in md or "not comparable" in md
+
+
+def test_markdown_says_so_when_provenance_is_missing(priced, tmp_path):
+    """Silence would read as "this is fine"; an unknown path is a real caveat
+    because the two paths produce different numbers."""
+    md = render_markdown(build(_result(), tmp_path / "engine_x.pkl"))
+    assert "records no provenance" in md
+
+
+def test_markdown_lists_the_parameters_when_provenance_has_them(priced, tmp_path):
+    result = _result()
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    md = render_markdown(build(result, tmp_path / "oneshot_x.pkl"))
+    assert "bb__window_size" in md and "bb__std_dev" in md
+
+
+def test_a_random_start_date_is_flagged(priced, tmp_path):
+    """An unseeded random window makes two "identical" runs incomparable, so
+    it has to be visible in the report rather than only in the CLI."""
+    result = _result()
+    result.provenance = {**ONESHOT_PROVENANCE, "start_was_explicit": False}
+    md = render_markdown(build(result, tmp_path / "oneshot_x.pkl"))
+    assert "RANDOM" in md
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Blind spots that provenance has closed must drop off the list
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_parameters_leave_the_blind_spot_list_once_recorded():
+    """A report that prints the parameters in one section and calls them
+    invisible in another teaches the reader to distrust the section."""
+    titles = [t for t, _ in insight.cannot_see(ONESHOT_PROVENANCE)]
+    assert not any("parameters" in t.lower() for t in titles)
+    assert not any("symbols" in t.lower() for t in titles)
+
+
+def test_the_blind_spots_provenance_cannot_answer_remain():
+    titles = [t for t, _ in insight.cannot_see(ONESHOT_PROVENANCE)]
+    assert any("Risk-gate" in t for t in titles)
+    assert any("bar by bar" in t for t in titles)
+
+
+def test_without_provenance_every_blind_spot_is_listed():
+    assert len(insight.cannot_see(None)) == len(insight.CANNOT_SEE)
+
+
+def test_blind_spot_entries_are_pairs_whatever_the_tagging():
+    for entry in insight.cannot_see(ONESHOT_PROVENANCE) + insight.cannot_see(None):
+        assert len(entry) == 2, entry
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Discovery across both kinds of run
+# ══════════════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+def mixed_reports(tmp_path, monkeypatch):
+    """One run from each path, as they are actually named on disk."""
+    directory = tmp_path / "reports"
+    directory.mkdir()
+    monkeypatch.setattr(insight.paths, "reports_dir", lambda: directory)
+    import os
+    names = ("engine_aaaa1111", "oneshot_2357_bbbb2222")
+    for index, name in enumerate(names):
+        path = directory / f"{name}.pkl"
+        _result(session_id=name.split("_")[-1]).save(str(path))
+        os.utime(path, (1_700_000_000 + index, 1_700_000_000 + index))
+    return directory
+
+
+def test_available_runs_finds_both_paths(mixed_reports):
+    stems = {p.stem for p in insight.available_runs()}
+    assert stems == {"engine_aaaa1111", "oneshot_2357_bbbb2222"}
+
+
+def test_resolve_finds_a_oneshot_by_session_prefix(mixed_reports):
+    assert resolve("bbbb").stem == "oneshot_2357_bbbb2222"
+
+
+def test_resolve_finds_a_oneshot_by_its_symbol(mixed_reports):
+    """The symbol is in the file name, so it is a usable handle too."""
+    assert resolve("2357").stem == "oneshot_2357_bbbb2222"
+
+
+def test_neither_prefix_matches_every_run(mixed_reports):
+    """"engine" and "oneshot" are file-name noise, not session ids."""
+    for noise in ("engine", "oneshot"):
+        with pytest.raises(SystemExit, match="no run matching"):
+            resolve(noise)
+
+
+def test_insight_output_is_not_picked_up_as_a_run(mixed_reports):
+    """The reports it writes live beside the runs it read."""
+    (mixed_reports / "engine_aaaa1111.insight.pkl").write_bytes(b"x")
+    assert all(not p.name.endswith(".insight.pkl")
+               for p in insight.available_runs())
+
+
+def test_list_names_the_path_of_each_run(mixed_reports, capsys):
+    assert main(["--list"]) == 0
+    printed = capsys.readouterr().out
+    assert "oneshot" in printed and "engine" in printed
+
+
+def test_the_terminal_summary_names_the_path_and_interval(
+        mixed_reports, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    path = mixed_reports / "oneshot_2357_bbbb2222.pkl"
+    result = BacktestResult.load(str(path))
+    result.provenance = dict(ONESHOT_PROVENANCE)
+    result.save(str(path))
+    main(["bbbb", "--out", str(tmp_path / "out")])
+    printed = capsys.readouterr().out
+    assert "[oneshot, 1m]" in printed
+
+
+def test_the_terminal_summary_warns_when_provenance_is_absent(
+        mixed_reports, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    main(["aaaa", "--out", str(tmp_path / "out")])
+    assert "no provenance" in capsys.readouterr().out

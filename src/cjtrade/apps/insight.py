@@ -8,6 +8,12 @@ Turn a finished run into something an expert can diagnose in one read.
     insight path/to/engine_x.pkl an explicit result file
     insight --list               what runs are on this machine
 
+Reads either kind of run: the oneshot backtester's `oneshot_*.pkl` and the
+trading engine's `engine_*.pkl`. They are NOT comparable with each other --
+oneshot fills a signal in the bar that produced it while the engine waits for
+a close to cross a limit price -- so the report leads with which path produced
+the numbers, taken from the result's `provenance`.
+
 Writes two files next to the run's own artefacts and prints both paths: a
 markdown report to read, and a JSON document to parse.
 
@@ -614,6 +620,11 @@ def find_problems(act: Activity, trips: TripStats, days: List[DayJoin],
 #  Reports
 # ═══════════════════════════════════════════════════════════════════════════
 
+# (title, body) or (title, body, answered_by) where answered_by names the
+# provenance key that closes the gap. A blind spot that provenance has since
+# filled in must drop off the list -- a report that prints the parameters in
+# one section and calls them invisible in another teaches a reader to stop
+# believing the section.
 CANNOT_SEE = [
     ("Risk-gate refusals",
      "How many signals were refused before reaching the broker, and for which "
@@ -631,12 +642,14 @@ CANNOT_SEE = [
      "bots and none of them reach the pickle."),
     ("The strategy's own parameters",
      "Window lengths, thresholds, position sizing. Without them a reader can "
-     "see that behaviour is too sensitive but not to which number."),
+     "see that behaviour is too sensitive but not to which number.",
+     "params"),
     ("Which symbols were watched",
      "Only the ones that were filled, which is how the market sections below "
      "pick what to load. A symbol the strategy watched all run and never "
      "traded is the most interesting one to look at, and it leaves no trace "
-     "in the pickle -- so a run with no fills gets no market section at all."),
+     "in the pickle -- so a run with no fills gets no market section at all.",
+     "symbols"),
     ("Bars served and bars dropped",
      "Whether the strategy saw the whole window. A dropped bar is a hole in "
      "its price history that it never knows about."),
@@ -662,6 +675,23 @@ CAVEATS = [
     "actually distribute. It says whether a day went somewhere, not why, and "
     "a day can range for five hours and then trend for one.",
 ]
+
+
+def cannot_see(provenance: Optional[dict]) -> List[tuple]:
+    """The blind spots that are still blind, given what provenance recorded.
+
+    Returns (title, body) pairs with the `answered_by` tag dropped, so the
+    renderers do not need to know about the filtering.
+    """
+    prov = provenance or {}
+    out: List[tuple] = []
+    for entry in CANNOT_SEE:
+        title, body = entry[0], entry[1]
+        answered_by = entry[2] if len(entry) > 2 else None
+        if answered_by and prov.get(answered_by):
+            continue
+        out.append((title, body))
+    return out
 
 
 def _bar(value: float, scale: float, width: int = 18) -> str:
@@ -691,6 +721,64 @@ def render_markdown(doc: dict) -> str:
         add(f"  {f['evidence']}  ")
         add(f"  _{f['why']}_")
     add("")
+
+    # ── provenance: governs how everything below should be read ───────────
+    add("## How this run was produced")
+    add("")
+    prov = doc.get("provenance")
+    if not prov:
+        add("_The result file records no provenance, so which execution path "
+            "produced it is unknown. It predates the field. Treat the "
+            "execution assumptions below as unverified: a oneshot run and a "
+            "trading-engine run disagree on fills, costs and capital, and "
+            "nothing here can tell you which one this was._")
+        add("")
+    else:
+        add("| | |")
+        add("|---|---|")
+        add(f"| path | **{prov.get('path', 'unknown')}** |")
+        add(f"| strategy | {prov.get('strategy', '—')} |")
+        add(f"| interval | **{prov.get('interval', '—')}** |")
+        add(f"| symbols | {', '.join(prov.get('symbols') or []) or '—'} |")
+        add(f"| requested window | {prov.get('requested_start', '—')} → "
+            f"{prov.get('requested_end', '—')}"
+            + ("" if prov.get("start_was_explicit", True)
+               else " ⚠ start date was RANDOM, not given") + " |")
+        add(f"| bars fed to the strategy | {prov.get('bars', 0):,} |")
+        add(f"| parameter set | `{prov.get('params_hash', '—')}` |")
+        add("")
+        if prov.get("execution_model"):
+            add(f"**Execution model.** {prov['execution_model']}")
+            add("")
+        if prov.get("comparable_to_engine") is False:
+            add("> These numbers are **not** comparable with a trading-engine "
+                "run of the same strategy and parameters. The engine places a "
+                "limit order that fills only when a later close crosses it, "
+                "splits capital across bots, and applies a risk gate — none "
+                "of which happens here. Use this to rank candidates, then "
+                "confirm the shortlist on the engine.")
+            add("")
+        params = prov.get("params") or {}
+        if params:
+            add("<details><summary>Parameters in full</summary>")
+            add("")
+            add("| parameter | value |")
+            add("|---|---|")
+            for key in sorted(params):
+                add(f"| `{key}` | {params[key]} |")
+            add("")
+            add("</details>")
+            add("")
+        costs = prov.get("cost_model") or {}
+        if costs:
+            add(f"Cost model: commission {costs.get('commission_rate', 0):.4%}"
+                f" x {costs.get('commission_discount', 1)} (min NT${costs.get('min_commission', 0):.0f}),"
+                f" tax {costs.get('stock_tax_rate', 0):.2%} stock /"
+                f" {costs.get('etf_tax_rate', 0):.2%} ETF on sells,"
+                f" slippage `{costs.get('slippage_model', 'none')}`"
+                + (f" at {costs.get('slippage_pct', 0):.3%}"
+                   if costs.get("slippage_model") != "none" else "") + ".")
+            add("")
 
     add("## The run")
     add("")
@@ -920,6 +1008,11 @@ def build(result: BacktestResult, result_path: Path) -> dict:
             "turnover": round(act.traded_value / result.initial_balance, 2)
             if result.initial_balance else 0.0,
         },
+        # Which execution path produced this and under what assumptions.
+        # getattr, not attribute access: results pickled before the field
+        # existed have no value for it, and an old run is exactly the case
+        # where a reader most needs to be told the provenance is unknown.
+        "provenance": getattr(result, "provenance", None),
         "activity": act.to_dict(),
         "round_trips": trips.to_dict(),
         "market": market,
@@ -927,7 +1020,7 @@ def build(result: BacktestResult, result_path: Path) -> dict:
         "by_regime": by_regime(days),
         "sessions": {sym: [s.to_dict() for s in ss]
                      for sym, ss in sessions_by_symbol.items()},
-        "cannot_see": CANNOT_SEE,
+        "cannot_see": cannot_see(getattr(result, "provenance", None)),
         "caveats": CAVEATS,
     }
     doc["findings"] = [f.to_dict() for f in find_problems(
@@ -939,13 +1032,33 @@ def build(result: BacktestResult, result_path: Path) -> dict:
 #  Finding the run
 # ═══════════════════════════════════════════════════════════════════════════
 
+# The two things that write a BacktestResult: the trading engine
+# (poc/trading_engine/main2.py) and the oneshot backtester
+# (apps/cjtrade_system/cjtrade_oneshot_backtest.py). Both land in reports_dir;
+# the prefix is the only thing that distinguishes them by file name, and the
+# `provenance` field is what distinguishes them properly.
+RUN_PREFIXES = ("engine_", "oneshot_")
+
+
 def available_runs() -> List[Path]:
     """Every result file on this machine, newest first."""
     directory = paths.reports_dir()
     if not directory.exists():
         return []
-    return sorted((p for p in directory.glob("engine_*.pkl")),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
+    found: List[Path] = []
+    for prefix in RUN_PREFIXES:
+        found.extend(directory.glob(f"{prefix}*.pkl"))
+    # Exclude our own output, which lands beside the run it describes and
+    # would otherwise be picked up as a run on the next invocation.
+    found = [p for p in found if not p.name.endswith(".insight.pkl")]
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def _strip_prefix(stem: str) -> str:
+    for prefix in RUN_PREFIXES:
+        if stem.startswith(prefix):
+            return stem[len(prefix):]
+    return stem
 
 
 def resolve(target: Optional[str]) -> Path:
@@ -955,11 +1068,11 @@ def resolve(target: Optional[str]) -> Path:
         if candidate.is_file():
             return candidate
         # Matched against the session id, not the file name: every file is
-        # called engine_<id>, so matching the stem would make a target of "e"
-        # or "eng" match every run on the machine for no useful reason.
-        key = target.removeprefix("engine_")
-        matches = [p for p in available_runs()
-                   if key in p.stem.removeprefix("engine_")]
+        # called engine_<id> or oneshot_<symbols>_<id>, so matching the whole
+        # stem would make a target of "e" or "one" match every run on the
+        # machine for no useful reason.
+        key = _strip_prefix(target)
+        matches = [p for p in available_runs() if key in _strip_prefix(p.stem)]
         if not matches:
             raise SystemExit(
                 f"no run matching {target!r}. Try `insight --list`.")
@@ -1003,7 +1116,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"{len(runs)} run(s) in {paths.reports_dir()}:")
         for path in runs:
             when = datetime.fromtimestamp(path.stat().st_mtime)
-            print(f"  {path.stem.removeprefix('engine_')}  "
+            # The prefix is how a run names its path without opening the
+            # pickle, which keeps --list fast on a directory of hundreds.
+            kind = ("oneshot" if path.name.startswith("oneshot_")
+                    else "engine" if path.name.startswith("engine_")
+                    else "?")
+            print(f"  {_strip_prefix(path.stem):<40} {kind:<8} "
                   f"{when:%Y-%m-%d %H:%M}  {path.stat().st_size:>9,} bytes")
         return 0
 
@@ -1033,9 +1151,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     # The whole point of the command: say where the two files are, plainly,
     # as the last thing on screen.
     flagged = [f for f in doc["findings"] if f["severity"] == "high"]
-    print(f"Run {doc['run']['session_id'][:8]} — {doc['activity']['fills']} fill(s), "
+    prov = doc.get("provenance") or {}
+    where = (f" [{prov['path']}"
+             + (f", {prov['interval']}" if prov.get("interval") else "")
+             + "]") if prov.get("path") else ""
+    print(f"Run {doc['run']['session_id'][:8]}{where} — "
+          f"{doc['activity']['fills']} fill(s), "
           f"{doc['round_trips']['count']} round trip(s), "
           f"net {doc['run']['net_pnl']:+,.2f}")
+    if not prov:
+        print("  ⚠ no provenance recorded — which execution path produced "
+              "this is unknown")
     if not doc["market"]["available"]:
         print("  ⚠ no price database, so the market sections are empty")
     elif not doc["market"]["symbols"]:
