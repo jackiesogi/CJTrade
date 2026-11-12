@@ -130,9 +130,9 @@ log_feed.setLevel(FEED_LOG_LEVEL)
 # the script itself and take nothing.
 BOT_ROSTER: list[tuple[str, str, str, tuple[str, ...]]] = [
     # (bot_id, script, symbol, extra argv)
-    ("Bot_C", "bot_c.py", "2317", ()),     # Bollinger mean reversion
+    # ("Bot_C", "bot_c.py", "2317", ()),     # Bollinger mean reversion
     # ("Bot_A", "bot_a.py", "0050", ()),   # monthly DCA, never sells
-    # ("Bot_B", "bot_b.py", "2357", ()),   # ADX regime switch
+    ("Bot_B", "bot_b.py", "2357", ()),   # ADX regime switch
     # A strategy somebody wrote, loaded from a file. See bot_custom.py and
     # cjtrade.pkgs.strategy.authoring.
     # ("Bot_U", "bot_custom.py", "2317", ("/path/to/strategy.py",)),
