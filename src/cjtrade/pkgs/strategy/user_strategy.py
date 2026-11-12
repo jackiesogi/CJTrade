@@ -629,10 +629,14 @@ class UserStrategy(BaseStrategy):
         # ask to sell more than exists.
         self._own_shares = 0
         self._own_cost = 0.0
-        # The last value each plotted series took, per bar. The runner reads
-        # and clears this; accumulating a series here would grow without bound
-        # over a long run and nothing in this process would ever read it.
+        # What the last bar's plot() calls asked for. Only the latest bar:
+        # accumulating the series here would grow without bound over a long
+        # run, and the runner that samples it is the thing that keeps history.
         self.plotted: Dict[str, float] = {}
+
+    def plots(self) -> Dict[str, float]:
+        """See BaseStrategy.plots -- whatever plot() was called with."""
+        return dict(self.plotted)
 
     # -- lifecycle --------------------------------------------------------
 

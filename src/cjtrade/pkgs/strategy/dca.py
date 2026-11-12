@@ -104,6 +104,17 @@ class DCA_Monthly(BaseStrategy):
 
     # ── monitoring ───────────────────────────────────────────────────────────
 
+    def plots(self) -> Dict[str, float]:
+        """The running average cost, which is the only line this strategy has.
+
+        A DCA chart's whole question is where the average sits against the
+        price, so that is what gets drawn. Nothing until the first purchase,
+        because an average of no purchases is not zero -- it does not exist.
+        """
+        if not self._shares:
+            return {}
+        return {"avg_cost": self._deployed / self._shares}
+
     def monitors(self) -> Dict[str, Any]:
         """See BaseStrategy.monitors. Plain floats, ints and strings only."""
         last = max(self._last_buy_at.values()) if self._last_buy_at else None

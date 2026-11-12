@@ -39,7 +39,6 @@ from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +205,26 @@ class BaseStrategy(ABC):
     # ------------------------------------------------------------------
     # Monitoring
     # ------------------------------------------------------------------
+
+    def plots(self) -> Dict[str, float]:
+        """Series this strategy wants drawn against the price, this bar.
+
+        Separate from monitors() because the two are consumed differently: a
+        monitor is a number to read now, a plot is a point in a series
+        accumulated over the run. A runner samples this once per bar and keeps
+        the history; the strategy only reports the current value.
+
+        Numbers only, and in the same units as the price where that makes
+        sense -- bands, moving averages, breakout levels. A value on a
+        different scale (an oscillator, a count) is still fine; it is the
+        chart's job to put it on its own axis.
+
+        Default is empty, so a strategy that does not care has nothing to say
+        and nothing breaks. The price itself is never returned here: every
+        runner already knows the bar it just handed over, and a strategy
+        re-reporting it would be a second answer that could disagree.
+        """
+        return {}
 
     def monitors(self) -> Dict[str, Any]:
         """Named values this strategy wants watched. Read-only and cheap.

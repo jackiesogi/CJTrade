@@ -151,13 +151,22 @@ class ADXAdaptiveStrategy(BaseStrategy):
 
     # ── monitoring ───────────────────────────────────────────────────────────
 
+    def plots(self) -> Dict[str, float]:
+        """Whatever levels the active regime is trading against.
+
+        Which keys appear changes with the regime, because the levels do: a
+        Donchian channel in a trend, support and resistance in a range. The
+        chart draws what it is given rather than expecting fixed names.
+        """
+        return {k: float(v) for k, v in self._levels.items()}
+
     def monitors(self) -> Dict[str, Any]:
         """See BaseStrategy.monitors. Plain floats, ints and strings only.
 
-        `adx` is the close-only approximation this strategy computes, not the
-        Wilder ADX -- see _calculate_adx. Reported anyway because the regime
-        switch is made against this number, so it is the one that explains the
-        behaviour.
+        `trend_strength` is the efficiency ratio this strategy computes, not
+        the Wilder ADX -- see _calculate_adx. Reported anyway because the
+        regime switch is made against this number, so it is the one that
+        explains the behaviour.
         """
         out: Dict[str, Any] = {
             "bars_seen":         self._n_bars,
