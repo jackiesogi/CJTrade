@@ -1227,3 +1227,204 @@ def test_daily_and_round_trip_statistics_are_not_confused(tmp_path, monkeypatch)
                       "payoff_ratio", "consecutive_losses", "exposure",
                       "kelly_criterion"):
         assert ambiguous not in perf, ambiguous
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  The full tearsheet, mirrored
+# ══════════════════════════════════════════════════════════════════════════
+#
+# An earlier version curated the metric list and left things out on judgement,
+# including `exposure` -- which quantstats labels "Time in Market" in the HTML.
+# An experimenter went looking for it and could not find it. The set is now
+# mirrored from `qs.reports.metrics(mode="full")`, the same call the HTML is
+# built from, so it cannot be short of the report it is compared against.
+
+def test_time_in_market_is_present():
+    """The specific metric that was reported missing. quantstats names it
+    `exposure` in the API and "Time in Market" in the report."""
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert perf["time_in_market"] is not None
+    assert 0.0 <= perf["time_in_market"] <= 1.0
+
+
+def test_time_in_market_is_rendered_in_the_main_table(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk())), tmp_path / "x.pkl"))
+    assert "time in market" in md
+
+
+def test_the_tearsheet_mirrors_the_whole_report():
+    """Not a count assertion against a magic number -- compared against the
+    live quantstats call, so a version that adds a metric does not fail this
+    and does not silently fall out of the report either."""
+    import quantstats as qs
+    result = _with_curve(_curve(_walk()))
+    sheet = insight.performance(result)["tearsheet"]
+    assert sheet["available"] is True
+    expected = qs.reports.metrics(
+        result.to_returns(), mode="full", display=False,
+        periods_per_year=result._returns_periods_per_year)
+    assert len(sheet["metrics"]) == len(expected)
+
+
+def test_every_tearsheet_row_keeps_its_original_label():
+    """So a reader can match a key back to the row in the HTML without
+    reversing the key mangling."""
+    sheet = insight.performance(_with_curve(_curve(_walk())))["tearsheet"]
+    assert set(sheet["labels"]) == set(sheet["metrics"])
+    assert all(sheet["labels"].values())
+
+
+def test_the_metrics_an_experimenter_asks_for_by_name_are_all_there():
+    sheet = insight.performance(_with_curve(_curve(_walk())))["tearsheet"]
+    for key in ("time_in_market", "sharpe", "sortino", "calmar", "omega",
+                "max_drawdown", "volatility_ann", "skew", "kurtosis",
+                "kelly_criterion", "profit_factor", "win_days", "tail_ratio",
+                "common_sense_ratio", "cpc_index", "serenity_index",
+                "recovery_factor", "ulcer_index", "payoff_ratio",
+                "gain_pain_ratio", "risk_of_ruin", "prob_sharpe_ratio",
+                "smart_sharpe", "outlier_win_ratio", "best_day", "worst_day",
+                "max_consecutive_wins", "max_consecutive_losses"):
+        assert key in sheet["metrics"], key
+
+
+@pytest.mark.parametrize("label, expected", [
+    ("CAGR﹪", "cagr_pct"),
+    ("Sortino/√2", "sortino_sqrt2"),
+    ("Smart Sortino/√2", "smart_sortino_sqrt2"),
+    ("3Y (ann.)", "3y_ann"),
+    ("Prob. Sharpe Ratio", "prob_sharpe_ratio"),
+    ("Expected Shortfall (cVaR)", "expected_shortfall_cvar"),
+    ("Daily Value-at-Risk", "daily_value_at_risk"),
+    ("Gain/Pain (1M)", "gain_pain_1m"),
+    ("Avg. Up Month", "avg_up_month"),
+    ("Time in Market", "time_in_market"),
+])
+def test_display_labels_become_usable_keys(label, expected):
+    """The labels are written for a browser, so they carry a full-width
+    percent sign, a square root, dots and slashes."""
+    assert insight._metric_key(label) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("-", None), ("", None), ("nan", None), ("None", None),
+    ("0.8", 0.8), ("-9.59", -9.59), ("2025-10-14", "2025-10-14"),
+    (0.5, 0.5), (None, None),
+])
+def test_a_blank_cell_is_null_and_a_date_stays_a_date(raw, expected):
+    assert insight._metric_value(raw) == expected
+
+
+def _sinking(n=60):
+    """A curve that ends underwater, so no drawdown ever completes -- which is
+    what a losing run looks like and the case quantstats leaves blank."""
+    return [100_000.0 - i * 50 for i in range(n)]
+
+
+def test_max_drawdown_is_backfilled_rather_than_left_blank():
+    """`metrics()` leaves that cell empty while the HTML shows a figure,
+    because the block is built from drawdown_details() -- which is empty
+    whenever the series never recovers. The cell a reader checks first should
+    not be the empty one."""
+    result = _with_curve(_curve(_sinking()))
+    perf = insight.performance(result)
+    assert perf["tearsheet"]["metrics"]["max_drawdown"] is not None
+    assert perf["tearsheet"]["metrics"]["max_drawdown"] < 0
+    # And it agrees with the figure computed directly for the core.
+    assert perf["tearsheet"]["metrics"]["max_drawdown"] == pytest.approx(
+        perf["max_drawdown"], abs=1e-4)
+
+
+def test_drawdown_period_rows_stay_null_when_no_drawdown_ever_completed():
+    """Not backfilled, deliberately: they describe a drawdown that ended, and
+    a run still underwater at the close does not have one. Null is true, and
+    inventing a number there would be worse than the blank."""
+    sheet = insight.performance(_with_curve(_curve(_sinking())))["tearsheet"]
+    for key in ("longest_dd_days", "max_dd_date", "avg_drawdown_days"):
+        assert sheet["metrics"][key] is None, key
+
+
+def test_completed_drawdowns_do_populate_the_period_rows():
+    """The other half: a curve that recovers has real drawdown periods, so
+    the blank above is about the data and not about the mirroring."""
+    sheet = insight.performance(_with_curve(_curve(_walk())))["tearsheet"]
+    assert sheet["metrics"]["longest_dd_days"] is not None
+
+
+def test_the_tearsheet_carries_display_precision_not_full_precision():
+    """Measured gotcha: a drawdown of -0.35% rounds to -0.00 at the two
+    decimals the report prints, so the mirrored cell reads 0 while the core
+    reads -0.003506. Faithful to the HTML, which is the point of it -- but a
+    script must read the core, and that is why both layers exist."""
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert perf["max_drawdown"] == pytest.approx(-0.0035, abs=5e-4)
+    assert perf["tearsheet"]["metrics"]["max_drawdown"] == 0
+
+
+def test_the_tearsheet_is_json_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    doc = build(_with_curve(_curve(_walk())), tmp_path / "x.pkl")
+    text = json.dumps(doc, default=str)
+    for token in ("Infinity", "-Infinity", "NaN"):
+        assert token not in text
+
+    def reject(constant):
+        raise AssertionError(f"illegal JSON constant {constant}")
+    json.loads(text, parse_constant=reject)
+
+
+def test_the_markdown_lists_every_tearsheet_row(tmp_path, monkeypatch):
+    """So the file is a complete substitute for opening the HTML."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    result = _with_curve(_curve(_walk()))
+    doc = build(result, tmp_path / "x.pkl")
+    md = render_markdown(doc)
+    assert "Every quantstats metric" in md
+    assert "Time in Market" in md
+    for label in doc["performance"]["tearsheet"]["labels"].values():
+        assert label in md, label
+
+
+def test_the_two_layers_are_documented_as_differing_in_precision(
+        tmp_path, monkeypatch):
+    """The tearsheet carries display precision; the core carries full. Saying
+    so stops someone treating a -9.59 and a -9.589301 as a disagreement."""
+    monkeypatch.setattr(insight.paths, "price_db_path",
+                        lambda: tmp_path / "absent.db")
+    md = render_markdown(build(_with_curve(_curve(_walk())), tmp_path / "x.pkl"))
+    assert "display precision" in md
+
+
+def test_the_core_keeps_more_precision_than_the_tearsheet():
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    core, mirrored = perf["sharpe"], perf["tearsheet"]["metrics"]["sharpe"]
+    assert core == pytest.approx(mirrored, abs=0.01)
+    assert len(str(core).split(".")[-1]) >= len(str(mirrored).split(".")[-1])
+
+
+def test_the_tearsheet_explains_itself_when_it_cannot_be_built(monkeypatch):
+    import quantstats as qs
+
+    def boom(*a, **k):
+        raise RuntimeError("quantstats exploded")
+
+    monkeypatch.setattr(qs.reports, "metrics", boom)
+    sheet = insight.performance(_with_curve(_curve(_walk())))["tearsheet"]
+    assert sheet["available"] is False
+    assert "quantstats exploded" in sheet["reason"]
+
+
+def test_a_failed_tearsheet_does_not_take_the_core_with_it(monkeypatch):
+    """Half a report beats none, and the core is what a sweep reads."""
+    import quantstats as qs
+
+    def boom(*a, **k):
+        raise RuntimeError("nope")
+
+    monkeypatch.setattr(qs.reports, "metrics", boom)
+    perf = insight.performance(_with_curve(_curve(_walk())))
+    assert perf["available"] is True
+    assert perf["sharpe"] is not None
