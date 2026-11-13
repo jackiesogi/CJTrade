@@ -1,34 +1,47 @@
 # CJTrade Shell
 
->An interactive shell for trading.
+> An interactive shell for trading.
 
-Currently there are 21 commands for you to...
-- Manipulate your bank account.
-- Place `BUY` / `SELL` order.
-- Search recent news.
-- Interact with LLM for financial advice.
+21 commands, which between them let you
 
-and more!
+- check your balance and positions,
+- place `BUY` / `SELL` orders and cancel what is still resting,
+- read quotes, five-level order books, K-bars and the day's movers,
+- search recent news and TWSE announcements,
+- ask an LLM for financial advice,
+
+and more. `help` lists everything; `help <command>` shows one command's
+arguments and an example.
+
+```sh
+uv run cjtrade --broker=arenax     # or --broker=sinopac
+```
 
 ![shell_help](./img/shell_help.png)
 
-## Package used
-Basically everything provided from CJTrade SDK, because this app was initially built for API functional testing.
+## Packages used
+
+Essentially all of the CJTrade SDK. This app was originally written to exercise
+the API, which is also why `uv run atest` drives it to test the brokers: every
+command is a thin wrapper over one SDK call, so a command that works is an API
+that works.
 
 ## Demo
 
 Below are some demo images:
 
-- List position (`lspos`)
+- List positions (`lspos`)
 
     ![lspos](./img/lspos.png)
 
-- Ask LLM (`llm`)
+- Ask an LLM (`llm`)
 
-    ![lspos](./img/llm.png)
+    ![llm](./img/llm.png)
 
-    Note that `llm` has context-awareness of your account state (cash balance, positions, trade history...), so actually you can ask for advice
+    `llm` is aware of your account state — cash balance, positions, trade
+    history — so you can ask about what you actually hold rather than
+    describing it first.
 
-- Place order(`buy`), List order(`lsodr`)
+- Place an order (`buy`), list orders (`lsodr`)
 
     ![order](./img/order.png)

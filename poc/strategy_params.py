@@ -139,6 +139,19 @@ if __name__ == "__main__":
         default=None,
         help="Existing PARAMS string for pre-fill (e.g. 'bb__window_size:20')",
     )
+    # Whoever launched this run already decided how it asks questions --
+    # poc/backtest.sh reads --renderer once and passes it to both of its forms.
+    # This used to be hardcoded to "web", so a terminal-only run still had one
+    # form waiting in a browser nobody had been told to open.
+    #
+    # Names and validation belong to FormEngine, which rejects an unknown one
+    # with the list of valid ones; argparse choices here would be a second copy
+    # of that list, free to drift from it.
+    ap.add_argument(
+        "--renderer",
+        default="web",
+        help="How to present the form: cli | web | zenity | auto (default: web)",
+    )
     args = ap.parse_args()
 
     toml_str = build_params_toml(args.strategy, args.interval, args.params)
@@ -146,7 +159,7 @@ if __name__ == "__main__":
     if "[[field]]" not in toml_str:
         print("export PARAMS=''")
     else:
-        engine = FormEngine(toml_str=toml_str, renderer="web")
+        engine = FormEngine(toml_str=toml_str, renderer=args.renderer)
         values = engine.run()
         params_str = _dict_to_params_str(values)
         escaped = params_str.replace("'", "'\\''")
