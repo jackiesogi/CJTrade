@@ -4,100 +4,118 @@
 
 ![cjtrade_abstraction](../../../../img/cjtrade_intro.png)
 
-The `cjtrade` project provides a unified programming interface for developers to design trading strategies that work across different securities brokers (證券商). This abstraction layer (抽象層) bridges our CJTrade API to different brokers' backends, which allows user to write their own apps (e.g. trading strategies, account balance alerts ...) and deploy it across multiple broker platforms.
+The `cjtrade` project provides one programming interface for designing trading
+strategies that work across different securities brokers (證券商). This
+abstraction layer (抽象層) sits between the CJTrade API and each broker's own
+backend, so an app written once — a strategy, a balance alert, a monitoring
+dashboard — can be pointed at another broker without being rewritten.
 
 ## Supported Brokers
 
-### Currently Available
-- **Sinopac** (永豐金證券) - Full implementation with real-time data and trading
-- **ArenaX** (模擬環境) - Paper trading (模擬交易) environment for strategy testing
+### Currently available
+- **Sinopac** (永豐金證券) — full implementation with real-time data and trading
+- **ArenaX** (模擬環境) — the built-in simulator: paper trading (模擬交易) and
+  backtesting (回測)
 
-### Coming Soon
-- **Cathay** (國泰證券)
-- **Yuanta** (元大證券)
+### Coming soon
+- **Cathay** (國泰證券) — directory exists, methods not implemented
+- **Yuanta** (元大證券) — directory exists, methods not implemented
 - **Mega** (兆豐證券)
 - **Interactive Brokers** (盈透證券)
 
 ## Architecture
 
-### Core Abstraction
+### Core abstraction
 
-Each broker implementation is a directory containing a standalone broker interface. All brokers inherit from the `BrokerAPIBase` base class, which defines the required methods for:
+Each broker lives in its own directory under `src/cjtrade/pkgs/brokers/` and is
+self-contained. They all inherit from `BrokerAPIBase`, which declares what a
+broker must be able to do:
 
-- **Account Management**: Check balance, account status
-- **Market Data**: Real-time quotes, historical data, five-level order book
-- **Position Management**: List positions, calculate P&L
-- **Order Management**: Place, modify, cancel orders
-- **Historical Data**: K-bar data for backtesting and analysis
+- **Connection**: connect, disconnect, report whether it is still up
+- **Account**: balance, positions
+- **Market data**: snapshots, five-level order book, historical K-bars
+- **Orders**: place, cancel, list, and reconcile state with the broker
+- **Callbacks**: price and order-status pushes, where the broker supports them
+- **Session facts**: whether the market is open, and what time the broker thinks
+  it is
 
-### Interface Contract
+### Interface contract
 
-The `BrokerAPIBase` class in `broker_base.py` defines the contract that all broker implementations must follow:
+`base_broker_api.py` defines the contract every implementation must satisfy:
 
 ```python
-class BrokerAPIBase:
+class BrokerAPIBase(ABC):
     def connect(self) -> bool
-    def get_balance(self) -> dict
-    def get_bid_ask(self, product: Product) -> dict
+    def disconnect(self) -> None
+    def is_connected(self) -> bool
+    def get_balance(self) -> float
     def get_positions(self) -> List[Position]
-    def place_order(self, order: Order) -> dict
-    def get_kbars(self, product: Product, ...) -> List[KbarData]
+    def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk
+    def get_snapshots(self, products: List[Product]) -> List[Snapshot]
+    def get_kbars(self, products: List[Product], start: str, end: str,
+                  interval: str) -> List[Kbar]
+    def place_order(self, order: Order) -> OrderResult
+    def cancel_order(self, order_id: str) -> OrderResult
+    def list_orders(self) -> List[Trade]
+    def sync_state(self) -> List[OrderResult]
+    def is_market_open(self) -> bool
     # ... and more
 ```
 
-## Contributing a New Broker
+Return a CJTrade model, never the broker's own object. That is the whole
+promise the abstraction makes, and it is the one thing a new implementation
+tends to get wrong.
+
+## Contributing a new broker
 
 ### Prerequisites
 
 - Understanding of OOP (物件導向程式設計)
 - Access to the broker's API documentation
-- API credentials for testing (sandbox/demo accounts preferred)
+- API credentials for testing (sandbox / demo accounts preferred)
 
-### Step 1: Understand project structure
-
-Create a new directory for your broker implementation:
+### Step 1: Create the directory
 
 ```bash
-cd src/cjtrade/brokers/
+cd src/cjtrade/pkgs/brokers/
 mkdir your_broker_name
 cd your_broker_name
 ```
 
 Create the following files:
 ```bash
-touch __init__.py          # Python package initialization
-touch your_broker.py       # Main broker implementation
-touch _internal_func.py    # Helper functions (if needed)
+touch your_broker_api.py   # the implementation
+touch _internal_func.py    # data conversion and other helpers (if needed)
 ```
 
-### Step 2: Implement the Interface
-
-Create your broker class inheriting from `BrokerAPIBase`:
+### Step 2: Implement the interface
 
 ```python
-# your_broker.py
+# your_broker_api.py
 class YourBroker(BrokerAPIBase):
     def __init__(self, **config: Any):
         super().__init__(**config)
         self.api_key = config.get('api_key')
 
     def connect(self) -> bool:
-        # The real logic to connect to "YourBroker server"
-        do_something_1()
+        # the real logic that opens a session with YourBroker
+        ...
 
-    def get_balance(self) -> Dict:
-        # The real logic to retrieve account balance
-        do_something_2()
+    def get_balance(self) -> float:
+        # the real logic that reads the account balance
+        ...
 
-    def place_order(self, order: Order) -> Dict:
-        do_something_3()
+    def place_order(self, order: Order) -> OrderResult:
+        ...
 
-    # Implement all other required methods...
+    # implement the rest of the contract...
 ```
 
-### Step 3: Handle Data Conversion
+### Step 3: Handle data conversion
 
-Most broker APIs return data in their own format. You'll need to convert this to our standard models. (Note that CJTrade standard models exists in `models/` directory.)
+Most broker APIs answer in their own shapes. Convert those into the standard
+models in `pkgs/models/` before they leave your class, so nothing above this
+layer has to know which broker it is talking to.
 
 ```python
 def _convert_to_position(self, broker_position_data) -> Position:
@@ -110,67 +128,89 @@ def _convert_to_position(self, broker_position_data) -> Position:
     )
 ```
 
-You can refer to how `sinopac/` handle data conversion. You will find that all the data conversion functions (that are not related to core logic) are separated out of `sinopac.py` and are put into `_internal_func.py` for clarity.
+`sinopac/` is the reference. Note how everything that is conversion rather than
+core logic has been moved out of `sinopac_broker_api.py` into
+`_internal_func.py` — worth copying, because conversion code grows faster than
+you expect.
 
+### Step 4: Register with `AccountClient`
 
-### Step 4: Register with AccountClient
+**Why this step matters:** `AccountClient` is the single entry point users go
+through. Rather than importing and constructing a broker class themselves, they
+name a broker type and `AccountClient` builds and configures it. Skip this step
+and your broker works but nobody can reach it the normal way.
 
-**Why this step is crucial:** The `AccountClient` class serves as the central dispatch system that abstracts broker selection from end users. Instead of users having to manually instantiate different broker classes, they simply specify a broker type, and the `AccountClient` handles the creation and configuration automatically.
+`AccountClient` is a factory that gives you:
 
-#### The Dispatch Pattern
+1. **One interface** for every broker operation
+2. **Type-safe dispatch**, via the `BrokerType` enum
+3. **Lazy loading** — only the broker you asked for is imported, so a missing
+   SDK for a broker you are not using cannot break the import
+4. **Consistent configuration** handling
 
-The `AccountClient` implements a **factory pattern** that:
-1. **Unified Interface**: Provides a single entry point for all broker operations
-2. **Type-Safe Dispatch**: Uses `BrokerType` enum to ensure type safety
-3. **Lazy Loading**: Only imports and instantiates the requested broker
-4. **Configuration Management**: Handles broker-specific configuration consistently
+Both the enum and the dispatch live in
+`src/cjtrade/pkgs/brokers/account_client.py`.
 
-#### Implementation Steps
-
-1. **Add your broker type** to the `BrokerType` enum in `src/cjtrade/models/`:
+1. **Add your broker to the enum:**
 
 ```python
 class BrokerType(Enum):
-    SINOPAC = "sinopac"
-    MOCK = "mock"
-    YOUR_BROKER = "your_broker"  # Add this line
+    SINOPAC = "sinopac"  # 永豐金
+    YUANTA  = "yuanta"   # 元大
+    CATHAY  = "cathay"   # 國泰
+    MOCK    = "mock"     # 模擬券商 (舊，保留給既有程式)
+    ARENAX  = "arenax"   # 模擬券商 (新)
+    YOUR_BROKER = "your_broker"   # add this line
 ```
 
-2. **Update the dispatch logic** in `src/cjtrade/core/account_client.py`:
+2. **Add a branch to the dispatch:**
 
 ```python
-def _create_broker(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
-    """
-    Factory method to create broker instances based on type.
-    This dispatch system allows users to switch brokers without
-    changing their strategy code.
-    """
+def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
     if broker_type == BrokerType.SINOPAC:
-        from cjtrade.pkgs.brokers.sinopac.sinopac import SinopacBrokerAPI
+        from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
         return SinopacBrokerAPI(**config)
-    elif broker_type == BrokerType.MOCK:
-        from cjtrade.pkgs.brokers.arenax.mock_broker import MockBrokerAPI
-        return MockBrokerAPI(**config)
+    elif broker_type == BrokerType.ARENAX:
+        from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+        return ArenaXBrokerAPI_v2(**config)
     elif broker_type == BrokerType.YOUR_BROKER:
-        from cjtrade.pkgs.brokers.your_broker.your_broker import YourBroker
+        from cjtrade.pkgs.brokers.your_broker.your_broker_api import YourBroker
         return YourBroker(**config)
     else:
         raise ValueError(f"Unsupported broker type: {broker_type}")
 ```
 
-While bridging CJTrade API to a well-documented securities broker's API would be easy for a experienced developer, the order state transition is one of the most important thing you need to know before starting to write code.
+The import goes **inside** the branch, not at the top of the file. That is what
+keeps step 3 of the list above true.
+
+### Step 5: Know the order state machine
+
+Bridging the CJTrade API to a well-documented broker is straightforward work
+for an experienced developer. The part that is not straightforward, and the part
+worth reading before you write any code, is how an order moves between states —
+placed, committed and waiting to match, partially filled, filled, cancelled,
+rejected. Every broker names these differently and some collapse two of them
+into one, and the mapping you choose here is what everything above you will
+believe.
 
 > Order state transition graph
-![order_lifecycle_graph](../../../img/order_lifecycle.png)
+![order_lifecycle_graph](../../../../img/order_lifecycle.png)
 
+## Best practices
 
-## Best Practices
-Check existing implementations (`sinopac/` and `mock/`) for reference.
+Read an existing implementation first: `sinopac/` for a real broker, `arenax/`
+for one that answers over HTTP. Between them they cover nearly every awkward
+case you will hit.
 
 ## Maintenance
 
-### Version Compatibility
-Ensure your broker implementation remains compatible with:
-- The broker's API changes
-- CJTrade framework updates
-- Python version requirements
+### Version compatibility
+
+Keep your implementation working against:
+- the broker's own API changes
+- changes to the CJTrade models and `BrokerAPIBase`
+- the project's supported Python version (3.12+)
+
+Unit tests live in `tests/unit/pkgs/brokers/`, and
+`tests/run_broker_stability_tests.sh --broker=<name>` exercises the hot paths
+with normal input, edge cases and a stress pass.
