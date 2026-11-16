@@ -32,3 +32,6 @@ logs/
 .coverage
 .coverage.*
 htmlcov/
+
+# mkdocs build output
+site/
