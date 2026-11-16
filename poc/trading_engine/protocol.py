@@ -99,6 +99,12 @@ DEFAULT_ORDER_INTENT_PORT = 5556   # bot    PUSH -> master PULL
 # "2317X" if such a symbol ever existed.
 FEED_STATUS_TOPIC = "__feed__"
 
+# FeedStatus.reason master uses before the first bar, to find out which bots
+# are actually listening. A bot answers it with a BotStatus. PUB/SUB drops
+# whatever is published before a subscriber has joined, so this answer, not a
+# fixed sleep, is what tells master it can start without a bot missing bar 0.
+FEED_SYNC_REASON = "waiting for every bot"
+
 
 def price_feed_address(port: int = DEFAULT_PRICE_FEED_PORT) -> str:
     """Where master publishes bars and order reports; master binds, bots connect."""

@@ -262,7 +262,14 @@ instead builds the list of real bar timestamps from the price data before the
 run starts, and logical time is just a cursor into that list: one step per bar,
 and every step pushes the server's market time to match. The sequence of bars
 is therefore a property of the data, not of the machine, and `--speed=0` (flat
-out, no pacing at all) produces exactly the same bars as `--speed=60`.
+out, no pacing at all) produces exactly the same bars as `--speed=60`. The
+orders are reproducible too: before stepping to the next bar, master waits
+until every bot has answered the current one, so a bot's orders are always
+placed at the bar it decided on, however slow its process is.
+
+The bots that run are `BOT_ROSTER` in `poc/trading_engine/main2.py`, and a
+bot only starts if its symbol is in the watch list. The default roster is
+Bot_B (ADX regime switch) on 2357, which is what the command below runs.
 
 <!-- cjcheck: static -->
 ```sh
@@ -273,7 +280,7 @@ sleep 15
 
 ARENAX_PORT=8802 uv run python poc/trading_engine/main2.py \
   --broker=arenax --mode=backtest \
-  --watch-list=0050,2317 \
+  --watch-list=2357 \
   --fund=1000000 --days=30 --start-date=2025-09-01 \
   --speed=0
 ```

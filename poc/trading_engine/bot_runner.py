@@ -340,6 +340,17 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                     log.info(f"[{bot_id}] master is holding the feed "
                              f"({msg.reason}) — waiting, not exiting")
                     feed_held = True
+                if msg.reason == protocol.FEED_SYNC_REASON:
+                    # Master is asking who is listening before bar 0. Hearing
+                    # it proves our subscription is live, so say so.
+                    push_socket.send(protocol.encode(BotStatus(
+                        bot_id=bot_id, seq=last_seq, bar_index=bar_index,
+                        market_time=None, started_at=started_at,
+                        bars_seen=bar_index, bars_dropped=bars_dropped,
+                        inflight={s: f.order_id[:8] for s, f in inflight.items()},
+                        balance=ledger.balance, monitors={}, close=0.0,
+                        plots={},
+                    )))
                 continue
 
             if isinstance(msg, OrderReport):

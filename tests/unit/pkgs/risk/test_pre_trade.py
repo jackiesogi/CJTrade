@@ -38,59 +38,60 @@ class TestNotionalPerBot:
 
     def test_exposure_accumulates_across_orders(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 20, 250.0)        # 5,000
+        g.record_submitted("Bot_A", "2317", "BUY", 20, 250.0, order_id="o1")  # 5,000
         assert g.exposure("Bot_A") == 5_000.0
         assert g.check("Bot_A", "2317", "BUY", 20, 250.0) is None    # 10,000 total
-        g.record_submitted("Bot_A", "2317", "BUY", 20, 250.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 20, 250.0, order_id="o2")
         assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
 
     def test_allocations_are_independent_per_bot(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
         assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
         assert g.check("Bot_B", "2317", "BUY", 40, 250.0) is None
 
     def test_exposures_reports_every_bot_that_traded(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
-        g.record_submitted("Bot_B", "2317", "BUY", 20, 250.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
+        g.record_submitted("Bot_B", "2317", "BUY", 20, 250.0, order_id="o2")
         assert g.exposures == {"Bot_A": 10_000.0, "Bot_B": 5_000.0}
 
     def test_exposures_does_not_invent_a_bot(self):
-        """exposure() indexes a defaultdict and so inserts; this must not."""
+        """Asking about a bot must not register it."""
         g = _gate(max_notional_per_bot=10_000.0)
+        assert g.exposure("Bot_Ghost") == 0.0
         assert g.exposures == {}
         g.exposures["Bot_Ghost"] = 1.0        # a copy, so this is discarded
         assert g.exposures == {}
 
     def test_exposures_tracks_release(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
-        g.record_outcome("Bot_A", "BUY", 10_000.0, filled=False)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
+        g.record_outcome("o1", filled=False)
         assert g.exposures == {"Bot_A": 0.0}
 
     def test_a_dead_buy_releases_its_capital(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
         assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
-        g.record_outcome("Bot_A", "BUY", 10_000.0, filled=False)     # cancelled
+        g.record_outcome("o1", filled=False)                          # cancelled
         assert g.exposure("Bot_A") == 0.0
         assert g.check("Bot_A", "2317", "BUY", 40, 250.0) is None
 
     def test_a_filled_buy_keeps_holding_the_capital(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
-        g.record_outcome("Bot_A", "BUY", 10_000.0, filled=True)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
+        g.record_outcome("o1", filled=True)
         # The notional moved from resting to held; it is still deployed.
         assert g.exposure("Bot_A") == 10_000.0
         assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
 
     def test_a_filled_sell_frees_the_capital(self):
         g = _gate(max_notional_per_bot=10_000.0)
-        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0)
-        g.record_outcome("Bot_A", "BUY", 10_000.0, filled=True)
-        g.record_submitted("Bot_A", "2317", "SELL", 40, 250.0)
-        g.record_outcome("Bot_A", "SELL", 10_000.0, filled=True)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="b1")
+        g.record_outcome("b1", filled=True)
+        g.record_submitted("Bot_A", "2317", "SELL", 40, 250.0, order_id="s1")
+        g.record_outcome("s1", filled=True)
         assert g.exposure("Bot_A") == 0.0
 
     def test_sells_are_never_budget_checked(self):
@@ -99,9 +100,55 @@ class TestNotionalPerBot:
 
     def test_rounding_drift_does_not_strand_a_bot(self):
         g = _gate(max_notional_per_bot=1_000.0)
-        for _ in range(3):
-            g.record_submitted("Bot_A", "2317", "BUY", 1, 33.333333)
-            g.record_outcome("Bot_A", "BUY", 33.333333, filled=False)
+        for i in range(3):
+            g.record_submitted("Bot_A", "2317", "BUY", 1, 33.333333, order_id=f"o{i}")
+            g.record_outcome(f"o{i}", filled=False)
+        assert g.exposure("Bot_A") == 0.0
+
+    # The leaks: each of these used to hand a bot capital it did not have.
+
+    def test_an_order_rejected_on_placement_releases_nothing(self):
+        """The broker refused it, so it was never recorded, so its outcome
+        must not subtract from what the bot has deployed."""
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="held")
+        g.record_outcome("held", filled=True)
+        for i in range(5):
+            g.record_outcome(f"rejected{i}", filled=False)
+        assert g.exposure("Bot_A") == 10_000.0
+        assert g.check("Bot_A", "2317", "BUY", 1, 250.0) is not None
+
+    def test_a_profitable_sell_does_not_push_exposure_below_zero(self):
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 100.0, order_id="b1")  # 4,000
+        g.record_outcome("b1", filled=True)
+        g.record_submitted("Bot_A", "2317", "SELL", 40, 250.0, order_id="s1")  # 10,000
+        g.record_outcome("s1", filled=True)
+        assert g.exposure("Bot_A") == 0.0
+        assert g.check("Bot_A", "2317", "BUY", 41, 250.0) is not None
+
+    def test_a_partial_sell_retires_cost_at_the_average(self):
+        g = _gate(max_notional_per_bot=100_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 10, 100.0, order_id="b1")
+        g.record_outcome("b1", filled=True)
+        g.record_submitted("Bot_A", "2317", "BUY", 10, 200.0, order_id="b2")
+        g.record_outcome("b2", filled=True)                # 20 sh, cost 3,000
+        g.record_submitted("Bot_A", "2317", "SELL", 5, 900.0, order_id="s1")
+        g.record_outcome("s1", filled=True)
+        assert g.exposure("Bot_A") == pytest.approx(2_250.0)
+
+    def test_an_outcome_reported_twice_counts_once(self):
+        """A cancel racing a fill can resolve the same order twice."""
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "BUY", 40, 250.0, order_id="o1")
+        g.record_outcome("o1", filled=True)
+        g.record_outcome("o1", filled=False)
+        assert g.exposure("Bot_A") == 10_000.0
+
+    def test_selling_shares_the_gate_never_saw_bought_changes_nothing(self):
+        g = _gate(max_notional_per_bot=10_000.0)
+        g.record_submitted("Bot_A", "2317", "SELL", 40, 250.0, order_id="s1")
+        g.record_outcome("s1", filled=True)
         assert g.exposure("Bot_A") == 0.0
 
 

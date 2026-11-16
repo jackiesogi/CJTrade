@@ -25,14 +25,16 @@ Usage::
     reason = gate.check("Bot_C", "2317", "BUY", 20, 240.0)
     if reason:
         ...                                # refuse, do not reach the broker
-    gate.record_submitted("Bot_C", "BUY", 4_800.0)
+    gate.record_submitted("Bot_C", "2317", "BUY", 20, 240.0, order_id=oid)
     ...
-    gate.record_outcome("Bot_C", "BUY", 4_800.0, filled=False, resolved=True)
+    gate.record_outcome(oid, filled=False)      # cancelled: capital released
 """
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict
+from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 
 
@@ -73,10 +75,20 @@ class RiskGate:
         self.initial_equity = float(initial_equity)
         self._bar = 0
         self._halt_reason: Optional[str] = None
-        # Notional each bot currently has deployed. Tracked here because the
-        # broker reports positions for the whole account, so master is the only
-        # thing that can attribute them to a strategy.
-        self._exposure: Dict[str, float] = defaultdict(float)
+        # What each bot has deployed, tracked here because the broker reports
+        # positions for the whole account, so master is the only thing that
+        # can attribute them to a strategy. Two parts:
+        #   resting  order id -> (bot, symbol, action, quantity, price), for
+        #            every accepted order not yet resolved. Keyed by order so a
+        #            second outcome for the same order, or an outcome for an
+        #            order the gate never recorded, cannot move the numbers.
+        #   held     (bot, symbol) -> [shares, cost], the cost basis of what
+        #            the bot's filled buys still hold. A sell retires cost at
+        #            the average, never at the sale price, so a profitable
+        #            sell cannot push exposure below zero.
+        self._resting: Dict[str, Tuple[str, str, str, int, float]] = {}
+        self._held: Dict[Tuple[str, str], List[float]] = {}
+        self._bots: Set[str] = set()
         self._orders_this_bar: Dict[str, int] = defaultdict(int)
         self._seen: Dict[Tuple, int] = {}      # fingerprint -> bar last seen
 
@@ -91,19 +103,25 @@ class RiskGate:
         return self._halt_reason
 
     def exposure(self, bot_id: str) -> float:
-        return self._exposure[bot_id]
+        """Capital the bot has committed: resting buys plus held cost basis."""
+        resting = sum(q * p for b, _s, a, q, p in self._resting.values()
+                      if b == bot_id and a == "BUY")
+        held = sum(cost for (b, _s), (_sh, cost) in self._held.items()
+                   if b == bot_id)
+        total = resting + held
+        # Rounding drift across many fills must not strand a bot just above
+        # its limit, or leave a ghost exposure once everything is closed.
+        return 0.0 if abs(total) < 1e-6 else total
 
     @property
     def exposures(self) -> Dict[str, float]:
-        """Every bot's deployed notional, as a copy.
+        """Every bot that has had an order accepted, with its exposure.
 
-        Here because ``exposure()`` indexes a defaultdict, so asking about a
-        bot that has not traded yet inserts a key. Harmless to the arithmetic,
-        but it means a read-only caller -- a status endpoint, a log line --
-        cannot look without writing, on an object documented above as not
-        thread-safe.
+        Read-only: asking does not register a bot, so a status endpoint or a
+        log line can look without writing, on an object documented above as
+        not thread-safe.
         """
-        return dict(self._exposure)
+        return {b: self.exposure(b) for b in sorted(self._bots)}
 
     def start_bar(self, bar_index: int) -> None:
         """Reset per-bar counters. Call once per bar before any check()."""
@@ -163,7 +181,7 @@ class RiskGate:
 
         if lim.max_notional_per_bot is not None and action == "BUY":
             notional = price * quantity
-            projected = self._exposure[bot_id] + notional
+            projected = self.exposure(bot_id) + notional
             if projected > lim.max_notional_per_bot:
                 return (f"{bot_id} would hold {projected:,.0f} of its "
                         f"{lim.max_notional_per_bot:,.0f} allocation")
@@ -173,34 +191,48 @@ class RiskGate:
     # ── bookkeeping ───────────────────────────────────────────────────────────
 
     def record_submitted(self, bot_id: str, symbol: str, action: str,
-                         quantity: int, price: float) -> None:
-        """An order the broker accepted. Call only after check() allowed it."""
+                         quantity: int, price: float,
+                         order_id: Optional[str] = None) -> None:
+        """An order the broker accepted. Call only after check() allowed it.
+
+        With an ``order_id`` the order counts against the bot's allocation
+        until record_outcome() resolves it. A resting buy commits the capital
+        from submission, not from the fill, which is too late to refuse the
+        next order. Without one, only the rate and duplicate checks see it.
+        """
         self._orders_this_bar[bot_id] += 1
+        self._bots.add(bot_id)
         if self.limits.duplicate_window_bars:
             self._seen[self._fingerprint(bot_id, symbol, action, quantity, price)] = self._bar
-        if action == "BUY":
-            # A resting buy already commits the capital, so it counts from
-            # submission -- not from the fill, which is too late to refuse the
-            # next order.
-            self._exposure[bot_id] += price * quantity
+        if order_id is not None:
+            self._resting[order_id] = (bot_id, symbol, action,
+                                       int(quantity), float(price))
 
-    def record_outcome(self, bot_id: str, action: str, notional: float,
-                       filled: bool) -> None:
-        """An order reached a terminal state.
+    def record_outcome(self, order_id: str, filled: bool) -> None:
+        """An order reached a terminal state, filled in full or not at all.
 
-        A buy that died releases its capital; a buy that filled keeps it (the
-        notional just moved from resting to held). A sell releases capital when
-        it fills, and changes nothing when it dies.
+        An order the gate is not holding is ignored: one the broker rejected
+        on placement was never recorded, and an order resolved twice (a cancel
+        racing a fill) must only count once.
         """
-        if action == "BUY" and not filled:
-            self._exposure[bot_id] -= notional
-        elif action == "SELL" and filled:
-            self._exposure[bot_id] -= notional
-        # Exposure is a notional estimate, not a mark-to-market, so rounding
-        # drift across many fills could otherwise leave a bot permanently
-        # unable to trade.
-        if abs(self._exposure[bot_id]) < 1e-6:
-            self._exposure[bot_id] = 0.0
+        entry = self._resting.pop(order_id, None)
+        if entry is None or not filled:
+            return
+        bot_id, symbol, action, quantity, price = entry
+        lot = self._held.setdefault((bot_id, symbol), [0.0, 0.0])
+        if action == "BUY":
+            lot[0] += quantity
+            lot[1] += quantity * price
+            return
+        # A sell of shares this gate never saw bought (a position that
+        # predates the run) has no cost basis here to retire.
+        sold = min(float(quantity), lot[0])
+        if sold <= 0:
+            return
+        lot[1] -= lot[1] * (sold / lot[0])
+        lot[0] -= sold
+        if lot[0] <= 0 or abs(lot[1]) < 1e-6:
+            del self._held[(bot_id, symbol)]
 
     @staticmethod
     def _fingerprint(bot_id: str, symbol: str, action: str,

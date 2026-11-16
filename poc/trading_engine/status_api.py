@@ -227,9 +227,8 @@ def _risk_block(view: EngineView) -> dict:
             "max_loss_pct": lim.max_loss_pct,
             "duplicate_window_bars": lim.duplicate_window_bars,
         },
-        # The property, not gate.exposure(bot_id): _exposure is a defaultdict,
-        # so asking about a bot that has not traded would insert a key -- a
-        # mutation, from a handler, on an object documented as not thread-safe.
+        # The property: every bot that has traded, read without writing to
+        # an object documented as not thread-safe.
         "exposure": {k: round(v, 2) for k, v in gate.exposures.items()},
     }
 

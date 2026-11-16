@@ -233,6 +233,11 @@ ACCOUNT_READ_MAX_FAILURES = 5
 BOT_SILENT_BARS = 20             # no status for this many bars -> say so
 BOT_STATUS_HISTORY = 500         # per-bar snapshots kept, across all bots
 BOT_STATUS_EVERY = 500           # log a status line this often, with bars served
+# Before bar 0: how long to wait for every spawned bot to prove it is
+# subscribed. Under replay, after each bar: how long to wait for every bot to
+# answer it before stepping on without the ones that did not.
+BOT_HANDSHAKE_TIMEOUT_S = 30.0
+BAR_BARRIER_TIMEOUT_S = 30.0
 
 # Where the read-only status API listens. The host is not settable -- see
 # status_api's module docstring. The port is, so two engines can coexist.
@@ -557,7 +562,8 @@ def _parse_server_datetime(raw) -> datetime | None:
 class EventHub:
     def __init__(self, account_client: AccountClient, clock,
                  on_bar_end: Callable[[datetime | None], Awaitable[None]] | None = None,
-                 session_check: Callable[[], bool] | None = None):
+                 session_check: Callable[[], bool] | None = None,
+                 after_publish: Callable[[dict[str, int]], Awaitable[None]] | None = None):
         self.client = account_client
         self.clock = clock
         # Asked once per bar, on the live path only: "is the market open?".
@@ -583,6 +589,12 @@ class EventHub:
         # so order-status polling happens at a point where the server's market
         # time still matches the bar the bots were just given.
         self.on_bar_end = on_bar_end
+        # Called once per bar right after the publish, with each symbol's seq.
+        # Replay uses it to wait until every bot has answered the bar, so the
+        # bots' orders are placed before the clock moves and not whenever
+        # their process happens to get scheduled. None on the live path,
+        # where the market does not wait for anyone.
+        self.after_publish = after_publish
         # Market time of the most recent bar, for anything that needs to stamp
         # an event with "now" without owning a clock.
         self.market_time: datetime | None = None
@@ -684,6 +696,9 @@ class EventHub:
                     continue
                 self.market_time = snap.timestamp
                 await self._broadcast(snap)
+
+            if self.after_publish is not None:
+                await self.after_publish(dict(self._seq))
 
             self.bars += 1
             if self.bars % 500 == 0:
@@ -834,15 +849,15 @@ class ExecutionEngine:
         return self._paper_report(intent, self._account_for(intent.bot_id),
                                   OrderStatus.REJECTED, 0, reason)
 
-    def _note_outcome(self, bot_id: str, order: Order,
-                      status: OrderStatus) -> None:
+    def _note_outcome(self, order_id: str, status: OrderStatus) -> None:
         """Tell the gate an order reached a terminal state, so it can release
-        the capital it was holding against that bot's allocation."""
+        the capital it was holding against that bot's allocation.
+
+        By order id, so the gate ignores what it never recorded (an order the
+        broker rejected on placement) and counts each order only once."""
         if self.gate is None or protocol.is_resting(status):
             return
-        self.gate.record_outcome(bot_id, order.action.value,
-                                 order.price * order.quantity,
-                                 filled=(status == OrderStatus.FILLED))
+        self.gate.record_outcome(order_id, filled=(status == OrderStatus.FILLED))
 
     # ── broker path ───────────────────────────────────────────────────────────
 
@@ -856,16 +871,17 @@ class ExecutionEngine:
         except Exception as e:
             return self._broker_report(intent, OrderStatus.REJECTED, 0, str(e))
 
+        # The id the broker answers with, which for ArenaX is the id we sent
+        # (OrderResult.linked_order), but do not assume that.
+        order_id = result.linked_order or order.id
         if protocol.is_resting(result.status):
-            # Note the id the broker answers with, which for ArenaX is the id we
-            # sent (OrderResult.linked_order), but do not assume that.
-            self._open[result.linked_order or order.id] = (intent.bot_id, order)
+            self._open[order_id] = (intent.bot_id, order)
 
         if self.gate is not None and result.status != OrderStatus.REJECTED:
             self.gate.record_submitted(intent.bot_id, order.product.symbol,
                                        order.action.value, order.quantity,
-                                       order.price)
-        self._note_outcome(intent.bot_id, order, result.status)
+                                       order.price, order_id=order_id)
+        self._note_outcome(order_id, result.status)
 
         return self._broker_report(intent, result.status,
                                    self._filled_qty(order, result.status),
@@ -895,7 +911,7 @@ class ExecutionEngine:
             if protocol.is_resting(status):
                 continue
             bot_id, order = self._open.pop(trade.id)
-            self._note_outcome(bot_id, order, status)
+            self._note_outcome(trade.id, status)
             reports.append(self._broker_report(
                 OrderIntent(bot_id=bot_id, order=order), status,
                 self._filled_qty(order, status),
@@ -959,7 +975,14 @@ class ExecutionEngine:
             status = result.status if result else OrderStatus.UNKNOWN
             message = (result.message if result and result.message else reason)
             self._open.pop(order_id, None)
-            self._note_outcome(bot_id, order, status)
+            # Only an outcome the cancel establishes. A refused cancel usually
+            # means the order filled first, so releasing its capital here would
+            # hand the bot money it has already spent; it stays counted.
+            if status in (OrderStatus.CANCELLED, OrderStatus.FILLED):
+                self._note_outcome(order_id, status)
+            else:
+                log.warning(f"[Master] cancel of {order_id[:8]} answered "
+                            f"{status.value}; keeping its capital reserved")
             reports.append(self._broker_report(
                 OrderIntent(bot_id=bot_id, order=order), status, 0, message,
                 timestamp=as_of,
@@ -1299,6 +1322,10 @@ class BotRegistry:
         # not be reported as stalled.
         self._stopped: dict[str, str] = {}
         self.history: deque = deque(maxlen=history)
+        # The last PriceUpdate.seq each bot has reported, and a wake-up for
+        # anything waiting on one. See wait_for().
+        self._seq: dict[str, int] = {}
+        self._changed = asyncio.Event()
 
     def expect(self, bot_ids: list[str], engine_bar: int) -> None:
         """Start the silence clock for bots that have been spawned.
@@ -1314,7 +1341,40 @@ class BotRegistry:
         self._latest[status.bot_id] = status
         self._heard_at_bar[status.bot_id] = engine_bar
         self._reported_silent.discard(status.bot_id)
-        self.history.append(status)
+        self._seq[status.bot_id] = status.seq
+        # A startup handshake carries no bar, so it is not part of the run.
+        if status.market_time is not None:
+            self.history.append(status)
+        self._changed.set()
+
+    def heard_from(self) -> set[str]:
+        return set(self._seq)
+
+    def behind(self, wanted: dict[str, int]) -> list[str]:
+        """Bots that have not yet reported the seq `wanted` asks of them."""
+        return [b for b, seq in wanted.items()
+                if b not in self._stopped and self._seq.get(b, -2) < seq]
+
+    async def wait_for(self, done, timeout: float) -> bool:
+        """Wait until done() is true or `timeout` seconds pass.
+
+        record() runs on the same event loop, so checking done() after
+        clearing the event cannot miss a report that arrives in between.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while not done():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return False
+            self._changed.clear()
+            if done():
+                return True
+            try:
+                await asyncio.wait_for(self._changed.wait(), remaining)
+            except asyncio.TimeoutError:
+                return done()
+        return True
 
     @property
     def latest(self) -> dict[str, protocol.BotStatus]:
@@ -1368,6 +1428,40 @@ class BotRegistry:
                 + (f"  {shown}" if shown else "")
                 + (f"\n{' ' * 10}why: {mon['last_decision']}"
                    if "last_decision" in mon else ""))
+
+
+async def await_bots(pub_socket, pull_socket, registry: "BotRegistry",
+                     bot_ids: list[str], timeout: float) -> list[str]:
+    """Wait for every bot to hear the feed, before any bar is published.
+
+    PUB/SUB drops what is published before a subscriber has joined, so a
+    bot slower to start than a fixed sleep missed the first bars with
+    nothing to show for it. Master publishes FEED_SYNC_REASON until every
+    bot has answered with a BotStatus. Returns the bots that never did.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    waiting = set(bot_ids)
+    while waiting and loop.time() < deadline:
+        await pub_socket.send_multipart([
+            protocol.FEED_STATUS_TOPIC.encode('utf-8'),
+            protocol.encode(protocol.FeedStatus(
+                market_open=True, reason=protocol.FEED_SYNC_REASON,
+                bars_served=0, sent_at=datetime.now())),
+        ])
+        # Read the intent socket directly: the message loop has not started,
+        # and before bar 0 a bot has nothing else to send.
+        while await pull_socket.poll(timeout=100):
+            msg = protocol.decode(await pull_socket.recv())
+            if isinstance(msg, protocol.BotStatus):
+                registry.record(msg, 0)
+                waiting.discard(msg.bot_id)
+            else:
+                log.warning(f"[Master] ignoring {type(msg).__name__} from a "
+                            f"bot before the first bar")
+    if not waiting:
+        log.info(f"[Master] all {len(bot_ids)} bot(s) are listening")
+    return sorted(waiting)
 
 
 async def handle_bot_messages(pull_socket, pub_socket, engine: ExecutionEngine,
@@ -1580,6 +1674,7 @@ async def main():
 
     procs: list[asyncio.subprocess.Process] = []
     bots: list[str] = []
+    bot_symbols: dict[str, str] = {}
     for bot_id, script, symbol, extra in roster:
         if symbol not in cfg.symbols:
             log.error(f"[Master] {bot_id} is assigned {symbol}, which is not "
@@ -1590,13 +1685,22 @@ async def main():
             sys.executable, '-u', str(BOT_DIR / script),
             bot_id, str(bot_balance), session_id, symbol, *extra))
         bots.append(bot_id)
+        bot_symbols[bot_id] = symbol
         log.info(f"[Master] spawned {bot_id} ({script}, {symbol}"
                  + (f", {' '.join(extra)}" if extra else "") + ")")
     if not bots:
-        log.error("[Master] no bots started — nothing would trade. Aborting.")
+        wanted = sorted({sym for _b, _s, sym, _e in roster})
+        log.error(f"[Master] no bots started — nothing would trade. The "
+                  f"roster's bots trade {','.join(wanted)}, and none of that "
+                  f"is in the watch list ({','.join(cfg.symbols)}). Aborting.")
         account_client.disconnect()
         return
-    await asyncio.sleep(2)       # let the subprocesses finish their ZMQ connect
+    missing = await await_bots(pub_socket, pull_socket, bot_registry, bots,
+                               BOT_HANDSHAKE_TIMEOUT_S)
+    if missing:
+        log.error(f"[Master] {','.join(missing)} never answered within "
+                  f"{BOT_HANDSHAKE_TIMEOUT_S:.0f}s; they may miss the first "
+                  f"bars, and a replay is not reproducible.")
 
     # Each bot's allocation is the account divided by the bots that started.
     # With one bot that is the whole account and the budget never bites; with
@@ -1799,13 +1903,38 @@ async def main():
             for report in await engine.cancel_open_orders(as_of, "risk halt"):
                 await publish_report(pub_socket, report)
 
+    # Replay only: after each bar, wait for every bot to answer it before the
+    # clock moves. A bot sends its orders for a bar and then its BotStatus on
+    # one PUSH socket, which keeps them in order, and handle_bot_messages
+    # executes each intent before it reads the next message. So once a bot's
+    # status for this bar is recorded, its orders for this bar have been
+    # placed at this bar's market time. Without the wait they landed on a
+    # later bar whenever the bot was slower than the stepping, which made
+    # two --speed=0 runs disagree about orders and fills.
+    unresponsive: set[str] = set()
+
+    async def wait_for_bots(published: dict[str, int]) -> None:
+        wanted = {b: published[sym] for b, sym in bot_symbols.items()
+                  if sym in published and b not in unresponsive}
+        answered = await bot_registry.wait_for(
+            lambda: not bot_registry.behind(wanted), BAR_BARRIER_TIMEOUT_S)
+        if answered:
+            return
+        late = bot_registry.behind(wanted)
+        unresponsive.update(late)
+        log.error(f"[Master] {','.join(late)} did not answer bar {hub.bars} "
+                  f"within {BAR_BARRIER_TIMEOUT_S:.0f}s; no longer waiting "
+                  f"for it, so this replay is not reproducible.")
+
     # Only the live path consults the trading session. Under replay the bars
     # themselves came from real sessions, so there is nothing to gate and the
     # check would only cost a round trip per bar.
     hub = EventHub(account_client=account_client, clock=clock,
                    on_bar_end=report_resolved_orders,
                    session_check=(account_client.is_market_open
-                                  if cfg.is_live else None))
+                                  if cfg.is_live else None),
+                   after_publish=(wait_for_bots
+                                  if isinstance(clock, ReplayClock) else None))
     for s in cfg.symbols:
         hub.subscribe_price_feed(s)
 
