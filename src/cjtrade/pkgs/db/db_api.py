@@ -407,32 +407,3 @@ if __name__ == "__main__":
     res = get_cj_order_id_from_db(conn, "f224a302")
     print(type(res))
     print(res)
-
-
-# def _migrate_coverage_table_if_needed(conn: DatabaseConnection):
-#     """Migrate arenax_symbol_coverage to multi-interval schema if it uses the old single-row PK."""
-#     try:
-#         # Probe for the new 'id' column – if it does not exist the table is on the old schema
-#         conn.execute("SELECT id FROM arenax_symbol_coverage LIMIT 1")
-#     except Exception:
-#         # Old schema detected – drop and recreate (coverage data is cheap to re-generate)
-#         print("[migration] Upgrading arenax_symbol_coverage to multi-interval schema…")
-#         conn.execute("DROP TABLE IF EXISTS arenax_symbol_coverage")
-#         conn.execute("""
-#             CREATE TABLE arenax_symbol_coverage (
-#                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-#                 symbol      TEXT    NOT NULL,
-#                 timeframe   TEXT    NOT NULL,
-#                 start_ts    INTEGER NOT NULL,
-#                 end_ts      INTEGER NOT NULL,
-#                 source      TEXT    NOT NULL DEFAULT 'unknown',
-#                 last_checked INTEGER          DEFAULT (unixepoch()),
-#                 created_at  INTEGER          DEFAULT (unixepoch())
-#             )
-#         """)
-#         conn.execute("""
-#             CREATE INDEX IF NOT EXISTS idx_coverage_symbol_tf_start
-#                 ON arenax_symbol_coverage(symbol, timeframe, start_ts)
-#         """)
-#         conn.commit()
-#         print("[migration] arenax_symbol_coverage migration complete.")

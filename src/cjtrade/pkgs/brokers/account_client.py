@@ -13,6 +13,7 @@ from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import *
 from cjtrade.pkgs.models.trade import Trade
+from cjtrade.pkgs.utils.extras import missing_extra
 
 
 class BrokerType(Enum):
@@ -48,14 +49,14 @@ class AccountClient:
 
     def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
         if broker_type == BrokerType.SINOPAC:
-            from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
+            try:
+                from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
+            except ImportError as e:
+                raise missing_extra("sinopac", e) from e
             return SinopacBrokerAPI(**config)
-        elif broker_type == BrokerType.YUANTA:
-            from cjtrade.pkgs.brokers.yuanta.yuanta import YuantaBrokerAPI
-            return YuantaBrokerAPI(**config)
-        elif broker_type == BrokerType.CATHAY:
-            from cjtrade.pkgs.brokers.cathay.cathay import CathayBrokerAPI
-            return CathayBrokerAPI(**config)
+        elif broker_type in (BrokerType.YUANTA, BrokerType.CATHAY):
+            raise NotImplementedError(
+                f"The {broker_type.value} broker is not implemented yet")
         elif broker_type == BrokerType.MOCK:
             from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
             return MockBrokerAPI(**config)

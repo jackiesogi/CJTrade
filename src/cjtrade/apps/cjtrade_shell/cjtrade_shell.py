@@ -443,16 +443,24 @@ class KbarsCommand(CommandBase):
 class LLMCommand(CommandBase):
     def __init__(self):
         super().__init__()
-        from cjtrade.pkgs.llm.azure_openai import AzureOpenAIClient
         self.name = "llm"
         self.params = ["prompt"]
         self.description = "Generate a response using the LLM."
         self.example = "llm 分析一下我現在的持倉狀況"
-        self.llm = AzureOpenAIClient(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-            endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-            deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
-        )
+        self._llm = None
+
+    @property
+    def llm(self):
+        # Built on first use, not at registration: the client needs the 'llm'
+        # extra, and a shell without it must still start.
+        if self._llm is None:
+            from cjtrade.pkgs.llm.azure_openai import AzureOpenAIClient
+            self._llm = AzureOpenAIClient(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
+                endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+                deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+            )
+        return self._llm
 
     def format_account_state(self, client: AccountClient, search_news: bool, **config) -> str:
         balance = client.get_balance()

@@ -1,4 +1,9 @@
-from google import genai
+try:
+    from google import genai
+except ImportError:  # the 'llm' extra is not installed
+    genai = None
+
+from cjtrade.pkgs.utils.extras import missing_extra
 
 from ._llm_base import LLMClientBase
 
@@ -8,6 +13,8 @@ class GeminiClient(LLMClientBase):
         super().__init__(model_name=model_name, api_key=api_key)
 
     def generate_response(self, prompt: str) -> str:
+        if genai is None:
+            raise missing_extra("llm")
         self.client = genai.Client(api_key=self.api_key)
         response = self.client.models.generate_content(
             model=self.model_name,

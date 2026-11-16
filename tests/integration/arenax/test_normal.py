@@ -42,7 +42,7 @@ def _wait_for_fill(client, order_id: str, timeout: float = 10.0, interval: float
 
 class TestNormalOperations:
 
-    def test_N000_order_placement_basic(self, client):
+    def test_place_order_commits_and_persists_the_order(self, client):
         """place_order() auto-commits and returns a committed/filled status."""
         order = make_order(price=50.0)
         result = client.place_order(order)
@@ -61,7 +61,7 @@ class TestNormalOperations:
 
         client.cancel_order(order.id)
 
-    def test_N001_order_commit_flow(self, client):
+    def test_sync_state_refreshes_without_recommitting(self, client):
         """place_order() auto-commits; sync_state() refreshes status without re-committing."""
         order = make_order(price=50.0)
         place_result = client.place_order(order)
@@ -76,7 +76,7 @@ class TestNormalOperations:
 
         client.cancel_order(order.id)
 
-    def test_N002_order_cancellation(self, client):
+    def test_a_resting_order_can_be_cancelled(self, client):
         """Placed and committed order can be cancelled; DB reflects CANCELLED status."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
@@ -89,7 +89,7 @@ class TestNormalOperations:
         db_order = get_order_from_db(client, order.id)
         assert db_order["status"] == "CANCELLED"
 
-    def test_N003_multiple_orders_sequential(self, client):
+    def test_sequential_orders_are_all_committed(self, client):
         """Five sequential orders all land in DB with committed status."""
         order_ids = []
         committed = (OrderStatus.COMMITTED_WAIT_MATCHING, OrderStatus.COMMITTED_WAIT_MARKET_OPEN, OrderStatus.FILLED)
@@ -109,7 +109,7 @@ class TestNormalOperations:
             assert db_order["status"] in ("COMMITTED_WAIT_MATCHING", "COMMITTED_WAIT_MARKET_OPEN", "FILLED")
             client.cancel_order(oid)
 
-    def test_N004_buy_and_sell_operations(self, client):
+    def test_buy_stock_and_sell_stock_record_their_side(self, client):
         """buy_stock() and sell_stock() each persist entries with correct side."""
         buy_result = client.buy_stock("2330", 3, 50.0, intraday_odd=True)
         assert isinstance(buy_result, OrderResult)
@@ -126,14 +126,14 @@ class TestNormalOperations:
         for o in all_orders:
             client.cancel_order(o["order_id"])
 
-    def test_N005_connect_with_wrong_api_key(self, bad_api_key_client):
+    def test_a_wrong_api_key_cannot_connect_or_place_orders(self, bad_api_key_client):
         """Client with wrong API key should fail to place orders."""
         assert bad_api_key_client.connect() == False
         assert bad_api_key_client.is_connected() == False
         with pytest.raises(Exception, match="Not connected to broker"):
             bad_api_key_client.place_order(make_order())
 
-    def test_N006_cash_balance_should_update_after_operations(self, client):
+    def test_balance_follows_a_filled_buy_and_sell(self, client):
         """Selling a stock should increase cash balance; DB should reflect the change."""
         balance_1 = client.get_balance()
 
@@ -162,7 +162,7 @@ class TestNormalOperations:
         balance_4 = client.get_balance()
         assert balance_1 != balance_2 != balance_3 == balance_4
 
-    def test_N007_get_kbars(self, client):
+    def test_get_kbars_returns_ohlcv_bars(self, client):
         """get_kbars() should return a list of KBar objects with correct attributes."""
         # Available Range
         last_monday_YYYY_MM_DD = time.strftime("%Y-%m-%d", time.localtime(time.time() - (time.localtime().tm_wday + 7) * 24 * 3600))
@@ -185,20 +185,20 @@ class TestNormalOperations:
         # TODO: Currently get_kbars() has its own fallback and only alert through stdout;
         # we should ideally have it raise an exception or return a distinguishable value on failure instead of an empty list.
 
-    def test_N008_register_order_callback(self, client):
+    def test_register_order_callback_is_refused(self, client):
         # ArenaX has no push callback. It used to accept the registration and
         # silently never call it, which is worse than refusing.
         cb = lambda event: print(f"Order callback received: {event}")
         with pytest.raises(NotImplementedError):
             client.register_order_callback(callback=cb)
 
-    def test_N009_get_market_movers(self, client):
+    def test_get_market_movers_is_not_implemented(self, client):
         assert client.get_market_movers() == None  # Currently not implemented
 
-    def test_N010_get_broker_name(self, client):
+    def test_broker_name_names_arenax(self, client):
         assert "arenax" in client.get_broker_name()
 
-    def test_N011_is_market_open(self, client):
+    def test_is_market_open_follows_market_hours(self, client):
         assert client.is_market_open() in (True, False)
         current_time = client.get_market_time()['mock_current_time']
         # 9:00-13:30 on weekdays should be open

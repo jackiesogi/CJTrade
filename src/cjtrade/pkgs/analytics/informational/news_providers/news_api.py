@@ -3,13 +3,20 @@ from datetime import datetime
 from datetime import timedelta
 from typing import List
 
-from newsapi import NewsApiClient
+try:
+    from newsapi import NewsApiClient
+except ImportError:  # the 'news' extra is not installed
+    NewsApiClient = None
+
+from cjtrade.pkgs.utils.extras import missing_extra
 
 from ._base import News
 from ._base import NewsInterface
 
 class NewsAPIProvider(NewsInterface):
     def __init__(self, **config):
+        if NewsApiClient is None:
+            raise missing_extra("news")
         super().__init__(**config)
 
         # check required config parameters like API key here

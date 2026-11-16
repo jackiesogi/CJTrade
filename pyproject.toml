@@ -3,37 +3,37 @@ name = "cjtrade"
 version = "0.1.0"
 description = "CJ Trading System"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.0",
     "apiflask>=2.2.0",
-    "beautifulsoup4>=4.13.5",
     "duckdb>=1.4.3",
-    "fake-useragent>=2.2.0",
-    "feedparser>=6.0.12",
     "flask>=3.1.2",
-    "google-genai>=1.56.0",
-    "lxml>=6.0.2",
-    "matplotlib>=3.10.6",
-    "mpl-finance>=0.10.1",
-    "mplfinance>=0.12.10b0",
-    "newsapi-python>=0.2.7",
-    "ollama>=0.6.0",
-    "pandas-datareader>=0.10.0",
+    "msgpack>=1.1.1",
+    "numpy>=2.0",
+    "pandas>=2.2",
     "platformdirs>=4.4.0",
     "plotly>=6.5.1",
     "python-dotenv>=1.1.1",
-    "seaborn>=0.13.2",
-    "shioaji>=1.2.8",
+    "pyzmq>=26.0",
+    "quantstats>=0.0.81",
+    "requests>=2.32",
     "ta-lib>=0.6.7",
+    "toml>=0.10.2",
     "yfinance>=0.2.66",
     "pyreadline3; platform_system == 'Windows'",
-    "openai>=2.26.0",
-    "quantstats>=0.0.81",
-    "toml>=0.10.2",
-    "msgpack>=1.1.1",
-    "zmq>=0.0.0",
 ]
+
+# Integrations that bring in a heavy or vendor-specific SDK. A plain
+# `pip install cjtrade` covers ArenaX, backtesting, the shell and reports;
+# see src/cjtrade/pkgs/utils/extras.py for how a missing one is reported.
+[project.optional-dependencies]
+sinopac = ["shioaji>=1.2.8"]
+llm = ["google-genai>=1.56.0", "openai>=2.26.0"]
+news = ["newsapi-python>=0.2.7"]
+all = ["cjtrade[sinopac,llm,news]"]
 
 [project.scripts]
 cjtrade = "cjtrade:cli"
@@ -43,7 +43,6 @@ atest = "cjtrade.test_runner_arenax:main"
 arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
 aresh = "cjtrade.apps.ArenaX.brokerside_server_admin_shell:main"
 system = "cjtrade.apps.cjtrade_system.system_launcher:main"
-osystem = "cjtrade.apps.cjtrade_system.cjtrade_system:main_system"
 backtest = "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest:main"
 _system_direct = "cjtrade.apps.cjtrade_system.cjtrade_system_arenax:main_system"
 strategy-tool = "cjtrade.apps.strategy_tool:main"
@@ -51,7 +50,9 @@ insight = "cjtrade.apps.insight:main"
 
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# tests/manual holds scripts that need a real broker and read credentials at
+# import time, so it is never collected.
+testpaths = ["tests/unit", "tests/integration"]
 addopts = "-v --tb=short"
 markers = [
     "unit: Pure unit tests, no external dependencies",
@@ -85,7 +86,10 @@ requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+# Contributors get every extra, so `uv sync` in a checkout can run every test
+# and every app. Users installing the package do not.
 dev = [
+    "cjtrade[all]",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",

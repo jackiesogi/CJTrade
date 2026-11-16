@@ -26,7 +26,7 @@ def _wait_for_fill(client, order_id: str, timeout: float = 10.0, interval: float
 
 class TestLifecycle:
 
-    def test_L000_full_order_lifecycle(self, client):
+    def test_an_order_is_tracked_from_placement_to_cancellation(self, client):
         """place_order() auto-commits; cancel succeeds; DB tracks each transition."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
@@ -41,7 +41,7 @@ class TestLifecycle:
         assert cancel_result.status == OrderStatus.CANCELLED
         assert get_order_from_db(client, order.id)["status"] == "CANCELLED"
 
-    def test_L001_mixed_operations_sequence(self, client):
+    def test_cancelling_one_order_leaves_the_others_committed(self, client):
         """Place 3 orders, commit all, cancel the middle one; verify independent statuses."""
         order1 = make_order(symbol="0050")
         order2 = make_order(symbol="0056")
@@ -62,7 +62,7 @@ class TestLifecycle:
         client.cancel_order(order1.id)
         client.cancel_order(order3.id)
 
-    def test_L002_filled_order_should_appear_in_positions(self, client):
+    def test_a_filled_buy_shows_up_in_positions(self, client):
         """Place a buy order at a price likely to fill; after sync_state() it should appear in positions."""
         price = likely_fill_buy_price(client, "0050")
         order = make_order(price=price)

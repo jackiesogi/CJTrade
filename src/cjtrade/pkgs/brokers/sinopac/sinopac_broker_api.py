@@ -12,10 +12,6 @@ from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.base_broker_api import *
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_bidask
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_kbar
-# Named explicitly rather than taken from one of this module's star imports,
-# so the annotation in get_kbars resolves to something a reader (and a linter)
-# can follow back to its definition.
-from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_result
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_snapshot
 from cjtrade.pkgs.brokers.sinopac._internal_func import _retrieve_sinopac_trade_by_cj_order_id
@@ -25,6 +21,7 @@ from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_ranktype
 from cjtrade.pkgs.brokers.sinopac._internal_func import cj_sj_order_map
 from cjtrade.pkgs.db.db_api import *
 from cjtrade.pkgs.models.event import *
+from cjtrade.pkgs.models.kbar import Kbar  # explicit, so get_kbars' annotation is traceable
 from cjtrade.pkgs.models.order import *
 from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import BidAsk
@@ -868,53 +865,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print(f"\n👋 Connection closed")
         client.disconnect()
-
-
-## Test cb registration by sinopac native API
-## TODO: When market open, test these: (required 3 order creations, one will be filled, will cost around 31 * 3 = 93 TWD)
-##   - [x] Run this, and use ./test/test_sinopac_api_update_qty.py to reduce quantity by 1 to verify if cb is triggered (UPDATE),
-##   - [x] and use "v0.1.0" cjtrade shell to cancel all order to verify if cb is triggered (CANCEL).
-##   - [x] and use sinopac android app to manually reduce the order quantity by 2 to verify if cb is triggered (UPDATE),
-##   - [x] Run this again to create another order, and use sinopac android app to manually cancel the order to verify if cb is triggered (CANCEL)
-##   - [ ] Run this again (change buy price higher) let it be filled, and verify if cb is triggered (FILL).
-# if __name__ == "__main__":
-#     import time
-#     from cjtrade.core.config_loader import load_supported_config_files
-#     load_supported_config_files()
-
-#     def order_cb(stat, msg):
-#         print('Below is my order callback !!!!!')
-#         print(stat, msg)
-
-#     api = sj.Shioaji(simulation=False)
-#     api.login(
-#         api_key=os.environ.get("API_KEY", ""),
-#         secret_key=os.environ.get("SECRET_KEY", ""),
-#     )
-#     api.activate_ca(
-#         ca_path=os.environ.get("CA_CERT_PATH", ""),
-#         ca_passwd=os.environ.get("CA_PASSWORD", ""),
-#     )
-
-#     api.set_order_callback(order_cb)
-
-#     contract = api.Contracts.Stocks.TSE.TSE2890
-#     order = api.Order(
-#         price=28.5,    # close price of 2026-02-26
-#         quantity=3,  # available to apply multiple order changes
-#         action=sj.constant.Action.Buy,
-#         price_type=sj.constant.StockPriceType.LMT,
-#         order_type=sj.constant.OrderType.ROD,
-#         order_lot=sj.constant.StockOrderLot.IntradayOdd,
-#         custom_field="test",
-#         account=api.stock_account
-#     )
-#     trade = api.place_order(contract, order)
-
-#     print(f"\n⏳ Waiting for order status changes (Ctrl+C to exit)...")
-#     try:
-#         while True:
-#             time.sleep(1)
-#     except KeyboardInterrupt:
-#         print(f"\n👋 Connection closed")
-#         api.logout()
