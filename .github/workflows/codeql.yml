@@ -1,0 +1,57 @@
+# CodeQL static analysis. Findings appear under the repository's
+# Security > Code scanning tab, and on pull requests as annotations.
+#
+# This is CodeQL's "advanced setup". Leave the "default setup" switch in
+# Settings > Code security off: GitHub refuses advanced-setup uploads while
+# default setup is on.
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Weekly, so new queries catch old code even in a quiet week.
+    # Monday 03:17 Asia/Taipei (cron runs in UTC).
+    - cron: "17 19 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write   # upload results to Code scanning
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # python: the code. actions: the workflows themselves, e.g. a secret
+        # or an untrusted PR title reaching a `run:` script.
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Neither language needs a build. CodeQL reads Python source
+          # without installing the dependencies.
+          build-mode: none
+          # security-extended adds lower-precision security queries to the
+          # default set. Not security-and-quality: its style findings
+          # would bury the security ones in this codebase.
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - exp
+              - ref
+              - tests
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
