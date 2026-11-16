@@ -47,7 +47,8 @@ ArenaX has four backends (`--backend=`):
 uv sync                                   # install
 source .venv/bin/activate
 
-uv run pytest tests/unit/ -q              # 148 tests, ~30s, no network
+uv run pytest                            # unit + integration (integration auto-skips without arenaxd)
+uv run pytest tests/unit/ -q              # ~700 tests, ~90s, no network
 uv run pytest tests/integration/arenax/   # needs arenaxd on :8801
 uv run arenaxd --backend=demo --port=8802 # ArenaX broker-side server
 uv run cjtrade --broker=arenax            # interactive shell
@@ -56,9 +57,8 @@ uv run backtest --symbol=2330             # one-shot vectorised backtest
 uv run atest --broker=arenax --group=all  # shell smoke test (ArenaX)
 ```
 
-**Do NOT run bare `uv run pytest`.** `tests/test_broker_api_stability.py:5` has
-a module-level `raise SystemExit(0)`, which makes collection INTERNALERROR.
-Always name a directory.
+`testpaths` is `tests/unit` + `tests/integration`; `tests/manual/` is never
+collected because its scripts read credentials at import time.
 
 Lint (not in CI, but keep it clean):
 
@@ -161,7 +161,7 @@ env vars  >  ./.env  >  ./**/*.cjconf (depth, then alpha)  >  <user config dir>/
 |---|---|---|
 | `tests/unit/` | pure, no network, no disk | nothing |
 | `tests/integration/arenax/` | real HTTP against ArenaX | `arenaxd` on :8801 (auto-skips if absent) |
-| `tests/manual/` | scripts a human runs | credentials; **4 of them fail collection** |
+| `tests/manual/` | scripts a human runs | credentials; not in `testpaths` |
 | `src/**/tests/` | package-local scratch tests | varies |
 
 Conventions in `tests/unit/`: mirror the source tree
@@ -171,8 +171,13 @@ TestX:` per unit under test, `@pytest.fixture` for setup, plain `assert`.
 session-scoped auto-skip, a `client` fixture with per-test `tmp_path`
 isolation, a `make_order()` factory, and `likely_fill_*_price()` helpers.
 
-Markers: `unit`, `integration`. `pytest -m "not integration"` skips anything
-needing a service.
+Markers: `unit`, `integration`, applied by directory in `tests/conftest.py`
+(no need to decorate). `pytest -m "not integration"` skips anything needing a
+service.
+
+Naming: name a test after the behaviour it checks, as a sentence
+(`test_cancelling_a_filled_order_is_rejected`). No running numbers or
+category codes (`test_E002_...`) — pytest runs tests in file order anyway.
 
 Write tests when changing `pkgs/`. Don't add tests to `poc/` unless asked.
 
@@ -436,9 +441,9 @@ class BalanceCommand(CommandBase):
 
 ## 9. Known traps
 
-- `uv run pytest` (bare) → INTERNALERROR. Name a directory.
 - `tests/manual/test_*.py` — 4 files fail collection (`KeyError: 'API_KEY'`,
-  `nacl ValueError`). Expected; ignore them.
+  `nacl ValueError`) if you point pytest at them. They are scripts; run them
+  by hand.
 - `osystem` entry point in `pyproject.toml` points at a module that doesn't
   exist (`cjtrade_system.cjtrade_system`).
 - `BrokerType.MOCK` → `ModuleNotFoundError`.

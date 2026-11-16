@@ -7,8 +7,8 @@ from tests.integration.conftest import make_order
 
 class TestStress:
 
-    def test_S000_rapid_order_submission(self, client):
-        """10 rapid place_order() calls must all appear in the DB."""
+    def test_fifty_rapid_orders_all_reach_the_db(self, client):
+        """50 rapid place_order() calls must all appear in the DB."""
         order_ids = []
         for i in range(50):
             order = make_order(price=100.0 + i * 0.5)
@@ -22,7 +22,7 @@ class TestStress:
         for oid in order_ids:
             client.cancel_order(oid)
 
-    def test_S001_alternating_buy_sell(self, client):
+    def test_alternating_buy_and_sell_orders_split_evenly(self, client):
         """Alternating BUY/SELL orders must split evenly in the DB."""
         for i in range(50):
             action = OrderAction.BUY if i % 2 == 0 else OrderAction.SELL

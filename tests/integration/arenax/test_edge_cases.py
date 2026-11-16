@@ -32,7 +32,7 @@ def _wait_for_fill(client, order_id: str, timeout: float = 10.0, interval: float
 
 class TestEdgeCases:
 
-    def test_E000_cancel_nonexistent_order(self, client):
+    def test_cancelling_an_unknown_order_is_rejected(self, client):
         """Cancelling an unknown order_id must return REJECTED with 'not found'."""
         result = client.cancel_order("nonexistent_order_id")
 
@@ -40,7 +40,7 @@ class TestEdgeCases:
         assert result.status == OrderStatus.REJECTED
         assert "not found" in result.message.lower()
 
-    def test_E001_cancel_already_cancelled_order(self, client):
+    def test_cancelling_twice_is_rejected(self, client):
         """Second cancellation on an already-cancelled order must be REJECTED."""
         price = unlikely_fill_buy_price(client, "0050")
         order = make_order(price=price)
@@ -54,7 +54,7 @@ class TestEdgeCases:
         assert result2.status == OrderStatus.REJECTED
         assert "not found" in result2.message.lower()
 
-    def test_E002_cancel_filled_order(self, client):
+    def test_cancelling_a_filled_order_is_rejected(self, client):
         """cancel_order() on a filled order must return REJECTED with 'filled' in the message.
 
         The order is placed at buy_price +8% so the simulated exchange matches it
@@ -75,7 +75,7 @@ class TestEdgeCases:
         assert result.status == OrderStatus.REJECTED
         assert "filled" in result.message.lower()
 
-    def test_E003_zero_quantity_order(self, client):
+    def test_a_zero_quantity_order_is_rejected(self, client):
         """Order with quantity=0 must be REJECTED by the server."""
         order = make_order(quantity=0)
         result = client.place_order(order)
@@ -84,7 +84,7 @@ class TestEdgeCases:
         assert result.status == OrderStatus.REJECTED
         assert "positive" in result.message.lower()
 
-    def test_E004_negative_price_order(self, client):
+    def test_a_negative_price_order_is_rejected(self, client):
         """Order with negative price must be REJECTED by the server."""
         order = make_order(price=-100.0)
         result = client.place_order(order)
@@ -93,7 +93,7 @@ class TestEdgeCases:
         assert result.status == OrderStatus.REJECTED
         assert "positive" in result.message.lower()
 
-    def test_E005_negative_quantity_order(self, client):
+    def test_a_negative_quantity_order_is_rejected(self, client):
         """Order with negative quantity must be REJECTED by the server."""
         order = make_order(quantity=-1000)
         result = client.place_order(order)
@@ -102,12 +102,12 @@ class TestEdgeCases:
         assert result.status == OrderStatus.REJECTED
         assert "positive" in result.message.lower()
 
-    def test_E006_sync_state_without_pending_orders(self, client):
+    def test_sync_state_with_nothing_pending_returns_a_list(self, client):
         """sync_state() with no pending orders must return an empty list gracefully."""
         result = client.sync_state()
         assert isinstance(result, list)
 
-    def test_E007_place_order_after_disconnect(self, client):
+    def test_place_order_after_disconnect_raises(self, client):
         """place_order() after disconnect must raise an exception."""
         client.disconnect()
 

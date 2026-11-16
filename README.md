@@ -7,6 +7,7 @@
 1. [Introduction](#1-introduction)
 2. [Clone the project and start your quant journey](#2-clone-the-project-and-start-your-quant-journey)
 3. [Start developing your trading strategy using the CJTrade API](#3-start-developing-your-trading-strategy-using-the-cjtrade-api)
+4. [License and disclaimer](#4-license-and-disclaimer)
 
 ## 1. Introduction
 
@@ -372,3 +373,14 @@ vocabulary a strategy file may use (`on_bar`, `buy`, `sell`, `hold`, `ta.*`,
 being registered anywhere. `uv run strategy-tool templates` lists the starting
 points, and `uv run strategy-tool check < my_strategy.py` tells you what is
 wrong with yours before a run does.
+
+## 4. License and disclaimer
+
+CJTrade is released under the [MIT License](./LICENSE).
+
+CJTrade is not investment advice, and nothing it prints — backtest results,
+indicator values, LLM output — is a recommendation to buy or sell anything.
+It can place real orders on a real brokerage account. You are responsible for
+every order it sends on your behalf and for any loss that follows; the authors
+accept no liability for it. Run a strategy in ArenaX, then with Sinopac's
+`SIMULATION=y`, before you let it touch real money.

@@ -3,6 +3,8 @@ name = "cjtrade"
 version = "0.1.0"
 description = "CJ Trading System"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.0",
@@ -51,7 +53,9 @@ insight = "cjtrade.apps.insight:main"
 
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# tests/manual holds scripts that need a real broker and read credentials at
+# import time, so it is never collected.
+testpaths = ["tests/unit", "tests/integration"]
 addopts = "-v --tb=short"
 markers = [
     "unit: Pure unit tests, no external dependencies",
