@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import sys
 import threading
 import urllib.parse
@@ -307,7 +308,46 @@ class WebRenderer(FormRenderer):
         t.start()
 
         if self.auto_open:
-            webbrowser.open(url)
+            _open_browser_quietly(url)
 
         t.join()
         return result_box[0]
+
+
+def _open_browser_quietly(url: str) -> None:
+    """Open the browser without letting the launcher write to our stdout.
+
+    This process's stdout is a machine channel: FormEngine.print_exports
+    writes `export VAR=...` lines there and poc/backtest.sh runs them through
+    `eval`. Every human-facing message in this package already goes to stderr
+    for that reason -- and then webbrowser.open() punched a hole straight
+    through it.
+
+    On macOS webbrowser picks MacOSXOSAScript, which runs `osascript` via
+    os.popen(url_script, "w"). os.popen gives the child our own fd 1, and
+    AppleScript's `open location` returns a value that osascript prints, so
+    that value lands in the middle of the export stream and eval tries to run
+    it as a command -- `command not found: ...`, with the form's answers lost
+    along with it. Reproduced on 3.13 with a 4-line script.
+
+    The file DESCRIPTOR is redirected, not sys.stdout: the writer is a child
+    process that never looks at sys.stdout. stdout is flushed first so nothing
+    already buffered gets written to devnull instead.
+    """
+    try:
+        sys.stdout.flush()
+    except (ValueError, OSError):
+        pass
+    try:
+        saved = os.dup(1)
+    except OSError:
+        # No fd 1 to protect (closed stdout). Nothing to contain.
+        webbrowser.open(url)
+        return
+    try:
+        with open(os.devnull, "w") as sink:
+            os.dup2(sink.fileno(), 1)
+        webbrowser.open(url)
+    finally:
+        os.dup2(saved, 1)
+        os.close(saved)

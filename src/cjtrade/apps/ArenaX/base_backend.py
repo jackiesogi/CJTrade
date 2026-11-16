@@ -1,12 +1,14 @@
+import itertools
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from datetime import timedelta
 from typing import Dict
 from typing import List
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from cjtrade.apps.ArenaX.oder_result_helper import CANCELLED_ORDER_STANDARD
@@ -20,6 +22,10 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_BALANCE
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_SUFFICIENT_STOCK
+from cjtrade.apps.ArenaX.time_in_force import policy_for
+from cjtrade.apps.ArenaX.time_in_force import TIFContext
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
@@ -72,21 +78,51 @@ class ArenaX_AccountState:
         self.fill_history = self.fill_history or []
 
 
+# Starting cash when no snapshot is resumed and the caller passed no
+# initial_balance. Only a last resort: the launch form's "Initial Fund" is
+# plumbed through as initial_balance and wins over this.
+DEFAULT_INITIAL_BALANCE = 100_000.0
+
+
 class ArenaX_BackendBase:
     def __init__(
         self,
-        state_file: str = "mock_account_state.json",
+        state_file: Optional[str] = None,
+        state_dir: Optional[str] = None,
+        session_id: Optional[str] = None,
+        seed_from_live: bool = False,
         real_account: Optional[AccountClient] = None,
         playback_speed: float = 1.0,
         num_days_preload: int = 3,
         skip_data_preload: bool = False,
         initial_balance: float = 0.0,
-        price_db_path: str = "data/arenax_price.db",
+        price_db_path: Optional[str] = None,
         cost_model: Optional[CostModel] = None,
         **kwargs,
     ) -> None:
-        # print(f"num_days_preload: {num_days_preload}")
-        self.account_state_default_file = state_file
+        # ── Account state: snapshots in, a new snapshot out ───────────────────
+        # state_file is the snapshot to RESUME FROM, and None (the default) means
+        # a fresh account. It used to be a fixed path that login() read and
+        # logout() overwrote, which made every run start where the previous one
+        # ended -- so the same backtest produced different numbers each time,
+        # silently.
+        #
+        # Output always goes to a new uuid-named file and never touches
+        # state_in, so a snapshot you resumed from stays reusable and two runs
+        # from the same snapshot are comparable.
+        #
+        # Identical for backtest / paper / demo / real: which mode you are in
+        # does not change whether state should carry over.
+        self.state_in = state_file or None
+        self.session_id = session_id or uuid.uuid4().hex
+        # Resolved here, not as a default argument: paths.* creates the
+        # directory, and a default argument would do that at import time.
+        self.state_dir = str(state_dir) if state_dir else str(paths.account_states_dir())
+        self.state_out = os.path.join(self.state_dir, f"{self.session_id}.json")
+        # Reading the live account is a deliberate, non-reproducible choice, so
+        # it has to be asked for. It used to happen whenever the state file
+        # merely did not exist yet.
+        self.seed_from_live = seed_from_live
         self.real_account = real_account
         if self.real_account and not self.real_account.is_connected():
             self.real_account.connect()  # Early connection for fetching data
@@ -96,7 +132,7 @@ class ArenaX_BackendBase:
         self._connected = False
         self._initial_balance_override = initial_balance  # stored for use in login()
         self.account_state = ArenaX_AccountState()
-        self.price_db_path = price_db_path
+        self.price_db_path = str(price_db_path) if price_db_path else str(paths.price_db_path())
         self._cost_model = cost_model if cost_model is not None else CostModel()
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
@@ -104,12 +140,17 @@ class ArenaX_BackendBase:
         try:
             self._connected = True
 
-            if self.real_account and not os.path.exists(self.account_state_default_file):
-                print('sync with real account')
+            if self.state_in:
+                print(f"[state] resuming from snapshot: {self.state_in}")
+                self._load_state_from(self.state_in)
+            elif self.seed_from_live and self.real_account:
+                print("[state] seeding from live account — this run is NOT reproducible")
                 self._sync_with_real_account()
             else:
-                print('sync with mock account file')
-                self._sync_with_mock_account_file()
+                print("[state] fresh account")
+                self._init_fresh_state()
+            print(f"[state] session {self.session_id} — "
+                  f"snapshot will be written to {self.state_out}")
 
             # Stamp initial_balance once per session (after state is loaded so we
             # can fall back to the loaded balance when no explicit override is given).
@@ -129,11 +170,53 @@ class ArenaX_BackendBase:
     def logout(self) -> None:
         if self.real_account:
             self.real_account.disconnect()
-        with open(self.account_state_default_file, 'w') as f:
-            data = self._serialize_state_to_json()
-            json.dump(data, f, indent=4)
+        self._write_state_snapshot()
         self._connected = False
         print("Simulation environment stopped")
+
+    def _write_state_snapshot(self) -> None:
+        """Persist the final state to this session's own file.
+
+        Never writes back to state_in: a snapshot is immutable once produced, so
+        resuming from it twice gives the same starting point both times. The
+        metadata records where this run came from, which gives the snapshots a
+        traceable lineage.
+        """
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            data = self._serialize_state_to_json()
+            data["_meta"] = {
+                "session_id": self.session_id,
+                "parent_session": self.state_in,
+                "created_at": datetime.now().isoformat(),
+                "backend": type(self).__name__,
+                "initial_balance": self.account_state.initial_balance,
+                "seeded_from_live": bool(self.seed_from_live and self.real_account),
+            }
+            with open(self.state_out, "w") as f:
+                json.dump(data, f, indent=4)
+            print(f"[state] snapshot written: {self.state_out}")
+        except Exception as exc:
+            print(f"[state] failed to write snapshot {self.state_out}: {exc}")
+
+    def _init_fresh_state(self) -> None:
+        """Start from an empty account. Touches no disk.
+
+        Uses the caller's initial_balance when given, so the number the user
+        typed into the launch form is the number the run actually starts with.
+        """
+        self.account_state.balance = (
+            self._initial_balance_override
+            if self._initial_balance_override > 0
+            else DEFAULT_INITIAL_BALANCE
+        )
+        self.account_state.positions = []
+        self.account_state.orders_placed = []
+        self.account_state.orders_committed = []
+        self.account_state.orders_filled = []
+        self.account_state.orders_cancelled = []
+        self.account_state.all_order_status = {}
+        self.account_state.fill_history = []
 
     def is_connected(self) -> bool:
         return self._connected
@@ -184,6 +267,7 @@ class ArenaX_BackendBase:
                     low=round(row["Low"].item(), 2),
                     close=round(row["Close"].item(), 2),
                     volume=int(row["Volume"].item()),
+                    symbol=symbol,
                 )
                 kbars.append(kbar)
 
@@ -288,13 +372,54 @@ class ArenaX_BackendBase:
                                 source="broker_api",
                                 overwrite=False
                             )
-                            self.market.price_db.record_coverage(
-                                symbol=symbol,
-                                timeframe=interval,
-                                start_ts=chunk_start_dt,
-                                end_ts=chunk_end_dt,
-                                source="broker_api"
-                            )
+                            # Claim only the range the bars actually cover.
+                            #
+                            # This used to record the whole requested chunk
+                            # unconditionally, which marks a range "covered"
+                            # even when the broker returned nothing. Coverage
+                            # is what compute_missing_ranges() consults, so a
+                            # range wrongly marked covered is never asked for
+                            # again: every later run skips the broker and
+                            # serves a truncated set of bars, permanently and
+                            # silently. Found in the live cache -- 2317's 1m
+                            # coverage claimed 282 days past its last real bar,
+                            # out to 2027-08-18, so any request inside that
+                            # window reported zero gaps and returned zero bars.
+                            #
+                            # Nothing fetched means nothing is known about the
+                            # range, so it stays a gap and a later run can try
+                            # again -- which is what should happen for a window
+                            # whose data does not exist yet.
+                            if fetched:
+                                # The requested chunk, clamped so it never
+                                # reaches into the future.
+                                #
+                                # Deliberately NOT narrowed to the bars' own
+                                # first/last timestamps: bars exist only
+                                # 09:01-13:30, so a request for a whole day
+                                # would leave 00:00-09:01 and 13:30-23:59
+                                # permanently "missing" and every later run
+                                # would re-ask the broker for the margins of
+                                # every day it already has. Once a fetch comes
+                                # back with bars, the broker has answered for
+                                # that window and the quiet parts of it are the
+                                # market being closed, not data we lack.
+                                #
+                                # The future is the one thing a successful
+                                # fetch cannot vouch for, and that is exactly
+                                # what went wrong here.
+                                self.market.price_db.record_coverage(
+                                    symbol=symbol,
+                                    timeframe=interval,
+                                    start_ts=chunk_start_dt,
+                                    end_ts=min(chunk_end_dt, datetime.now()),
+                                    source="broker_api"
+                                )
+                            else:
+                                print(f"[kbars] {symbol} [{range_start} to "
+                                      f"{range_end}] returned no bars — "
+                                      f"leaving it uncovered so it can be "
+                                      f"retried")
                         except Exception as e:
                             print(f"[kbars] Error caching fetched data: {e}")
 
@@ -380,7 +505,25 @@ class ArenaX_BackendBase:
 
             if not data.empty and timestamps is not None:
                 data_idx = self._calculate_kbar_index(symbol, adjusted_mock_time)
-                daily_data = data.iloc[: data_idx + 1]
+
+                # Aggregate only the day the latest bar belongs to. This used
+                # to slice from row 0 of the whole preloaded range, so `open`
+                # was the first bar of the entire backtest and `high`/`low`
+                # were the running extremes across every day loaded -- numbers
+                # that drifted further from the truth the longer a replay ran,
+                # while being named `daily_*`. Only `close` was ever right.
+                #
+                # Keyed on the latest bar's own day rather than on
+                # adjusted_mock_time's: asked for a moment before the first bar
+                # of a session (the data starts at 09:01, not 09:00) this
+                # reports the previous session's figures, which is what a
+                # pre-open snapshot should say. Keying on the requested day
+                # would slice to nothing and fall through to the random
+                # fallback snapshot below.
+                day_start = int(data.index.searchsorted(
+                    data.index[data_idx].normalize()
+                ))
+                daily_data = data.iloc[day_start:data_idx + 1]
 
                 if len(daily_data) > 0:
                     daily_open = daily_data["Open"].iloc[0].item()
@@ -416,7 +559,19 @@ class ArenaX_BackendBase:
 
     # corresponding command in cjtrade shell: lsodr
     def list_trades(self) -> List[Trade]:
+        # Fill check first, then expiry -- the same order place_order uses, and
+        # it matters. Expiring first would discard a legitimate fill sitting in
+        # the not-yet-checked window *before* the deadline: a clock that jumps
+        # 13:24 -> next 09:00 leaves 13:25-13:30 unexamined, and those bars can
+        # still fill a ROD order.
+        #
+        # The expiry sweep belongs here because this is the per-bar path. The
+        # engine polls resting orders through list_orders() every bar, and that
+        # path used to run the matcher with no time-in-force behind it, so the
+        # only thing that ever expired an order was the server's wall-clock
+        # matching loop -- which races the replay instead of following it.
         self._check_if_any_order_filled()
+        self.expire_resting_orders()
 
         trades = []
         all_orders = (
@@ -475,6 +630,9 @@ class ArenaX_BackendBase:
 
         # Attempt an immediate fill check (common in backtest with fast playback).
         self._check_if_any_order_filled()
+        # Then let the order's time-in-force have its say. This is what makes
+        # IOC and FOK real: the fill check above was their one chance.
+        self.expire_resting_orders()
 
         # Return the actual status after the fill check (may have advanced to FILLED).
         actual_status = self.account_state.all_order_status.get(order.id, initial_status)
@@ -593,27 +751,25 @@ class ArenaX_BackendBase:
         except Exception as exc:
             print(f"Error syncing with real account: {exc}")
 
-    def _sync_with_mock_account_file(self) -> None:
-        """Load account state from JSON file and update prices from simulation."""
+    def _load_state_from(self, path: str) -> None:
+        """Resume from an existing snapshot. Read-only: never writes `path`.
+
+        Does not create the file when missing. A requested snapshot that is not
+        there is a caller mistake worth surfacing, not something to paper over
+        with defaults -- the run would otherwise start from a balance nobody
+        asked for and still look successful.
+        """
         import json
 
-        if not os.path.exists(self.account_state_default_file):
-            default_data = {
-                "balance": 100_000.0,
-                "positions": [],
-                "orders_placed": [],
-                "orders_committed": [],
-                "orders_filled": [],
-                "orders_cancelled": [],
-                "all_order_status": {},
-                "fill_history": [],
-            }
-            with open(self.account_state_default_file, "w") as f:
-                json.dump(default_data, f, indent=4)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"account state snapshot not found: {path}. "
+                f"Omit it to start from a fresh account."
+            )
 
-        with open(self.account_state_default_file, "r") as f:
+        with open(path, "r") as f:
             data = json.load(f)
-            self.account_state.balance = data.get("balance", 100_000.0)
+            self.account_state.balance = data.get("balance", DEFAULT_INITIAL_BALANCE)
             self.account_state.fill_history = data.get("fill_history", [])
 
             self._reconstruct_positions_from_history()
@@ -763,15 +919,90 @@ class ArenaX_BackendBase:
         }
         return data
 
+    def expire_resting_orders(self, now: Optional[datetime] = None) -> List[str]:
+        """Ask each resting order's time-in-force whether it should still live.
+
+        Returns the ids cancelled. This is where EOD cancelling lives now: it
+        used to be a date-latched sweep inside the HTTP server's matching loop
+        (brokerside_server._cancel_eod_orders), which meant a backend used
+        without a server had no expiry at all, and the sweep could not tell ROD
+        from IOC.
+        """
+        if now is None:
+            if not hasattr(self, "market"):
+                return []
+            now = self.market.get_market_time()["mock_current_time"]
+
+        calendar = getattr(getattr(self, "market", None), "calendar", None) or TradingCalendar()
+        ctx = TIFContext(now=now, calendar=calendar)
+
+        cancelled = []
+        for order in list(self._resting_orders()):
+            decision = policy_for(order.order_type).on_no_fill(order, ctx)
+            if not decision.cancel:
+                continue
+            try:
+                # Through cancel_order so there is one cancellation path: it
+                # moves the lists, sets the status, and therefore releases the
+                # reservation in the same step.
+                self.cancel_order(order.id)
+                cancelled.append(order.id)
+                print(f"[TIF] {order.order_type.value} {order.id} cancelled: "
+                      f"{decision.reason}")
+            except Exception as exc:
+                print(f"[TIF] Could not cancel {order.id}: {exc}")
+        return cancelled
+
+    # ── Reservation ───────────────────────────────────────────────────────────
+    # An accepted order encumbers what it will need until it fills or dies.
+    # Derived from the order lists rather than a counter, so the reservation is
+    # released by the same action that moves the real resource: a fill removes
+    # the order from orders_committed and mutates balance/position together.
+
+    def _resting_orders(self) -> List[Order]:
+        """Orders the account has out with the exchange, nothing decided yet."""
+        return (self.account_state.orders_placed
+                + self.account_state.orders_committed)
+
+    def _reserved_cash(self) -> float:
+        """Cash committed by resting BUY orders (值 + 手續費)."""
+        total = 0.0
+        for o in self._resting_orders():
+            if o.action == OrderAction.BUY:
+                value = o.price * o.quantity
+                total += value + self._cost_model.calc_commission(value)
+        return total
+
+    def _reserved_quantity(self, symbol: str) -> int:
+        """Shares committed by resting SELL orders on `symbol`."""
+        return sum(o.quantity for o in self._resting_orders()
+                   if o.action == OrderAction.SELL
+                   and o.product.symbol == symbol)
+
+    def buying_power(self) -> float:
+        return self.account_state.balance - self._reserved_cash()
+
+    def available_to_sell(self, symbol: str) -> int:
+        position = next((pos for pos in self.account_state.positions
+                         if pos.symbol == symbol), None)
+        held = position.quantity if position else 0
+        return held - self._reserved_quantity(symbol)
+
     def _is_sufficient_account_balance(self, order: Order) -> bool:
         value = order.price * order.quantity
         commission = self._cost_model.calc_commission(value)
         required_amount = value + commission
-        return self.account_state.balance >= required_amount
+        # Against buying power, not raw balance: balance only drops at fill
+        # time, so N resting BUYs each used to "fit" inside the same cash and
+        # the account went negative when they all filled.
+        return self.buying_power() >= required_amount
 
     def _is_sufficient_account_inventory(self, order: Order) -> bool:
-        position = next((pos for pos in self.account_state.positions if pos.symbol == order.product.symbol), None)
-        return bool(position and position.quantity >= order.quantity)
+        # Against available-to-sell, not the whole position: a resting SELL did
+        # not reduce it (positions come from fill_history), so the same shares
+        # could be sold twice and fill_history went net-negative — a short
+        # position in a cash equity account, reported without complaint.
+        return self.available_to_sell(order.product.symbol) >= order.quantity
 
     def _is_valid_price(self, order: Order) -> bool:
         return order.price > 0
@@ -784,21 +1015,52 @@ class ArenaX_BackendBase:
         if not hasattr(self, "market"):
             return True
 
-        trades = self.list_trades()
+        # Read the order lists directly instead of going through list_trades().
+        #
+        # list_trades() builds a Trade object for every order the session has
+        # ever seen, and this runs on every place_order -- so the cost of
+        # placing an order grew with the number of orders already placed, under
+        # the server's global backend lock. Over a long paper run that is the
+        # thing that gets slow first. The sum below is the same sum; it just
+        # does not allocate the intermediate list.
+        #
+        # The two sweeps list_trades() ran on the way past are kept, because
+        # they were load-bearing and not incidental: expiry can move an order
+        # out of the counted set, which changes this total.
+        self._check_if_any_order_filled()
+        self.expire_resting_orders()
+
         today_str = self.market.get_market_time()["mock_current_time"].strftime("%Y-%m-%d")
+        # Every status that still consumes the day's quota. WAIT_MARKET_OPEN and
+        # PLACED were missing, so orders stacked up before the open did not
+        # count and the limit could be walked straight past.
+        counted = {
+            OrderStatus.PLACED.value,
+            OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value,
+            OrderStatus.COMMITTED_WAIT_MATCHING.value,
+            OrderStatus.PARTIAL.value,
+            OrderStatus.FILLED.value,
+        }
         traded_sum = 0.0
-        for trade in trades:
-            if trade.status in [
-                OrderStatus.COMMITTED_WAIT_MATCHING.value,
-                OrderStatus.FILLED.value,
-            ] and trade.order_datetime.startswith(today_str):
-                traded_sum += trade.price * trade.quantity
+        # orders_cancelled is deliberately absent: CANCELLED and REJECTED are
+        # not in `counted`, so those orders contributed nothing before either.
+        for candidate in itertools.chain(self.account_state.orders_placed,
+                                         self.account_state.orders_committed,
+                                         self.account_state.orders_filled):
+            status = self.account_state.all_order_status.get(candidate.id)
+            if status is None or status.value not in counted:
+                continue
+            if candidate.created_at.strftime("%Y-%m-%d") != today_str:
+                continue
+            traded_sum += candidate.price * candidate.quantity
         return traded_sum + (order.price * order.quantity) <= trade_limit
 
     def _check_if_any_order_filled(self) -> bool:
         if not hasattr(self, "market"):
             return False
         # print("Checking for order fills...")
+
+        calendar = getattr(self.market, "calendar", None) or TradingCalendar()
 
         committed_copy = list(self.account_state.orders_committed)
         for order in committed_copy:
@@ -809,122 +1071,182 @@ class ArenaX_BackendBase:
             )
             cmp_time_range_end = self.market.get_market_time()["mock_current_time"]
 
+            # An order cannot fill after the moment its time-in-force ends it,
+            # and the clock is free to jump straight over that moment: a replay
+            # driver steps from the last bar of a session (13:24, say) to the
+            # first bar of the next one, so nothing is ever asked about the
+            # order while the clock sits past the close. Unclamped, the window
+            # spans the overnight gap and a ROD order placed yesterday matches
+            # today's opening bars -- verified: a 13:20 ROD filling at 09:01
+            # the following day, 19 hours after its own expiry.
+            deadline = policy_for(order.order_type).expires_at(order, calendar)
+            if deadline is not None and deadline < cmp_time_range_end:
+                cmp_time_range_end = deadline
+
             # print(f"Checking order {order.id} from {cmp_time_range_start} to {cmp_time_range_end} against target price {target_price} !!!")
 
             if cmp_time_range_end <= cmp_time_range_start:
                 continue
 
-            price_filled = False
-            if order.action == OrderAction.BUY:
-                price_filled = self._check_price_in_time_range(
-                    order.product.symbol,
-                    cmp_time_range_start,
-                    cmp_time_range_end,
-                    lambda p: p <= target_price,
-                )
-            elif order.action == OrderAction.SELL:
-                price_filled = self._check_price_in_time_range(
-                    order.product.symbol,
-                    cmp_time_range_start,
-                    cmp_time_range_end,
-                    lambda p: p >= target_price,
-                )
+            fill_time = self._find_fill_time(
+                order.product.symbol,
+                cmp_time_range_start,
+                cmp_time_range_end,
+                order.action,
+                target_price,
+            )
 
             order.opt_field["last_check_for_fill"] = cmp_time_range_end
 
-            if price_filled and price_filled > 0:
-                try:
-                    self.account_state.orders_filled.append(order)
-                    if order in self.account_state.orders_committed:
-                        self.account_state.orders_committed.remove(order)
-                    self.account_state.all_order_status[order.id] = OrderStatus.FILLED
-
-                    fill_time = self.market.start_date + timedelta(minutes=price_filled)
-                    value = order.price * order.quantity
-                    commission = self._cost_model.calc_commission(value)
-                    tax = self._cost_model.calc_tax(value, order.action.value, order.product.symbol)
-                    if order.action == OrderAction.BUY:
-                        self.account_state.balance -= (value + commission)
-                    else:
-                        self.account_state.balance += (value - commission - tax)
-
-                    self.account_state.fill_history.append({
-                        "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
-                        "order_id": order.id,
-                        "symbol": order.product.symbol,
-                        "action": order.action.value,
-                        "quantity": order.quantity if order.action == OrderAction.BUY else -order.quantity,
-                        "price": order.price,
-                        "commission": round(commission, 2),
-                        "tax": round(tax, 2),
-                        "time": fill_time.isoformat(),
-                        # Propagate session_id from the order so the client can
-                        # filter fill_history by session after the backtest ends.
-                        "session_id": order.opt_field.get("session_id") if order.opt_field else None,
-                    })
-                    print("Order filled:", order.id)
-
-                    self._reconstruct_positions_from_history()
-                except Exception as exc:
-                    print(f"Error moving order {order.id} to filled: {exc}")
+            if fill_time is not None:
+                self._apply_fill(order, order.price, fill_time)
         return True
 
-    def _check_price_in_time_range(
+    def _apply_fill(self, order: Order, fill_price: float,
+                    fill_time: datetime) -> bool:
+        """Book a fill: move the order, pay the costs, record it, re-derive positions.
+
+        The only place any backend settles a fill. There used to be three
+        copies — base, paper and real — and only this one applied the
+        CostModel, so the same strategy paid commission and tax in backtest and
+        nothing in paper. paper also dropped session_id, which broke the
+        client's per-session filtering of fill_history.
+        """
+        try:
+            if order in self.account_state.orders_committed:
+                self.account_state.orders_committed.remove(order)
+            if order in self.account_state.orders_placed:
+                self.account_state.orders_placed.remove(order)
+            self.account_state.orders_filled.append(order)
+            self.account_state.all_order_status[order.id] = OrderStatus.FILLED
+
+            value = fill_price * order.quantity
+            commission = self._cost_model.calc_commission(value)
+            tax = self._cost_model.calc_tax(value, order.action.value,
+                                            order.product.symbol)
+            if order.action == OrderAction.BUY:
+                self.account_state.balance -= (value + commission)
+            else:
+                self.account_state.balance += (value - commission - tax)
+
+            self.account_state.fill_history.append({
+                "id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
+                "order_id": order.id,
+                "symbol": order.product.symbol,
+                "action": order.action.value,
+                "quantity": order.quantity if order.action == OrderAction.BUY else -order.quantity,
+                "price": fill_price,
+                "commission": round(commission, 2),
+                "tax": round(tax, 2),
+                "time": fill_time.isoformat(),
+                # Propagate session_id from the order so the client can
+                # filter fill_history by session after the backtest ends.
+                "session_id": order.opt_field.get("session_id") if order.opt_field else None,
+            })
+            print("Order filled:", order.id)
+
+            self._reconstruct_positions_from_history()
+            return True
+        except Exception as exc:
+            print(f"Error moving order {order.id} to filled: {exc}")
+            return False
+
+    def _find_fill_time(
         self,
         symbol: str,
         start_time: datetime,
         end_time: datetime,
-        price_condition,
-    ) -> int:
-        try:
-            if symbol not in self.market.historical_data:
-                return False
+        action: OrderAction,
+        target_price: float,
+    ) -> Optional[datetime]:
+        """Timestamp of the first bar in (start_time, end_time] that would fill.
 
-            data_info = self.market.historical_data[symbol]
+        A buy fills on the first close at or below its limit, a sell on the
+        first close at or above it. Takes the action and the price rather than a
+        predicate because a scalar predicate forces a Python loop: comparing
+        the whole window at once is 16x faster over a one-day gap and 200x over
+        a one-year one, and it keeps the cost flat enough that how long the
+        clock jumped stops mattering.
+
+        Searched by timestamp, the same way _calculate_kbar_index does it. An
+        earlier version indexed bars on a uniform minute grid from start_date
+        and wrapped with `idx = minute % n`: a trading day holds ~270 1m bars,
+        not 1440, so the offset drifted a day further out every day and once it
+        passed `n` the modulo silently matched an unrelated day's prices.
+
+        Returns None when nothing matches — the fill timestamp itself is the
+        answer, so the caller does not re-derive it from a minute offset.
+        """
+        try:
+            data_info = self.market.historical_data.get(symbol)
+            if not data_info:
+                return None
+
             data = data_info.get("data")
             timestamps = data_info.get("timestamps")
+            if data is None or data.empty or timestamps is None or len(timestamps) == 0:
+                return None
 
-            if data is None or data.empty or timestamps is None:
-                return False
+            ts = pd.DatetimeIndex(timestamps)
+            # (start, end]: start was already checked on the previous pass.
+            lo = int(ts.searchsorted(pd.Timestamp(start_time), side="right"))
+            hi = int(ts.searchsorted(pd.Timestamp(end_time), side="right"))
+            if hi <= lo:
+                return None
 
-            start_offset = int((start_time - self.market.start_date).total_seconds() / 60)
-            end_offset = int((end_time - self.market.start_date).total_seconds() / 60)
-            if end_offset <= start_offset:
-                return False
+            column = "Close" if "Close" in data.columns else (
+                "close" if "close" in data.columns else None
+            )
+            if column is None:
+                print(f"_find_fill_time: no close column for {symbol} "
+                      f"(have {list(data.columns)})")
+                return None
+            # Not cached: to_numpy() on a contiguous float column is ~5us even
+            # for four years of 1m bars, so a cache would add an invalidation
+            # story for no measurable gain.
+            closes = data[column].to_numpy(dtype=float)
+            window = closes[lo:min(hi, len(closes))]
+            if window.size == 0:
+                return None
 
-            n = len(data)
-            if n == 0:
-                return False
-
-            for minute in range(start_offset + 1, end_offset + 1):
-                idx = minute % n
-                try:
-                    try:
-                        close_price = float(data["Close"].iat[idx])
-                    except Exception:
-                        close_price = float(data["Close"].iloc[idx].item())
-                except Exception:
-                    try:
-                        close_price = float(data.iloc[idx]["Close"])
-                    except Exception:
-                        try:
-                            close_price = float(data.iloc[idx]["close"])
-                        except Exception:
-                            continue
-
-                if price_condition(close_price):
-                    return minute
-            return -1
+            hits = (window <= target_price if action == OrderAction.BUY
+                    else window >= target_price)
+            if not hits.any():
+                return None
+            return ts[lo + int(np.argmax(hits))].to_pydatetime()
         except Exception as exc:
-            print(f"_check_price_in_time_range error: {exc}")
-            return -1
+            # Report the type too: a bare message turned a NameError in here
+            # into a silent "nothing filled", which looks exactly like a
+            # correct no-match and cost an afternoon to spot.
+            print(f"_find_fill_time error: {type(exc).__name__}: {exc}")
+            return None
 
     def _reconstruct_positions_from_history(self) -> None:
+        """Rebuild positions from fill_history, costing the shares still held.
+
+        FIFO: a sell retires the oldest lots, so what remains in the queue IS
+        the open position, and its cost is the cost of those lots alone.
+
+        This used to average every buy the account had ever made and never let
+        a sell reduce that average, so avg_cost drifted toward the mean traded
+        price of the whole session instead of describing the open lot. Over 146
+        buys and 145 sells it reported 247.50 for a position actually bought at
+        243.00 -- and since unrealized_pnl is derived from avg_cost, every
+        caller reading it (cjtrade_system's summary) was given a wrong number.
+        market_value was unaffected, because _update_position_prices() re-marks
+        it from a live snapshot.
+
+        Fills are consumed in append order, not sorted: _sync_with_real_account
+        seeds opening positions with time="initial_sync", which would sort after
+        every real ISO timestamp and turn a pre-existing holding into the most
+        recent buy.
+        """
         if not self.account_state.fill_history:
             self.account_state.positions = []
             return
 
         from collections import defaultdict
+        from collections import deque
 
         sym_fills = defaultdict(list)
         for fill in self.account_state.fill_history:
@@ -932,31 +1254,53 @@ class ArenaX_BackendBase:
 
         new_positions = []
         for sym, fills in sym_fills.items():
-            net_qty = 0
-            total_buy_cost = 0.0
-            total_buy_qty = 0
+            lots: deque = deque()   # [price, qty] per open lot, oldest first
+            oversold = 0            # shares sold with no lot left to retire
 
             for fill in fills:
-                q = fill["quantity"]
-                p = fill["price"]
+                # quantity is signed in fill_history: + for BUY, - for SELL
+                # (see _apply_fill).
+                qty = fill["quantity"]
+                price = fill["price"]
 
-                if q > 0:
-                    total_buy_cost += (q * p)
-                    total_buy_qty += q
-                    net_qty += q
-                else:
-                    net_qty += q
+                if qty > 0:
+                    lots.append([price, qty])
+                    continue
 
-            if net_qty == 0:
+                remaining = -qty
+                while remaining > 0 and lots:
+                    lot_price, lot_qty = lots[0]
+                    matched = min(remaining, lot_qty)
+                    if matched >= lot_qty:
+                        lots.popleft()
+                    else:
+                        lots[0][1] -= matched
+                    remaining -= matched
+                oversold += remaining
+
+            held_qty = sum(q for _, q in lots) - oversold
+            if held_qty == 0:
                 continue
 
-            avg_cost = total_buy_cost / total_buy_qty if total_buy_qty > 0 else 0.0
+            if oversold:
+                # Reservation should make this impossible (see _reserved_quantity
+                # / available_to_sell). Report it rather than hiding it: a
+                # negative share count in a cash equity account is a bug
+                # upstream, and silently dropping the position would erase the
+                # only evidence.
+                print(f"Warning: {sym} fill history oversells by {oversold} "
+                      f"share(s) — position reported as {held_qty}")
+
+            held_cost = sum(p * q for p, q in lots)
+            avg_cost = held_cost / held_qty if held_qty > 0 else 0.0
             new_positions.append(Position(
                 symbol=sym,
-                quantity=net_qty,
+                quantity=held_qty,
                 avg_cost=round(avg_cost, 2),
+                # Placeholders: _update_position_prices() overwrites both from a
+                # live snapshot, and list_positions() always calls it next.
                 current_price=round(avg_cost, 2),
-                market_value=round(net_qty * avg_cost, 1),
+                market_value=round(held_qty * avg_cost, 1),
                 unrealized_pnl=0.0,
             ))
 
@@ -1026,6 +1370,7 @@ class ArenaX_BackendBase:
             raise ValueError(f"Mock broker: Unsupported interval for aggregation: {target_interval}")
 
         target_mins = interval_minutes[target_interval]
+        symbol = kbars[0].symbol        # aggregation never mixes symbols
         data = {
             "timestamp": [k.timestamp for k in kbars],
             "open": [k.open for k in kbars],
@@ -1055,6 +1400,7 @@ class ArenaX_BackendBase:
                 low=round(row["low"], 2),
                 close=round(row["close"], 2),
                 volume=int(row["volume"]),
+                symbol=symbol,
             )
             result.append(kbar)
 

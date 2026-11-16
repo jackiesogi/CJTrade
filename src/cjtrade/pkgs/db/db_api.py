@@ -254,7 +254,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
             l = float(r[3]) if r[3] is not None else 0.0
             c = float(r[4]) if r[4] is not None else 0.0
             v = int(r[5]) if r[5] is not None else 0
-            k = Kbar(datetime.fromtimestamp(ts), o, h, l, c, v)
+            k = Kbar(datetime.fromtimestamp(ts), o, h, l, c, v, symbol)
             results.append(k)
         return results
     except Exception as e:
@@ -403,7 +403,7 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
 # Simple test code
 if __name__ == "__main__":
     from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
-    conn = connect_sqlite("./data/sinopac.db")
+    conn = connect_sqlite(str(paths.mirror_db_path("sinopac")))
     res = get_cj_order_id_from_db(conn, "f224a302")
     print(type(res))
     print(res)

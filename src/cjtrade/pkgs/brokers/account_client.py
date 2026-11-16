@@ -12,6 +12,7 @@ from cjtrade.pkgs.models.position import *
 from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import *
+from cjtrade.pkgs.models.trade import Trade
 
 
 class BrokerType(Enum):
@@ -95,6 +96,18 @@ class AccountClient:
         self._sync_all()  # will sync `account_state`
         return self.account_state.balance
 
+    def get_account_state(self) -> AccountState:
+        """Balance and positions from a single sync.
+
+        get_balance() and get_positions() each run a full `_sync_all()`, so
+        asking for both costs two syncs and returns two views of the account
+        taken a round-trip apart. A caller that needs them together -- anything
+        reporting "here is your new balance and your new position" -- wants one
+        consistent read, not two.
+        """
+        self._sync_all()  # will sync `account_state`
+        return self.account_state
+
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
         return self.broker_api.get_bid_ask(product, intraday_odd)
 
@@ -136,14 +149,64 @@ class AccountClient:
     def cancel_order(self, order_id: str) -> OrderResult:
         return self.broker_api.cancel_order(order_id)
 
-    def list_orders(self) -> List[Dict[str, Any]]:
+    def list_orders(self) -> List[Trade]:
+        # Trade, not Dict: both implementations (arenax, sinopac) already return
+        # Trade objects, and the annotation saying otherwise is what pushes
+        # callers into subscripting them.
         return self.broker_api.list_orders()
 
     def is_market_open(self) -> bool:
         return self.broker_api.is_market_open()
 
-    def get_market_time(self) -> bool:
+    def get_market_time(self) -> dict:
+        """What time it is on the market now. Same keys for every broker.
+
+        See BrokerAPIBase.get_market_time for the key list. Includes
+        playback_speed and paused, so a caller can pace itself against a
+        simulated clock without knowing which broker it is talking to; a live
+        broker reports 1.0 / False.
+        """
         return self.broker_api.get_market_time()
+
+    def get_system_time(self) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time()
+
+    @property
+    def playback_speed(self) -> float:
+        """Market seconds per real second. 1.0 for any live broker.
+
+        Use this to scale your own waiting, e.g. sleep(seconds / speed), rather
+        than configuring the speed separately on both sides: the broker is the
+        authority on how fast its own clock runs, so asking it is the only way
+        the two cannot disagree.
+        """
+        return float(self.get_market_time().get("playback_speed", 1.0))
+
+    @property
+    def control_plane(self):
+        """Broker-server control plane, or None when there is nothing to control.
+
+        Not named `simulation`: that word is already taken in this codebase for
+        Shioaji's sandbox flag (SIMULATION=y -> SinopacBrokerAPI.simulation), and
+        the two are unrelated — a sinopac sandbox account is still a live broker
+        with no clock to steer.
+
+        Deliberately NOT part of BrokerAPIBase either: freezing a clock, stepping
+        a replay or restarting a backend are things only a simulated exchange can
+        do, and declaring them there would force every adapter (yuanta, cathay,
+        IBKR) to implement methods that have no meaning for a real broker.
+
+        It lives here so callers never reach through
+        `client.broker_api.middleware`. Against a real broker it is None, which
+        is an explicit check rather than an AttributeError two layers down.
+
+        Example::
+
+            if client.control_plane:
+                client.control_plane.resume_time_progress()
+        """
+        return getattr(self.broker_api, "middleware", None)
 
     def get_broker_name(self) -> str:
         return self.broker_api.get_broker_name()

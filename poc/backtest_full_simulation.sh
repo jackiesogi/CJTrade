@@ -6,7 +6,9 @@ set -e
 # Form: collect params + export env
 # (Zenity / Web / CLI — auto-selected; persist handled by FormEngine)
 # ------------------------
-eval "$(uv run python -m cjtrade.pkgs.ui poc/backtest_full_simulation.toml --renderer=cli "$@")"
+# grep '^export ': eval runs whatever lands on stdout, so a stray line from
+# anywhere in the pipeline becomes a shell command. See poc/backtest.sh.
+eval "$(uv run python -m cjtrade.pkgs.ui poc/backtest_full_simulation.toml --renderer=cli "$@" | grep '^export ')"
 
 # ------------------------
 # Clean up

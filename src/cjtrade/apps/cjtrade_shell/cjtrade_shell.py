@@ -13,6 +13,7 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.fundamental import *
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.analytics.technical.models import *
@@ -594,20 +595,28 @@ class CalendarCommand(CommandBase):
 
             # Check if it's a time adjustment command (+N or -N)
             if arg.startswith(('+', '-')):
-                if client.get_broker_name() != "arenax":
+                # startswith, not ==: get_broker_name() returns "arenax (8802)".
+                if not client.get_broker_name().startswith('arenax'):
                     print("Error: Time adjustment only available in ArenaX environment")
                     return
 
                 try:
                     hours = float(arg)
-                    client.broker_api.api.market.adjust_time(hours)
-                    # Show updated time
-                    ts = client.broker_api.get_system_time()
-                    print(f"New mock time: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
-                    return
                 except ValueError:
                     print(f"Error: Unable to parse time adjustment '{arg}'")
                     return
+
+                # ArenaX_Market.adjust_time() exists server-side but is not
+                # exposed over HTTP, so there is nothing for the client to call.
+                # The old code here reached for client.broker_api.api.market,
+                # which only the retired MockBroker ever had — ArenaXBrokerAPI_v2
+                # has .middleware, not .api — so this branch could only raise.
+                # Say so plainly until a /control/adjust-time endpoint exists.
+                print(f"Error: time adjustment ({hours:+.1f}h) is not supported "
+                      f"by the ArenaX server yet — it needs a /control/adjust-time "
+                      f"endpoint. Restart the server with a different start date "
+                      f"instead.")
+                return
             else:
                 # Direct call with date argument
                 subprocess.run([sys.executable, str(self.ncal_script), '--sunday', arg], shell=False)
@@ -617,7 +626,7 @@ class CalendarCommand(CommandBase):
         bkr_name = client.get_broker_name()
         if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()['mock_current_time']
+            ts = client.get_market_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()
@@ -964,7 +973,7 @@ def main():
 
     if args.broker == 'sinopac':
         config["state_file"] = f"./sinopac_{config['username']}.json"
-        config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
+        config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
         if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
@@ -972,7 +981,7 @@ def main():
         else:
             config["speed"] = 120.0  # 120x speed for mock broker
             config["state_file"] = f"./mock_{config['username']}.json"
-            config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
+            config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
             client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
         if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
@@ -980,13 +989,13 @@ def main():
         else:
             config["speed"] = 60.0  # 60x speed for mock broker
             config["state_file"] = f"./realistic_{config['username']}.json"
-            config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
+            config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
             real = AccountClient(BrokerType.SINOPAC, **config)
             client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker == 'arenax_legacy':
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./arenax_{config['username']}.json"
-        config["mirror_db_path"] = f"./data/arenax_{config['username']}.db"
+        config["mirror_db_path"] = str(paths.mirror_db_path("arenax", config["username"]))
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.ARENAX, real_account=real, **config)
     elif args.broker == "arenax":

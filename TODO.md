@@ -44,3 +44,96 @@ Sinopac API 目前這樣封裝在獨立檔案作place_order測試的時候其實
 否則程式結束之後這個 id 就消失了（當然使用者還是可以利用 sinopac native api 來撈訂單資料
 但這不應該是CJTrade User自己需要去做的 這樣就違反了abstraction的哲理）
 應該要有一個方式在 place_order 之後不管使用者有沒有自行紀錄下來 電腦上的 local file 都要有紀錄一份 mapping？
+
+# ArenaXMiddleWare 每次請求都會開一條新的 HTTP connection
+`src/cjtrade/pkgs/brokers/arenax/arenax_middleware.py` 的 `_get()`/`_post()` 是用
+`requests.get(url, ...)` / `requests.post(url, ...)` 這種 module-level 便利函式打 API，
+沒有共用 `requests.Session()`。這兩個函式的實作本質上是
+`with sessions.Session() as session: return session.request(...)`，
+所以每呼叫一次就會建立一個全新的 Session、打完立刻關掉，底層 TCP connection 完全沒有
+keep-alive、沒有被 pool 重用（在 poc/trading_engine 測試 EventHub 的 `_snapshot` 時，
+從 log 可以看到 urllib3 對每一次 `/market/snapshot` 查詢都印出
+"Starting new HTTP connection"，證實了這點）。
+
+現在是打 `http://localhost:8802`（無 TLS、本機），成本還不明顯，但之後 symbol 數量變多、
+polling 頻率變高，或 server 換到真的網路環境時，這個開銷會被放大。
+
+修法：在 `ArenaXMiddleWare.__init__` 存一個 `self._session = requests.Session()`，
+`_get`/`_post` 改成呼叫 `self._session.get(...)/self._session.post(...)`，對外介面不變，
+純粹讓底層連線可以重用。這是共用的 broker 程式碼，會影響整個 app 用 ArenaX 的地方，
+不只是 poc/trading_engine，所以需要另外評估影響範圍再動手。
+
+### Config provenance（效法 `git config --show-origin`）
+目前 `config_loader.load_supported_config_files()` 把每個檔案 `load_dotenv()` 進
+`os.environ`，**provenance 在那一刻就丟掉了**。之後 `os.environ.get('API_KEY')` 無法
+知道這個值是哪個檔案設的、有沒有被其他檔案覆蓋過。config 一多就很難 debug。
+
+希望做到像 git 那樣可以問：
+```sh
+cjtrade config --show-origin --show-scope CJSYS_BACKTEST_PLAYBACK_SPEED
+#   local   ./backtest.cjconf:12   30000.0      ← 生效
+#   global  ~/.../cjtrade/system.cjconf:8  1200.0
+#   system  <package>/configs/backtest.cjsys:41  1200.0
+```
+
+#### 兩種實作路線
+- **(a) 包一層 registry**：自己 parse 每個 `.cjconf` / `.cjsys`，記錄
+  `{key: [(value, source_file, line_no, scope), ...]}`，然後才寫進 environ。
+  可以完整回答「這個 key 有幾個來源、誰贏了、被誰蓋掉」。比較貼近
+  `git config --get-all` 的效果。
+- **(b) 只記錄最後贏家**：每次 `load_dotenv` 前後 diff `os.environ`，把新增／變更的
+  key 歸給該檔案。改動極小，但看不到被覆蓋掉的那些。
+
+傾向 (a)。
+
+#### 連帶要解決的：scope 階層
+現在 `load_dotenv(override=False)` 是**先載入的贏**，而 git 是**後面的 scope 贏**
+（local > global > system）。兩者方向相反。而且原本 `SUPPORTED_CONFIG_PATHS` 只有
+`.env` 和 CWD，沒有 user 層級（已補上 `paths.config_dir()`，但順序仍是「先載入的贏」
+以維持相容）。
+
+希望收斂成跟 git 一致的階層，後者覆蓋前者：
+```
+system   套件內建預設（<package>/apps/*/configs/*.cjsys）
+  ↓
+global   paths.config_dir()/*.cjconf          使用者層級
+  ↓
+local    ./*.cjconf、./.env                   專案層級
+  ↓
+env      直接設定的環境變數                    最高
+```
+
+注意這會**反轉現有的優先序**，所以要一起處理：
+1. 把 `override=False` 改成按 scope 順序載入 + `override=True`
+2. 確認現有的 `.cjsys` 預設值不會蓋掉使用者的 `.cjconf`
+3. `config_loader.py:_default_config_paths()` 的 docstring 有記錄這個已知落差
+
+#### 更該優先修的：CWD 內多檔之間順序未定義
+實測目前的優先序（`override=False` → 最先設定某 key 的來源贏）：
+```
+1 已存在的環境變數   ← 最高，打敗所有檔案
+2 ./.env
+3 ./**/*.cjconf      ← 這一層內部的順序是「未定義」的
+4 <user config>/*.cjconf
+5 套件內建 *.cjsys   ← 最低（load_cjsys 在 load_cjconf 之後跑）
+```
+
+第 3 層的問題：`load_supported_config_files()` 對 CWD 用 `p.rglob(pattern)`，而
+`rglob` 的回傳順序是檔案系統的 `readdir` 順序 —— 不是字母序也不是深度序。實測：
+```
+root.cjconf
+portoverride.cjconf
+_backup.cjconf
+sub/nested.cjconf
+```
+所以 tree 裡有兩個 `.cjconf` 設同一個 key 時，**誰贏跨機器可能不同**，甚至同一台機器
+上檔案重建後就變了。
+
+這比「優先序方向跟 git 相反」更嚴重 —— 後者只是不直覺，前者是同一份 repo 在不同
+機器上行為不同。至少要先 `sorted(p.rglob(...))` 讓它可預測，理想上淺層優先於深層
+（跟 git 的 local 比 parent 強一致）。
+
+#### 另外
+`CJTradeConfiguration` 這個空 class 和它上面那條
+「Implement a hierarchical configuration structure (e.g. `simulation.playback_speed`)」
+的 TODO 應該一起做掉 —— 階層式 key 和 provenance 是同一件事的兩面。

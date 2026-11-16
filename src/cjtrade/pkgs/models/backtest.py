@@ -68,6 +68,18 @@ class BacktestResult:
     final_equity : float, optional
         Final portfolio equity (cash + position values) at session end.
         Used to calculate true PnL including unrealised gains/losses.
+    provenance : dict, optional
+        Who produced this result and under what assumptions: which execution
+        path, interval, symbols, window, strategy and parameters. Carried on
+        the result because the two paths that produce one do NOT agree -- the
+        oneshot engine fills a signal in the same bar at the signal's own
+        price, while the trading engine places a limit order that fills only
+        when a later close crosses it. The same strategy and parameters
+        therefore give different numbers, so a report read without knowing
+        which path produced it is not interpretable.
+
+        Defaults to None, which is what every result pickled before this
+        field existed will report.
     """
 
     initial_balance: float
@@ -77,6 +89,7 @@ class BacktestResult:
     session_id: Optional[str] = None
     start_time: Optional[str] = None
     final_equity: Optional[float] = None
+    provenance: Optional[Dict] = None
 
     # ------------------------------------------------------------------
     # Core conversion

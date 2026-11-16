@@ -36,10 +36,12 @@ class ArenaXMiddleWare:
             print(f"[ArenaX] Request failed: {e}")
             return None
 
-    def _post(self, path: str, data: dict = None, headers: dict | None = None):
-        """POST helper. `headers` is an optional dict of additional headers.
+    def _send(self, method: str, path: str, data: dict = None,
+              headers: dict | None = None):
+        """POST / PUT / PATCH / DELETE helper.
 
-        For backward compatibility callers can still embed a special `_headers` key in `data`.
+        `headers` is an optional dict of additional headers. For backward
+        compatibility callers can still embed a special `_headers` key in `data`.
         """
         url = f"{self.base_url}/{path}"
         try:
@@ -58,7 +60,7 @@ class ArenaXMiddleWare:
             if isinstance(headers, dict):
                 hdrs.update(headers)
 
-            res = requests.post(url, json=data, headers=hdrs, timeout=10)
+            res = requests.request(method, url, json=data, headers=hdrs, timeout=10)
 
             try:
                 # treat it as JSON response if possible
@@ -74,23 +76,40 @@ class ArenaXMiddleWare:
             print(f"[ArenaX] Request failed: {e}")
             return None
 
+    def _post(self, path: str, data: dict = None, headers: dict | None = None):
+        return self._send("POST", path, data, headers)
+
+    def _put(self, path: str, data: dict = None, headers: dict | None = None):
+        return self._send("PUT", path, data, headers)
+
+    def _patch(self, path: str, data: dict = None, headers: dict | None = None):
+        return self._send("PATCH", path, data, headers)
+
+    def _delete(self, path: str, data: dict = None, headers: dict | None = None):
+        return self._send("DELETE", path, data, headers)
+
 
     def check_health(self, **kwargs) -> bool:
         data = self._get("health")
         return data
 
-    def get_system_time(self, **kwargs) -> dict:
-        t = self._get("control/get-time")
+    def get_market_time(self, **kwargs) -> dict:
+        """Raw clock dict from the server. See BrokerAPIBase.get_market_time."""
+        t = self._get("api/v1/clock")
         if t:
             return t
         else:
-            print(f"Failed to get system time: {t.get('error') if t else 'No response'}")
+            print("Failed to get market time: No response")
             return None
+
+    def get_system_time(self, **kwargs) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time(**kwargs)
 
     def is_market_open(self, **kwargs) -> bool:
         # mock_current_time is an ISO 8601 naive datetime (Asia/Taipei).
         # No timezone conversion — parse as-is.
-        mct = self.get_system_time()["mock_current_time"]
+        mct = self.get_market_time()["mock_current_time"]
         dt = datetime.fromisoformat(mct)
         return (
             dt.weekday() < 5 and
@@ -98,37 +117,70 @@ class ArenaXMiddleWare:
         )
 
     def get_config(self, **kwargs):
-        return self._get("control/get-config")
+        return self._get("api/v1/config")
 
     def start_backend(self, **kwargs):
-        return self._post("control/start-backend", headers=kwargs.get("headers"))
+        return self._put("api/v1/backend", {"running": True},
+                         headers=kwargs.get("headers"))
 
     def stop_backend(self, **kwargs):
-        return self._post("control/stop-backend", headers=kwargs.get("headers"))
+        return self._put("api/v1/backend", {"running": False},
+                         headers=kwargs.get("headers"))
 
     def pause_time_progress(self, **kwargs):
-        return self._post("control/pause-time-progress", headers=kwargs.get("headers"))
+        return self._patch("api/v1/clock", {"paused": True},
+                           headers=kwargs.get("headers"))
 
     def resume_time_progress(self, **kwargs):
-        return self._post("control/resume-time-progress", headers=kwargs.get("headers"))
+        return self._patch("api/v1/clock", {"paused": False},
+                           headers=kwargs.get("headers"))
 
-    def set_system_time(self, mock_init_time: str, real_init_time: str = None, auto_start_progress: bool = True, auto_preload_data: bool = True, **kwargs):
+    def set_timeline_origin(self, mock_init_time: str, real_init_time: str = None, auto_start_progress: bool = True, auto_preload_data: bool = True, **kwargs):
+        """Set where the simulated timeline BEGINS — not the current moment.
+
+        Snaps to 09:00 server-side and, unless both flags are turned off, also
+        starts the clock and clears + refetches the price cache. To move the
+        current moment within an existing timeline, use set_market_time().
+        """
         data = {
-            "anchor_time": mock_init_time,
+            "mock_init_time": mock_init_time,
             # "real_init_time": real_init_time,
-            # "auto_start_progress": auto_start_progress,
-            # "auto_preload_data": auto_preload_data,
+            "auto_start_progress": auto_start_progress,
+            "auto_preload_data": auto_preload_data,
         }
-        return self._post("control/set-time", data, headers=kwargs.get("headers"))
-        # return self._post("control/set-time", data, headers=kwargs.get("headers"))
+        return self._put("api/v1/clock/origin", data, headers=kwargs.get("headers"))
+
+    def set_system_time(self, *args, **kwargs):
+        """Deprecated alias for set_timeline_origin().
+
+        The old name read as the setter-partner of get_system_time(), which it
+        never was: that one reads the current moment, this one writes the
+        timeline's start.
+        """
+        return self.set_timeline_origin(*args, **kwargs)
+
+    def set_market_time(self, t, **kwargs):
+        """Step the server's frozen clock to `t`. Repeatable and idempotent.
+
+        Unlike set_timeline_origin(), this neither snaps to 09:00 nor touches
+        the preloaded data, so it is safe to call once per replayed bar.
+        """
+        iso = t.isoformat() if hasattr(t, "isoformat") else str(t)
+        return self._patch("api/v1/clock", {"mock_current_time": iso},
+                           headers=kwargs.get("headers"))
 
     def get_price_from_exchange(self, symbol: str, **kwargs):
-        # server exposes GET /control/get-price?symbol=<symbol>
-        return self._get(f"control/get-price?symbol={symbol}")
+        """Latest price for `symbol`, as a Snapshot dict.
+
+        Used to have its own GET /control/get-price, which duplicated the
+        snapshot route and answered with str(Snapshot) -- a Python repr, not
+        JSON. Same data, one endpoint.
+        """
+        return self.snapshot(symbol, **kwargs)
 
     def login(self, api_key: str, **kwargs) -> bool:
         data = {"api_key": api_key}
-        response = self._post("account/login", data, headers=kwargs.get("headers"))
+        response = self._post("api/v1/session", data, headers=kwargs.get("headers"))
         if response and response.get("ok") and response.get("message") == "Login successful":
             return True
         else:
@@ -136,10 +188,11 @@ class ArenaXMiddleWare:
             raise ValueError(f"Login failed: {msg}")
 
     def logout(self, **kwargs):
-        return self._post("account/logout", headers=kwargs.get("headers"))
+        return self._delete("api/v1/session", headers=kwargs.get("headers"))
 
     def account_summary(self, **kwargs) -> dict:
-        summary = self._get("account/summary")
+        """Balance, positions and orders from one read."""
+        summary = self._get("api/v1/account")
         if summary is None:
             return None
         else:
@@ -148,6 +201,14 @@ class ArenaXMiddleWare:
             res['positions'] = summary.get("positions", [])
             res['orders'] = summary.get("orders", [])
             return res
+
+    def list_orders(self, **kwargs) -> list:
+        """Just the orders. Cheaper than account_summary when that is all you
+        want -- it skips rebuilding and re-pricing every position."""
+        res = self._get("api/v1/orders")
+        if res and res.get("ok"):
+            return res.get("orders", [])
+        return []
 
     def get_backtest_state(self, session_id: str = None, **kwargs) -> dict:
         """Fetch raw backtest data from the server.
@@ -162,9 +223,19 @@ class ArenaXMiddleWare:
                         isolation when the server has been running across multiple
                         backtest sessions or manual operations.
         """
-        res = self._get("account/backtest-state")
+        # Ask the server to filter. fill_history only grows, so filtering here
+        # meant downloading every other run's fills in order to throw them
+        # away -- and this gets polled during a run.
+        path = "api/v1/account/fills"
+        if session_id is not None:
+            path += f"?session_id={session_id}"
+        res = self._get(path)
         if res and res.get("ok"):
             fill_history = res.get("fill_history", [])
+            # Filtered again, deliberately. A server that predates the query
+            # parameter ignores it and answers with everything, and silently
+            # reporting another run's trades as this one's is worse than the
+            # wasted bytes. Filtering an already-filtered list costs nothing.
             if session_id is not None:
                 fill_history = [
                     f for f in fill_history
@@ -178,7 +249,7 @@ class ArenaXMiddleWare:
         return None
 
     def snapshot(self, symbol: str, **kwargs) -> dict:
-        res = self._get(f"market/snapshot?symbol={symbol}")
+        res = self._get(f"api/v1/market/{symbol}/snapshot")
         if res and res.get("ok"):
             return res.get("price")  # return Snapshot object
         else:
@@ -203,7 +274,7 @@ class ArenaXMiddleWare:
         list[dict]  raw dicts with keys: timestamp, open, high, low, close, volume
         """
         res = self._get(
-            f"market/kbars?symbol={symbol}&start={start}&end={end}&interval={interval}"
+            f"api/v1/market/{symbol}/kbars?start={start}&end={end}&interval={interval}"
         )
 
         if res and res.get("ok"):
@@ -212,12 +283,16 @@ class ArenaXMiddleWare:
         print(f"Failed to get kbars for {symbol}: {err}")
         return []
 
-    def is_kbar_data_available(self, start: str, end: str) -> bool:
-        res = self._get(f"market/data_availability?start={start}&end={end}")
-        if res and res.get("ok"):
-            return res.get("available", False)
-        err = res.get("error") if res else "No response"
-        print(f"Failed to check data availability: {err}")
+    def data_availability(self, **kwargs) -> dict:
+        """Which date range the real broker can serve, when one is attached.
+
+        Informational only. Do NOT use it to decide whether to call get_kbars:
+        that route picks its own source (price_db -> real broker -> yfinance).
+
+        Replaces is_kbar_data_available(), which took start/end the server
+        ignored and then read a response key the server never sent.
+        """
+        return self._get("api/v1/market/data-availability")
 
 
     def place_order(self, order: Order, **kwargs) -> OrderResult:
@@ -241,8 +316,7 @@ class ArenaXMiddleWare:
             "opt_field": order.opt_field,
         }
 
-        # Call server endpoint (broker-side server expects /trade/place-order)
-        res = self._post("trade/place-order", data, headers=kwargs.get("headers"))
+        res = self._post("api/v1/orders", data, headers=kwargs.get("headers"))
 
         if res is None:
             raise ConnectionError("No response from ArenaX broker-side server")
@@ -270,8 +344,7 @@ class ArenaXMiddleWare:
         return order_result
 
     def cancel_order(self, order_id: str, **kwargs) -> OrderResult:
-        data = {"order_id": order_id}
-        res = self._post("trade/cancel-order", data, headers=kwargs.get("headers"))
+        res = self._delete(f"api/v1/orders/{order_id}", headers=kwargs.get("headers"))
 
         if res is None:
             raise ConnectionError("No response from ArenaX broker-side server")
@@ -291,12 +364,16 @@ class ArenaXMiddleWare:
         )
 
     def sync_state(self, order_id: str, **kwargs) -> List[OrderResult]:
-        data = {"order_id": order_id}
-        res = self._post("trade/sync-state", data, headers=kwargs.get("headers"))
+        """Current status of one order, refreshed against the market.
+
+        A GET: the server re-runs the fill check and reports, it performs no
+        transition of its own.
+        """
+        res = self._get(f"api/v1/orders/{order_id}")
         if res is None:
             return None
         if not res.get("ok", False):
-            raise ValueError(f"Commit order failed: {res.get('error')}")
+            raise ValueError(f"Order refresh failed: {res.get('error')}")
 
         r = res.get("result")
         if r is None:
@@ -320,7 +397,7 @@ if __name__ == "__main__":
     dt = datetime(2021, 10, 1, 9, 30, tzinfo=ZoneInfo("Asia/Taipei"))
     iso_time = dt.isoformat()
     print(f"Testing is_market_open() with mock time {iso_time}...")
-    print(a.set_system_time(iso_time))
+    print(a.set_timeline_origin(iso_time))
     print(f"Market open status: {a.is_market_open()}")
 
     exit(0)
@@ -334,7 +411,7 @@ if __name__ == "__main__":
     print(a.get_time())
     print("sleep 5 seconds and get time again...")
     time.sleep(5)
-    print(a.get_system_time())
+    print(a.get_market_time())
     time.sleep(5)
     print("Try to resume time progress...")
     print(a.resume_time_progress())

@@ -18,20 +18,63 @@ for arg in "$@"; do
 done
 
 # ------------------------
+# How to ask: --renderer=cli | web | zenity | auto  (default: web)
+# ------------------------
+# A plain flag rather than a field in backtest.toml, because this is the
+# question of how to ask the questions -- the form cannot answer it about
+# itself. Read once here and passed to BOTH forms: this run asks for the
+# backtest's parameters and then for the strategy's own, and having one of
+# those open a browser while the other waited on the terminal was a good way
+# to lose a run to a prompt nobody was looking at.
+#
+# Not validated here. FormEngine already rejects an unknown name with the list
+# of valid ones, and a second copy of that list in shell would only drift.
+RENDERER="web"
+for arg in "$@"; do
+    case "$arg" in
+        --renderer=*) RENDERER="${arg#*=}" ;;
+    esac
+done
+
+# ------------------------
 # Form: collect params + export env
 # (CLI prompts only for fields not supplied via CLI args)
 # ------------------------
-eval "$(uv run python -c '
+# `grep '^export '` is not decoration. Everything eval reads here is executed
+# as shell, so one stray line of stdout from anything in the pipeline becomes a
+# command -- which is exactly what happened: on macOS webbrowser.open() runs
+# osascript on this process's fd 1 and its return value arrived mid-stream as
+# `command not found`. That leak is fixed at the source (pkgs/ui/renderers/
+# web.py), and this filter is here so the next one cannot reach a shell at all.
+# CJ_FORM_RENDERER rather than an argument: `python -c` puts its own script at
+# sys.argv[0], so anything positional here would have to be unpicked from the
+# same list FormEngine is already reading the field flags out of.
+eval "$(CJ_FORM_RENDERER="$RENDERER" uv run python -c '
+import os
 from cjtrade.pkgs.ui import FormEngine
-e = FormEngine("poc/backtest.toml", renderer="web")
+e = FormEngine("poc/backtest.toml", renderer=os.environ["CJ_FORM_RENDERER"])
 e.print_exports(e.run())
-' "$@")"
+' "$@" | grep '^export ')"
+
+# `set -e` does not cover the form. The exit status of `eval "$(cmd)"` is
+# eval's, and eval of an empty string succeeds -- so a form that crashed or
+# was cancelled left every variable below unset and the run went ahead on
+# nothing: --interval '' --strategy '' and a report built from it. Checked
+# here, once, rather than trusted five times further down.
+for required in CJSYS_WATCH_LIST INITIAL_FUND DURATION_DAYS INTERVAL STRATEGY; do
+    if [ -z "${!required}" ]; then
+        echo -e "${RED}The form did not complete: ${required} is unset.${NC}" >&2
+        echo "Nothing to run with — rerun and submit it, or pass every flag." >&2
+        exit 1
+    fi
+done
 
 # Step 2: dynamically prompt for the selected strategy's parameters
 eval "$(uv run python poc/strategy_params.py \
     --strategy "$STRATEGY" \
     --interval "$INTERVAL" \
-    ${PARAMS:+--params "$PARAMS"})"
+    --renderer "$RENDERER" \
+    ${PARAMS:+--params "$PARAMS"} | grep '^export ')"
 
 # Export port so Python modules pick up the correct server port
 case "$ARENAX_MODE" in

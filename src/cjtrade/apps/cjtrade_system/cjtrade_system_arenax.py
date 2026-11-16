@@ -23,6 +23,7 @@ from typing import Optional
 import numpy as np
 from aiohttp import web as _aiohttp_web
 from cjtrade.apps.cjtrade_system.extensions.ntfy_sh import push_to_ntfy_sh
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.analytics.technical import ta
 from cjtrade.pkgs.brokers.account_client import AccountClient
@@ -43,7 +44,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)-8s: %(message)s",
     handlers=[
-        logging.FileHandler("cjtrade_system.log", encoding="utf-8"),
+        logging.FileHandler(paths.log_path("cjtrade_system.log"), encoding="utf-8"),
         logging.StreamHandler(sys.stdout)
     ],
     force=True
@@ -72,6 +73,28 @@ def load_cjconf():
 
 def print_config():
     log.info(f"System Configuration: {config}")
+
+
+# Browser origins allowed to read the CJTrade System API's responses.
+#
+# It used to answer every request with Access-Control-Allow-Origin: '*'. None
+# of those routes authenticate, so that wildcard let ANY page the user happened
+# to be visiting read their balance, positions and trade history -- a loopback
+# bind does nothing about that, because the request comes from the user's own
+# browser. An explicit list means only the local front end can read it.
+#
+# Override with CJSYS_API_ALLOWED_ORIGINS (comma-separated) if FinHub serves
+# from a port that is not listed; "none" turns CORS off entirely, which is
+# right when nothing but a server-side client polls this.
+#
+# Defined up here rather than next to CJTRADE_API_HOST because SystemConfig
+# uses it as a field default, and a dataclass default is evaluated when the
+# class is created.
+DEFAULT_API_ALLOWED_ORIGINS = (
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:8080", "http://127.0.0.1:8080",
+)
 
 
 def build_system_config(broker: str, mode: str) -> "SystemConfig":
@@ -127,9 +150,25 @@ def build_system_config(broker: str, mode: str) -> "SystemConfig":
         bb_min_width_pct=float(_get('BB_MIN_WIDTH_PCT', 0.01) or 0.01),
         bb_window_size=int(_get('BB_WINDOW_SIZE', 20) or 20),
         risk_max_position_pct=float(_get('RISK_MAX_POSITION_PCT', 0.05) or 0.05),
-        api_host=_get('API_HOST', '0.0.0.0'),
+        api_host=_get('API_HOST', '127.0.0.1'),
         api_port=int(_get('API_PORT', 8899) or 8899),
+        api_allowed_origins=_parse_origins(_get('API_ALLOWED_ORIGINS')),
     )
+
+
+def _parse_origins(raw) -> tuple:
+    """Comma-separated origins, or the default list when unset.
+
+    An explicitly empty value ("" or "none") means no origin is allowed, which
+    disables CORS rather than falling back to the default -- otherwise there
+    would be no way to say "nothing in a browser talks to this".
+    """
+    if raw is None:
+        return DEFAULT_API_ALLOWED_ORIGINS
+    text = str(raw).strip()
+    if not text or text.lower() == "none":
+        return ()
+    return tuple(o.strip() for o in text.split(",") if o.strip())
 
 # ==================== System Config ====================
 @dataclass
@@ -153,8 +192,15 @@ class SystemConfig:
     remote_host: str = "localhost"      # ArenaX server address
     remote_port: int = 8801             # ArenaX server port
     # ── CJTrade System API server ─────────────────────────────────────────
-    api_host: str = "0.0.0.0"
+    # Loopback. This server serves balance, positions and trade history, and
+    # none of its routes authenticate -- /api/v1/auth/login hands out
+    # "cjtrade-{username}" for any username and nothing ever checks it back.
+    # On 0.0.0.0 that published the account to every host on the network.
+    api_host: str = "127.0.0.1"
     api_port: int = 8899
+    # Which browser origins may read the responses. See
+    # DEFAULT_API_ALLOWED_ORIGINS for why this is a list and not '*'.
+    api_allowed_origins: tuple = DEFAULT_API_ALLOWED_ORIGINS
 
     def to_dict(self) -> dict:
         import dataclasses, math
@@ -178,7 +224,7 @@ def _apply_config(cfg: SystemConfig) -> None:
     global ANALYSIS_INTERVAL, CHECK_FILL_INTERVAL, DISPLAY_TIME_INTERVAL, LLM_REPORT_INTERVAL, PRICE_MONITOR_INTERVAL
     global BB_MIN_WIDTH_PCT, BB_WINDOW_SIZE
     global RISK_MAX_POSITION_PCT
-    global CJTRADE_API_HOST, CJTRADE_API_PORT
+    global CJTRADE_API_HOST, CJTRADE_API_PORT, CJTRADE_API_ALLOWED_ORIGINS
 
     BACKTEST_DURATION_DAYS     = cfg.backtest_duration_days
     LAUNCH_MODE                = cfg.launch_mode
@@ -195,6 +241,7 @@ def _apply_config(cfg: SystemConfig) -> None:
     RISK_MAX_POSITION_PCT      = cfg.risk_max_position_pct
     CJTRADE_API_HOST           = cfg.api_host
     CJTRADE_API_PORT           = cfg.api_port
+    CJTRADE_API_ALLOWED_ORIGINS = tuple(cfg.api_allowed_origins)
 
 
 SHUTDOWN = False
@@ -377,9 +424,10 @@ class BollingerBandsStrategy(SignalStrategy):
             target_quantity=target_quantity,
         )
 
-# CJTrade lightweight API server (for FinHub / external consumers)
-CJTRADE_API_HOST = "0.0.0.0"
+# CJTrade lightweight API server (for FinHub, which runs on this host)
+CJTRADE_API_HOST = "127.0.0.1"
 CJTRADE_API_PORT = 8899
+CJTRADE_API_ALLOWED_ORIGINS = DEFAULT_API_ALLOWED_ORIGINS
 
 # ==================== Trading System Class ====================
 class TradingSystem:
@@ -407,7 +455,7 @@ class TradingSystem:
         self.playback_speed = 1.0
         if self.is_backtest:
             #self.playback_speed = self.client.broker_api.api.market.playback_speed
-            self.playback_speed = self.client.broker_api.middleware.get_config()['internal_config']['playback_speed']
+            self.playback_speed = self.client.playback_speed
             log.info(f"⚡ Playback speed: {self.playback_speed}x (response from server, not set by user)")
 
         self.initial_balance = self.client.get_balance()
@@ -462,12 +510,10 @@ class TradingSystem:
 
     def current_time(self) -> datetime:
         """Current trading time for all modes.
-        ArenaX_RealMarket.mock_current_time returns datetime.now(), so this call
-        is valid for paper/real as well — no branching needed."""
-        if 'arenax' in self.client.get_broker_name():
-            return self.client.broker_api.get_system_time()['mock_current_time']
-        else:
-            return self.client.broker_api.get_system_time()['real_current_time']
+        No branch on broker name: every adapter reports mock_current_time, and a
+        live broker reports its real clock there (SinopacBrokerAPI.get_market_time),
+        so the simulated case is just the scaled instance of one contract."""
+        return self.client.get_market_time()['mock_current_time']
 
     def mock_env_sleep(self, seconds: float) -> float:
         """Return sleep time scaled by playback speed"""
@@ -615,8 +661,11 @@ class TradingSystem:
         Call this immediately after the backtest loop exits, before client.disconnect().
         """
         try:
-            middleware = self.client.broker_api.middleware
-            raw = middleware.get_backtest_state(session_id=self.session_id)
+            ctrl = self.client.control_plane
+            if ctrl is None:
+                log.warning("Broker has no control plane – BacktestResult not built")
+                return None
+            raw = ctrl.get_backtest_state(session_id=self.session_id)
             if raw is None:
                 log.warning("get_backtest_state() returned None – BacktestResult not built")
                 return None
@@ -1001,7 +1050,7 @@ class TradingSystem:
             global RESUME_TIME_AFTER_CLIENT_READY
             if not RESUME_TIME_AFTER_CLIENT_READY and self.is_backtest:
                 try:
-                    self.client.broker_api.middleware.resume_time_progress()
+                    self.client.control_plane.resume_time_progress()
                     log.info("▶ Mock time resumed (client ready)")
                 except Exception as e:
                     log.warning(f"Could not resume time progress: {e}")
@@ -1031,7 +1080,7 @@ class TradingSystem:
 
                 log.info(f"\n{'='*60}\n🤖 LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
                 # also print to file for record
-                with open("llm_report.txt", "a") as f:
+                with open(paths.data_dir() / "llm_report.txt", "a") as f:
                     f.write(f"\n{'='*60}\n{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} LLM ANALYSIS REPORT\n{'='*60}\n{response}\n{'='*60}\n")
                 time.sleep(10)
             except Exception as e:
@@ -1222,17 +1271,43 @@ async def run_api_server(system: 'TradingSystem') -> None:
     GET  /api/equity_curve        Equity-curve data points.
     """
 
+    allowed_origins = tuple(CJTRADE_API_ALLOWED_ORIGINS)
+
+    def _cors_headers(origin: str | None) -> dict:
+        """CORS headers for this origin, or none if it is not on the list.
+
+        Echoing the specific origin instead of '*' is the whole point: these
+        routes do not authenticate, so a wildcard made the account readable by
+        any page the user had open. Vary: Origin goes with an echoed origin --
+        without it a cache can hand one origin's response to another and undo
+        the check.
+        """
+        if not origin or origin not in allowed_origins:
+            return {}
+        return {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+            'Vary': 'Origin',
+        }
+
     @_aiohttp_web.middleware
     async def _cors(request, handler):
-        """Allow cross-origin requests from the Finhub frontend."""
+        """Allow cross-origin reads from the configured front-end origins."""
+        origin = request.headers.get('Origin')
         if request.method == 'OPTIONS':
-            return _aiohttp_web.Response(status=204, headers={
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-            })
+            headers = _cors_headers(origin)
+            if not headers:
+                # Say no out loud. A 204 with no CORS headers also blocks the
+                # read, but it looks like a working preflight in the network
+                # tab and sends whoever is wiring up a front end hunting.
+                return _aiohttp_web.json_response(
+                    {'error': f'origin not allowed: {origin!r}. Set '
+                              f'CJSYS_API_ALLOWED_ORIGINS to permit it.'},
+                    status=403)
+            return _aiohttp_web.Response(status=204, headers=headers)
         resp = await handler(request)
-        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers.update(_cors_headers(origin))
         return resp
 
     async def login(request):
@@ -1296,8 +1371,8 @@ async def run_api_server(system: 'TradingSystem') -> None:
         try:
             # Use fill_history from broker server as ground truth.
             # Every entry here is already confirmed FILLED; no status ambiguity.
-            middleware = system.client.broker_api.middleware
-            raw = middleware.get_backtest_state(session_id=system.session_id)
+            ctrl = system.client.control_plane
+            raw = ctrl.get_backtest_state(session_id=system.session_id) if ctrl else None
             fills = raw.get("fill_history", []) if raw else []
 
             trades = []
@@ -1331,20 +1406,19 @@ async def run_api_server(system: 'TradingSystem') -> None:
     app.router.add_get('/api/v1/positions',     get_positions)
     app.router.add_get('/api/v1/trades',        get_trades)
     app.router.add_get('/api/v1/equity_curve',  get_equity_curve)
-    # Catch-all OPTIONS for preflight
+    # Catch-all for preflight. The middleware above answers every OPTIONS
+    # before it reaches a handler, so this only needs to exist for the router
+    # to accept the method at all; it is never actually called.
     app.router.add_route('OPTIONS', r'/{path_info:.*}',
-        lambda r: _aiohttp_web.Response(status=204, headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-        })
-    )
+                         lambda r: _aiohttp_web.Response(status=204))
 
     runner = _aiohttp_web.AppRunner(app, access_log=None)
     await runner.setup()
     site = _aiohttp_web.TCPSite(runner, CJTRADE_API_HOST, CJTRADE_API_PORT)
     await site.start()
     log.info(f"🌐 CJTrade API server: http://{CJTRADE_API_HOST}:{CJTRADE_API_PORT}/api/")
+    log.info(f"   browser origins allowed: "
+             f"{', '.join(allowed_origins) if allowed_origins else 'none (CORS off)'}")
 
     try:
         while not SHUTDOWN:
@@ -1389,7 +1463,7 @@ async def async_main(cfg: SystemConfig, broker: str):
     # Prepare broker client — merge API keys (from config) with connection params (from cfg)
     username = config.get('username', 'user000')
     config["state_file"] = f"./{broker}_{username}.json"
-    config["mirror_db_path"] = f"./data/{broker}_{username}.db"
+    config["mirror_db_path"] = str(paths.mirror_db_path(broker, username))
 
     # Create broker client based on type
     if broker == 'arenax':

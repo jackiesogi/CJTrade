@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.0",
+    "apiflask>=2.2.0",
     "beautifulsoup4>=4.13.5",
     "duckdb>=1.4.3",
     "fake-useragent>=2.2.0",
@@ -19,6 +20,7 @@ dependencies = [
     "newsapi-python>=0.2.7",
     "ollama>=0.6.0",
     "pandas-datareader>=0.10.0",
+    "platformdirs>=4.4.0",
     "plotly>=6.5.1",
     "python-dotenv>=1.1.1",
     "seaborn>=0.13.2",
@@ -29,6 +31,8 @@ dependencies = [
     "openai>=2.26.0",
     "quantstats>=0.0.81",
     "toml>=0.10.2",
+    "msgpack>=1.1.1",
+    "zmq>=0.0.0",
 ]
 
 [project.scripts]
@@ -42,6 +46,8 @@ system = "cjtrade.apps.cjtrade_system.system_launcher:main"
 osystem = "cjtrade.apps.cjtrade_system.cjtrade_system:main_system"
 backtest = "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest:main"
 _system_direct = "cjtrade.apps.cjtrade_system.cjtrade_system_arenax:main_system"
+strategy-tool = "cjtrade.apps.strategy_tool:main"
+insight = "cjtrade.apps.insight:main"
 
 
 [tool.pytest.ini_options]

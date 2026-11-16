@@ -114,7 +114,7 @@ class TestIsMarketOpen:
     """Verify is_market_open() boundary conditions — no real HTTP needed."""
 
     def _stub_time(self, mw, iso: str):
-        mw.get_system_time = lambda **kw: {"mock_current_time": iso}
+        mw.get_market_time = lambda **kw: {"mock_current_time": iso}
 
     def test_weekday_within_hours_is_open(self, mw):
         """Monday 10:00 is within trading hours."""
@@ -142,17 +142,25 @@ class TestCancelOrder:
 
     def test_parses_cancelled_response(self, mw):
         """A CANCELLED response must be mapped to an OrderResult with the enum status."""
-        mw._post = lambda path, data=None, headers=None: {
-            "result": {
-                "status": "CANCELLED",
-                "message": "order cancelled",
-                "metadata": {},
-                "linked_order": "order-abc",
+        seen = {}
+
+        def fake_delete(path, data=None, headers=None):
+            seen["path"] = path
+            return {
+                "result": {
+                    "status": "CANCELLED",
+                    "message": "order cancelled",
+                    "metadata": {},
+                    "linked_order": "order-abc",
+                }
             }
-        }
+
+        mw._delete = fake_delete
 
         result = mw.cancel_order("order-abc")
 
+        # Cancelling is DELETE on the order, with the id in the path.
+        assert seen["path"] == "api/v1/orders/order-abc"
         assert result.status == OrderStatus.CANCELLED
         assert result.linked_order == "order-abc"
         assert result.message == "order cancelled"

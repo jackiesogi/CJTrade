@@ -11,6 +11,15 @@ repos:
       - id: reorder-python-imports
   - repo: local
     hooks:
+      # First, because it is the cheapest way to find out that a documented
+      # command no longer starts -- and because a reader hitting that is worse
+      # off than having no docs at all. Set CJ_CHECK_NO_SMOKE=1 to keep only
+      # the static half, which takes well under a second.
+      - id: "readme-examples"
+        name: "Check the README examples still start"
+        entry: uv run python scripts/check_readme_examples.py
+        language: system
+        pass_filenames: false
       - id: "unit-tests"
         name: "Run unit tests (tests/unit/)"
         entry: uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit

@@ -12,6 +12,8 @@ Lifecycle
     on_start(context)                  ← called once before the first bar
     for each bar:
         on_bar(bar, context) → List[Signal]
+        monitors() → dict              ← optional; what to watch, and why the
+                                         bar did or did not produce a signal
     on_fill(fill, context)             ← called after each simulated fill
     on_end(context)                    ← called once after the last bar
 
@@ -37,7 +39,6 @@ from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -200,3 +201,54 @@ class BaseStrategy(ABC):
     def on_end(self, ctx: StrategyContext) -> None:
         """Called once after the last bar.  Override for cleanup/logging."""
         pass
+
+    # ------------------------------------------------------------------
+    # Monitoring
+    # ------------------------------------------------------------------
+
+    def plots(self) -> Dict[str, float]:
+        """Series this strategy wants drawn against the price, this bar.
+
+        Separate from monitors() because the two are consumed differently: a
+        monitor is a number to read now, a plot is a point in a series
+        accumulated over the run. A runner samples this once per bar and keeps
+        the history; the strategy only reports the current value.
+
+        Numbers only, and in the same units as the price where that makes
+        sense -- bands, moving averages, breakout levels. A value on a
+        different scale (an oscillator, a count) is still fine; it is the
+        chart's job to put it on its own axis.
+
+        Default is empty, so a strategy that does not care has nothing to say
+        and nothing breaks. The price itself is never returned here: every
+        runner already knows the bar it just handed over, and a strategy
+        re-reporting it would be a second answer that could disagree.
+        """
+        return {}
+
+    def monitors(self) -> Dict[str, Any]:
+        """Named values this strategy wants watched. Read-only and cheap.
+
+        Called by a runner after on_bar, as often as once per bar. Return
+        whatever makes this strategy's behaviour legible: indicator levels,
+        counters, a regime label, and above all WHY the last bar did or did not
+        produce a signal -- on_bar returns an empty list for several different
+        reasons and the caller cannot tell them apart.
+
+        Returns
+        -------
+        dict[str, Any]
+            Scalars and strings only. A runner may put this on a wire or in a
+            table, so nothing here should be a numpy type, a model object, or
+            anything that needs the strategy alive to interpret.
+
+        Default is empty, so an existing strategy keeps working and simply has
+        nothing to show. Deliberately not abstract for the same reason.
+
+        Accumulated values (counters, running means) live on the strategy and
+        are updated in on_bar; this method only reads them. A caller that wants
+        rates or deltas keeps its own history of these snapshots -- that is why
+        there is no need to declare which values are counters and which are
+        gauges.
+        """
+        return {}

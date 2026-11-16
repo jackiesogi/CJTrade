@@ -21,6 +21,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.brokers.base_broker_api import BrokerAPIBase
 from cjtrade.pkgs.db.db_api import *
@@ -55,7 +56,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
         # db connection
         self.username = config.get('username', 'Ariana')
-        self.db_path = config.get('mirror_db_path', f'./data/arenax.db')
+        self.db_path = config.get('mirror_db_path') or str(paths.mirror_db_path('arenax'))
         self.db = None
 
 
@@ -93,13 +94,41 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return self._connected
 
 
+    def _account_summary(self) -> dict:
+        """The account, or a ConnectionError naming what went wrong.
+
+        ArenaXMiddleWare swallows every transport failure and returns None, so
+        a timeout, a refused connection or a restarting server all arrived here
+        as None and then became `AttributeError: 'NoneType' object has no
+        attribute 'get'` two frames further in -- which says nothing about the
+        broker being unreachable, and which no caller was ever going to catch
+        by name.
+
+        Not a default: an unanswered read is not a balance of 0.0 and not an
+        empty position list. Either one of those would be acted on -- 0.0 trips
+        the engine's loss limit, and no positions makes a held symbol look
+        available to buy again.
+        """
+        summary = self.middleware.account_summary()
+        if summary is None:
+            raise ConnectionError(
+                f"ArenaX server at {self.host}:{self.port} did not answer "
+                f"GET /api/v1/account")
+        return summary
+
+
     def get_positions(self) -> List[Position]:
-        pos = self.middleware.account_summary().get("positions")
-        return [Position(**p) for p in pos]
+        pos = self._account_summary().get("positions")
+        return [Position(**p) for p in (pos or [])]
 
 
     def get_balance(self) -> float:
-        return float(self.middleware.account_summary().get("balance"))
+        balance = self._account_summary().get("balance")
+        if balance is None:
+            raise ConnectionError(
+                f"ArenaX server at {self.host}:{self.port} answered "
+                f"GET /api/v1/account with no balance")
+        return float(balance)
 
 
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
@@ -163,6 +192,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
                 low=float(kr["low"]),
                 close=float(kr["close"]),
                 volume=int(kr["volume"]),
+                # Server response has no code field; take it from the request.
+                symbol=kr.get("symbol") or product.symbol,
             )
 
         kbars = [_parse_kbar(kr) for kr in kbars_raw] if kbars_raw else []
@@ -170,13 +201,26 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return kbars
 
 
-    # TODO: Finish this!
+    # TODO: Finish this once the server grows GET /api/v1/events.
     def register_order_callback(self, callback: OrderCallback) -> None:
+        """Not implemented. Poll sync_state() or list_orders() instead.
+
+        A callback is a local function, so there is nothing to register with a
+        REST server -- the server-side shape for this is an append-only event
+        log the client tails:
+
+            GET /api/v1/events?after=<seq>  ->  {"events": [...], "last_seq": N}
+
+        and THIS method is where the callback illusion gets manufactured: store
+        `callback`, run a daemon thread that tails the log, rebuild each
+        OrderEvent and invoke it. The server would learn nothing about
+        callbacks, and the backend would only append to the log from the two
+        places that already own every transition -- _apply_fill() and the
+        cancel path.
         """
-        Placeholder for order callback registration.
-        But mock broker is not suitable for using callback mechanism.
-        """
-        pass
+        raise NotImplementedError(
+            "ArenaX has no push callback yet; poll sync_state() or list_orders()."
+        )
 
 
     # TODO: Finish this!
@@ -192,11 +236,8 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
-        if order.order_type == OrderType.GTC:
-            raise NotImplementedError("GTC orders are not yet supported in ArenaX")
-
         # Overwrite created_at (place ts is much more important than create ts)
-        order.created_at = self.get_system_time()["mock_current_time"]
+        order.created_at = self.get_market_time()["mock_current_time"]
 
         res = self.middleware.place_order(order)
 
@@ -209,7 +250,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def cancel_order(self, order_id: str) -> OrderResult:
         res = self.middleware.cancel_order(order_id=order_id)
 
-        update_at = self.get_system_time()["mock_current_time"]
+        update_at = self.get_market_time()["mock_current_time"]
 
         if res.status == OrderStatus.CANCELLED:
             update_order_status_to_db(conn=self.db, oid=order_id, status="CANCELLED", updated_at=update_at)
@@ -220,8 +261,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def sync_state(self) -> List[OrderResult]:
         """Refresh status of all committed orders from the broker backend."""
         res = []
-        summary = self.middleware.account_summary()
-        orders = summary.get("orders", []) if summary else []
+        orders = self.middleware.list_orders()
         committed_statuses = {OrderStatus.COMMITTED_WAIT_MATCHING.value, OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value}
         committed_orders = [o for o in orders if o.get("status") in committed_statuses]
         for o in committed_orders:
@@ -229,7 +269,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             try:
                 refreshed = self.middleware.sync_state(order_id)
                 if refreshed:
-                    update_at = self.get_system_time()["mock_current_time"]
+                    update_at = self.get_market_time()["mock_current_time"]
                     update_order_status_to_db(conn=self.db, oid=order_id, status=refreshed.status.value, updated_at=update_at)
                     res.append(refreshed)
             except Exception as e:
@@ -238,8 +278,9 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def list_orders(self) -> List[Trade]:
-        odrs = self.middleware.account_summary().get("orders")
-        return [Trade(**o) for o in odrs]
+        # GET /api/v1/orders, not the whole account: this skips rebuilding and
+        # re-pricing every position just to read the order list.
+        return [Trade(**o) for o in self.middleware.list_orders()]
 
 
     def is_market_open(self) -> bool:
@@ -250,22 +291,31 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return f"arenax ({self.port})"
 
 
-    def get_market_time(self) -> dict:
-        return self.get_system_time()
+    def get_system_time(self) -> dict:
+        """Deprecated alias for get_market_time()."""
+        return self.get_market_time()
 
 
     # 所有 datetime 在 JSON 邊界都用 .isoformat() 序列化
     # 接收方用 fromisoformat() 反序列化 任何地方不做 timezone 轉換!!
     # 所有 datetime 都是 隱性台北時間的 naive datetime
-    def get_system_time(self) -> dict:
+    def get_market_time(self) -> dict:
         # Server emits all datetime fields as ISO 8601 (naive Asia/Taipei).
         # Parse with fromisoformat(); no timezone conversion needed.
-        t = self.middleware.get_system_time()
+        #
+        # playback_speed and paused are forwarded, not dropped: the server
+        # already reports both, and a caller that wants to scale its own
+        # waiting needs the speed. Dropping them here is what forced callers to
+        # reach through to
+        # middleware.get_config()['internal_config']['playback_speed'] instead.
+        t = self.middleware.get_market_time()
         return {
             "mock_current_time": datetime.fromisoformat(t['mock_current_time']),
             "real_current_time": datetime.fromisoformat(t['real_current_time']),
             "mock_init_time":    datetime.fromisoformat(t['mock_init_time']),
             "real_init_time":    datetime.fromisoformat(t['real_init_time']),
+            "playback_speed":    float(t.get('playback_speed', 1.0)),
+            "paused":            bool(t.get('paused', False)),
         }
 
 

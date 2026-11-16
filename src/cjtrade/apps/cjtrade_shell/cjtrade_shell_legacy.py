@@ -19,6 +19,7 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.fundamental import *
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.analytics.technical.models import *
@@ -562,14 +563,19 @@ class CalendarCommand(CommandBase):
 
                 try:
                     hours = float(arg)
-                    client.broker_api.api.market.adjust_time(hours)
-                    # Show updated time
-                    ts = client.broker_api.get_system_time()
-                    print(f"New mock time: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
-                    return
                 except ValueError:
                     print(f"Error: Unable to parse time adjustment '{arg}'")
                     return
+
+                # Unreachable in practice: the guard above requires broker
+                # "mock", and BrokerType.MOCK can no longer be constructed —
+                # cjtrade.pkgs.brokers.arenax.legacy was removed. Kept honest
+                # rather than left reaching for broker_api.api.market, which
+                # only that retired broker ever had.
+                print(f"Error: time adjustment ({hours:+.1f}h) is not supported — "
+                      f"the mock broker it relied on has been removed. Use the "
+                      f"current shell with --broker=arenax instead.")
+                return
             else:
                 # Direct call with date argument
                 subprocess.run([sys.executable, str(self.ncal_script), '--sunday', arg], shell=False)
@@ -578,7 +584,7 @@ class CalendarCommand(CommandBase):
         # Get timestamp from broker or system
         if client.get_broker_name() == "mock":
             suffix = " (mock time)"
-            ts = client.broker_api.get_system_time()
+            ts = client.get_market_time()['mock_current_time']
         else:
             suffix = ""
             ts = datetime.now()
@@ -918,17 +924,17 @@ def main():
 
     if args.broker == 'sinopac':
         config["state_file"] = f"./sinopac_{config['username']}.json"
-        config["mirror_db_path"] = f"./data/sinopac_{config['username']}.db"
+        config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
         config["speed"] = 120.0  # 120x speed for mock broker
         config["state_file"] = f"./mock_{config['username']}.json"
-        config["mirror_db_path"] = f"./data/mock_{config['username']}.db"
+        config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
         client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
         config["speed"] = 60.0  # 60x speed for mock broker
         config["state_file"] = f"./realistic_{config['username']}.json"
-        config["mirror_db_path"] = f"./data/realistic_{config['username']}.db"
+        config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:

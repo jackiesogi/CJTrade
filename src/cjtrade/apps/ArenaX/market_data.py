@@ -7,16 +7,20 @@ from datetime import timedelta
 from enum import Enum
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import pandas as pd
 import yfinance as yf
 
 log = logging.getLogger("cjtrade.arenax_market")
 from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderLot
 from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.position import Position
@@ -25,7 +29,41 @@ from cjtrade.pkgs.models.quote import Snapshot
 
 # Price source: yfinance
 class ArenaX_Market:
-    def __init__(self, real_account: AccountClient = None, price_db_path: str = "data/arenax_price.db"):
+    """Simulated exchange clock and historical price cache.
+
+    VOCABULARY
+    ----------
+    Three separate concepts live here. They used to share the words "system
+    time" and "market time" interchangeably, which made the getters look like
+    the setters' partners when they were not. Only these three exist:
+
+    1. market time -- what time it is ON THE MARKET right now.
+       Read with get_market_time()["mock_current_time"]. Either derived
+       (start_date + elapsed * playback_speed + manual_time_offset) or, while
+       frozen, read straight back from paused_time.
+       Written with set_market_time(t), which also freezes it: a derived value
+       cannot be "set" without pinning it, or it would drift away immediately.
+
+    2. timeline origin -- where the simulated timeline BEGINS.
+       Held in start_date, reported as mock_init_time.
+       Written with set_historical_time_abs() / set_historical_time(), both of
+       which snap to 09:00 and may trigger a data preload. Do NOT use either to
+       step the clock; see set_market_time().
+
+    3. playback rate and frozen state -- HOW time advances.
+       playback_speed (market seconds per real second) plus
+       paused / paused_time. Controlled by pause_time_progress() and
+       resume_time_progress(); adjust_time() shifts by an offset, and is a no-op
+       while frozen because the paused branch of get_market_time() does not read
+       manual_time_offset.
+
+    There is deliberately NO "system time" concept. real_current_time and
+    real_init_time are this host's wall clock, kept for diagnostics only --
+    anything wanting its own machine's clock should call datetime.now() instead,
+    since in general the client runs on a different machine.
+    """
+
+    def __init__(self, real_account: AccountClient = None, price_db_path: Optional[str] = None):
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
         self.real_init_time = 0       # real_current_time - real_init_time = time_offset
@@ -37,7 +75,11 @@ class ArenaX_Market:
         self.paused: bool = False
         self.paused_time: datetime | None = None
 
-        self.price_db = ArenaX_LocalPriceDB(path=price_db_path)
+        self.calendar = TradingCalendar()
+
+        self.price_db = ArenaX_LocalPriceDB(
+            path=str(price_db_path) if price_db_path else str(paths.price_db_path())
+        )
         self.price_db.connect()
 
     def set_playback_speed(self, speed: float):
@@ -146,6 +188,10 @@ class ArenaX_Market:
             'playback_speed': self.playback_speed,
             'manual_time_offset': self.manual_time_offset,
             'paused': self.paused,
+            # Was missing, so GET /api/v1/clock always reported
+            # paused_time: null even while frozen. mock_current_time already
+            # carries the value, so nothing broke -- the field was just dead.
+            'paused_time': self.paused_time,
         }
 
     def _compute_raw_mock_time(self) -> datetime:
@@ -182,6 +228,27 @@ class ArenaX_Market:
         self.paused = False
         return baseline
 
+    def set_market_time(self, t: datetime) -> datetime:
+        """Force logical time to `t` and keep it frozen.
+
+        Unlike pause_time_progress(), this is repeatable: calling it again with a
+        later `t` moves frozen time forward. pause_time_progress() returns the
+        existing paused_time untouched once self.paused is set, which makes it
+        useless as a stepping primitive.
+
+        Unlike set_historical_time_abs(), it does not snap to 09:00, so an
+        intraday timestamp survives.
+
+        Used by a replay driver that owns the timeline and advances it
+        explicitly instead of deriving it from the wall clock. get_market_time()
+        already returns paused_time while paused, so nothing else needs to know.
+
+        Returns the newly frozen mock time.
+        """
+        self.paused = True
+        self.paused_time = t
+        return t
+
     def adjust_to_market_hours(self, mock_current_time: datetime) -> datetime:
         """Adjust mock time to market hours (9:00-13:30).
 
@@ -195,15 +262,13 @@ class ArenaX_Market:
         Returns:
             Adjusted time within market hours or at market close
         """
-        # Market hours: 9:00 - 13:30
-        market_open_hour = 9
-        market_open_minute = 0
-        market_close_hour = 13
-        market_close_minute = 30
+        session = self.calendar.REGULAR
+        market_close_hour = session.close.hour
+        market_close_minute = session.close.minute
 
         current_time_of_day = mock_current_time.time()
-        market_open_time = time(market_open_hour, market_open_minute)
-        market_close_time = time(market_close_hour, market_close_minute)
+        market_open_time = session.open
+        market_close_time = session.close
 
         # If after market close (after 13:30), freeze at 13:30 of same day
         if current_time_of_day > market_close_time:
@@ -234,23 +299,15 @@ class ArenaX_Market:
         return mock_current_time
 
     def is_market_open(self) -> bool:
-        """Check if market is currently open (9:00-13:30 on weekdays)
+        """Is the regular session (一般交易) trading right now?
 
-        Returns:
-            True if within market hours, False otherwise
+        Regular lot, not odd lot: callers have no lot to pass and the answer
+        has always meant 09:00-13:30. Ask `calendar` directly for a lot-aware
+        answer.
         """
-        mock_current_time = self.get_market_time()['mock_current_time']
-
-        # Check if weekend
-        if mock_current_time.weekday() >= 5:  # Saturday or Sunday
-            return False
-
-        # Market hours: 9:00 - 13:30
-        current_time = mock_current_time.time()
-        market_open = time(9, 0)
-        market_close = time(13, 30)
-
-        return market_open <= current_time <= market_close
+        return self.calendar.is_open(
+            OrderLot.Common, self.get_market_time()['mock_current_time']
+        )
 
     # TODO: Check if the gap filling mechanism really work and is with correct timezone
     def create_historical_market(self, symbol: str, days_preload: int = 5):
@@ -432,6 +489,7 @@ class ArenaX_Market:
                     low=round(row["Low"].item(), 2),
                     close=round(row["Close"].item(), 2),
                     volume=int(row["Volume"].item()),
+                    symbol=symbol,
                 ))
             return kbars
         except Exception as exc:
@@ -515,6 +573,7 @@ class ArenaX_Market:
 class ArenaX_RealMarket:
     def __init__(self, real_account: AccountClient):
         self.real_account = real_account
+        self.calendar = TradingCalendar()
         self.playback_speed = 1.0  # Real market doesn't use playback speed, but we keep the attribute for interface consistency
         self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
         self.mock_init_time = datetime.now()  # For real market, mock_init_time is just the time when we start the simulation

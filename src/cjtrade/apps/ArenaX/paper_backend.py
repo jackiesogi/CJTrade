@@ -7,10 +7,11 @@ from typing import Optional
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.market_data import ArenaX_Market
 from cjtrade.apps.ArenaX.market_data import ArenaX_RealMarket
+from cjtrade.apps.ArenaX.time_in_force import policy_for
+from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import OrderAction
-from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
 
@@ -18,11 +19,31 @@ from cjtrade.pkgs.models.quote import Snapshot
 class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 	def __init__(
 		self,
-		state_file: str = "paper_account_state.json",
+		state_file: Optional[str] = None,   # snapshot to resume from; None = fresh
 		real_account: Optional[AccountClient] = None,
 		playback_speed: float = 1.0,
+		# Declared so they are absorbed from the config rather than landing in
+		# **kwargs. load_cjsys() puts num_days_preload and skip_data_preload in
+		# internal_config unconditionally, and the server passes the whole dict
+		# through, so leaving them out of this signature meant they arrived
+		# twice and `arenaxd --backend=paper` died in its constructor:
+		#     TypeError: ArenaX_BackendBase.__init__() got multiple values for
+		#                keyword argument 'skip_data_preload'
+		# The two sibling backends declare them, which is why only paper broke.
+		num_days_preload: int = 0,
+		skip_data_preload: bool = True,
 		**kwargs
 	) -> None:
+		# Accepted and then ignored, deliberately. Paper prices come from the
+		# live broker one snapshot at a time (see snapshot() below), so there is
+		# no historical window to preload and ArenaX_RealMarket has no
+		# create_historical_market to preload it with. Honouring the config's
+		# 365 days here would ask the broker for a year of bars nothing reads.
+		if num_days_preload or not skip_data_preload:
+			print(f"[PaperTrade] ignoring preload config "
+			      f"(num_days_preload={num_days_preload}, "
+			      f"skip_data_preload={skip_data_preload}): paper mode reads "
+			      f"prices live, so there is nothing to preload")
 		super().__init__(
 			state_file=state_file,
 			real_account=real_account,
@@ -72,8 +93,8 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		except Exception as exc:
 			print(f"[PaperTrade] Error syncing with real account: {exc}")
 
-	def _sync_with_mock_account_file(self) -> None:
-		super()._sync_with_mock_account_file()
+	def _load_state_from(self, path: str) -> None:
+		super()._load_state_from(path)
 		if self.account_state.positions:
 			self._update_position_prices()
 
@@ -82,7 +103,24 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if self.real_account:
 			if not self.real_account.is_connected():
 				self.real_account.connect()
-			return self.real_account.get_snapshots([Product(symbol=symbol)])[0]
+			snapshots = self.real_account.get_snapshots([Product(symbol=symbol)])
+			if not snapshots:
+				# This used to be a bare [0], so a broker that answered with
+				# nothing surfaced as `IndexError: list index out of range` --
+				# which names neither the symbol nor the broker, and which the
+				# route below turned into a 500 with a Flask traceback. Seen in
+				# a live paper run when the shioaji session lost its transport:
+				# "could not open transport for tcp_TxRx", then every snapshot
+				# timed out for the rest of the session.
+				#
+				# Deliberately not a fallback price. _create_fallback_snapshot
+				# invents a random value around 100, and that number would go
+				# straight into position marks, account equity and the engine's
+				# kill switch.
+				raise ConnectionError(
+					f"the broker returned no snapshot for {symbol} — its "
+					f"session is probably down")
+			return snapshots[0]
 		return super().snapshot(symbol)
 
 	def _refresh_kbar_buffer(self, symbol: str) -> None:
@@ -122,6 +160,8 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		for symbol in symbols:
 			self._refresh_kbar_buffer(symbol)
 
+		calendar = getattr(getattr(self, "market", None), "calendar", None) or TradingCalendar()
+
 		committed_copy = list(self.account_state.orders_committed)
 		any_filled = False
 
@@ -131,6 +171,14 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 
 			kbars = self._kbar_buffer.get(order.product.symbol, [])
 			new_kbars = [kbar for kbar in kbars if kbar.timestamp > last_check_time]
+
+			# Same deadline clamp as the base matcher: an order must not fill on
+			# a bar later than the point its time-in-force ended it. Here the
+			# buffer is the risk rather than a clock jump -- a refresh that
+			# crosses a session boundary brings back bars from after the close.
+			deadline = policy_for(order.order_type).expires_at(order, calendar)
+			if deadline is not None:
+				new_kbars = [kbar for kbar in new_kbars if kbar.timestamp <= deadline]
 
 			if not new_kbars:
 				continue
@@ -149,29 +197,12 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 			if fill_kbar is None:
 				continue
 
-			try:
-				self.account_state.orders_filled.append(order)
-				if order in self.account_state.orders_committed:
-					self.account_state.orders_committed.remove(order)
-				self.account_state.all_order_status[order.id] = OrderStatus.FILLED
-
-				qty_signed = order.quantity if order.action == OrderAction.BUY else -order.quantity
-				self.account_state.balance -= (qty_signed * order.price)
-
-				self.account_state.fill_history.append({
-					"id": f"fill_{order.id}_{int(datetime.now().timestamp())}",
-					"order_id": order.id,
-					"symbol": order.product.symbol,
-					"action": order.action.value,
-					"quantity": qty_signed,
-					"price": order.price,
-					"time": fill_kbar.timestamp.isoformat(),
-				})
-
-				self._reconstruct_positions_from_history()
+			# Settle through the base class so paper pays the same commission
+			# and tax as backtest and records session_id. This used to be a
+			# local copy that did `balance -= qty_signed * price` and nothing
+			# else, which made paper and backtest P&L silently incomparable.
+			if self._apply_fill(order, order.price, fill_kbar.timestamp):
 				any_filled = True
-			except Exception as exc:
-				print(f"[PaperTrade] Error filling order {order.id}: {exc}")
 
 		return any_filled
 
