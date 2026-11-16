@@ -27,3 +27,8 @@ logs/
 
 # JSON files
 *.json
+
+# Coverage output from the test hooks and CI
+.coverage
+.coverage.*
+htmlcov/

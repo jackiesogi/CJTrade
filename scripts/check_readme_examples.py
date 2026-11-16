@@ -48,7 +48,7 @@ It checks, from the repository alone:
 
 * `uv run NAME` -- NAME is in [project.scripts] AND its "module:function"
   target resolves to a file that defines that function. Both halves: `osystem`
-  is declared and its module was deleted, so the name alone passes.
+  stayed declared after its module was deleted, and the name alone passed.
 * `uv run python -m pkg.mod` -- the module exists on disk.
 * paths -- anything starting poc/ src/ scripts/ tests/ doc/ img/ exp/ exists.
 * `--flags` -- accepted by the command on that line, read from the script's
@@ -267,7 +267,7 @@ def _entry_target_problem(name: str, spec: str) -> str | None:
     """Whether `name = "module:function"` points at something that exists.
 
     The name being declared is not the same as the entry point working:
-    `osystem` is declared and its module was deleted, so it has been dead and
+    `osystem` stayed declared after its module was deleted, so it was dead and
     advertised at the same time. Checking the name alone would have passed it.
     """
     module, _, func = spec.partition(":")

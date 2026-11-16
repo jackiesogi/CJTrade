@@ -178,13 +178,16 @@ def test_an_unknown_port_is_not_guessed_at(static):
     assert static("curl http://127.0.0.1:12345/whatever\n") == []
 
 
-def test_a_declared_but_dead_entry_point_is_reported(static):
-    """`osystem` is in [project.scripts]; its module was deleted.
+def test_a_declared_but_dead_entry_point_is_reported(cjcheck):
+    """A name declared in [project.scripts] whose module was deleted.
 
-    Checking only that the name is declared passed it, so the target is
-    resolved too.
+    `osystem` used to be exactly this. Checking only that the name is declared
+    passed it, so the target is resolved too.
     """
-    problems = static("uv run osystem\n")
+    entries = dict(cjcheck._entry_points())
+    entries["dead"] = "cjtrade.apps.no_such_module:main"
+    block = cjcheck.Block("fixture.md", 1, "sh", "uv run dead\n", "static", {})
+    problems = cjcheck._static_checks(block, entries, cjcheck._route_tables())
     assert problems and "does not exist" in problems[0]
 
 

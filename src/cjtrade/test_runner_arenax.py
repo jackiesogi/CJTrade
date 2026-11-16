@@ -12,9 +12,6 @@ def main():
     # Get the project root directory (go up from src/cjtrade to project root)
     project_root = Path(__file__).parent.parent.parent
     test_script = project_root /  "tests" / "test_cjtrade_integration_arenax.sh"
-    print(test_script)
-    import time
-    time.sleep(3)
 
     if not test_script.exists():
         print(f"Error: Test script not found at {test_script}")

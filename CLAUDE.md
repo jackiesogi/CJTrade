@@ -87,7 +87,6 @@ src/cjtrade/
     llm/            unified LLM client (gemini / azure / ollama / mock)
     chart/          plotly kbar charts
     api/beginner.py Pine-Script-like facade for the strategy editor
-    legacy/         don't touch
   apps/
     ArenaX/         the simulated broker (server + 4 backends + market clock + price db)
     cjtrade_shell/  interactive shell, CommandBase subclass per command
@@ -99,8 +98,10 @@ ref/                design notes and captured logs, not code
 scripts/            config and account-state generators
 ```
 
-`currently_unused/` and `pkgs/legacy/` are dead. Don't read them for patterns,
-don't update them.
+Optional SDKs are extras (`sinopac`, `llm`, `news`, `all`) — see
+`pkgs/utils/extras.py`. Import one inside `try`, and raise `missing_extra()`
+where it is used, never at import time. `uv sync` installs them all through the
+`dev` group.
 
 ---
 
@@ -162,7 +163,6 @@ env vars  >  ./.env  >  ./**/*.cjconf (depth, then alpha)  >  <user config dir>/
 | `tests/unit/` | pure, no network, no disk | nothing |
 | `tests/integration/arenax/` | real HTTP against ArenaX | `arenaxd` on :8801 (auto-skips if absent) |
 | `tests/manual/` | scripts a human runs | credentials; not in `testpaths` |
-| `src/**/tests/` | package-local scratch tests | varies |
 
 Conventions in `tests/unit/`: mirror the source tree
 (`tests/unit/pkgs/brokers/arenax/test_arenax_middleware.py`), one `class
@@ -444,8 +444,6 @@ class BalanceCommand(CommandBase):
 - `tests/manual/test_*.py` — 4 files fail collection (`KeyError: 'API_KEY'`,
   `nacl ValueError`) if you point pytest at them. They are scripts; run them
   by hand.
-- `osystem` entry point in `pyproject.toml` points at a module that doesn't
-  exist (`cjtrade_system.cjtrade_system`).
 - `BrokerType.MOCK` → `ModuleNotFoundError`.
 - The pre-commit config runs the Sinopac shell test, which **hits the real
   broker**. Know that before `git commit` without `--no-verify`.

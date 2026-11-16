@@ -78,6 +78,23 @@ uv sync
 mkdir -p data          # a few of the PoC scripts write their scratch files here
 ```
 
+`uv sync` in a checkout installs everything, including the optional
+integrations. If you install CJTrade as a package instead, the core (ArenaX,
+backtesting, the shell, reports) comes on its own and each integration is an
+extra:
+
+| Extra | Adds | Needed for |
+|---|---|---|
+| `sinopac` | `shioaji` | the Sinopac broker, and ArenaX's `backtest` / `paper` backends |
+| `llm` | `google-genai`, `openai` | LLM advice (Gemini, Azure OpenAI) |
+| `news` | `newsapi-python` | the NewsAPI news source |
+| `all` | all of the above | |
+
+CJTrade is not on PyPI yet, so install from git, for example
+`pip install 'cjtrade[sinopac,llm] @ git+https://github.com/jackiesogi/CJTrade'`.
+A feature whose extra is missing tells you which one to install when you use
+it.
+
 `uv run <command>` resolves the environment on its own. Activating it
 (`source .venv/bin/activate`) is optional and only useful if you want to call
 `python` directly.
