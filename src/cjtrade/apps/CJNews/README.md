@@ -6,6 +6,7 @@
 rendering both come from the SDK, so the app is only the part that is specific
 to searching news.
 
+<!-- cjcheck: smoke timeout=12 -->
 ```sh
 uv run python src/cjtrade/apps/CJNews/main.py
 ```

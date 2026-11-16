@@ -2,6 +2,7 @@
 
 > A simple editing tool for quick strategy testing.
 
+<!-- cjcheck: smoke timeout=12 -->
 ```sh
 uv run python src/cjtrade/apps/CJEdit/main.py
 ```

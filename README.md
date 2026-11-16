@@ -67,6 +67,7 @@ Install `uv` first — everything here is run through it, so you never activate 
 environment by hand:
 [https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
 
+<!-- cjcheck: static -->
 ```sh
 git clone https://github.com/jackiesogi/CJTrade
 cd CJTrade
@@ -100,6 +101,7 @@ about your positions. If you are after an automated system instead, skip to
 
 #### Play around with the ArenaX broker (built-in simulation environment)
 
+<!-- cjcheck: static -->
 ```sh
 # generate the simulation environment config template
 bash scripts/gen_config.sh arenax
@@ -126,6 +128,7 @@ Windows users: `scripts/gen_config.bat` generates the same config file.
 
 #### Sinopac users
 
+<!-- cjcheck: static -->
 ```sh
 # Get your API keys from https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4
 bash scripts/gen_config.sh sinopac
@@ -134,6 +137,7 @@ bash scripts/gen_config.sh sinopac
 The generated `sinopac_system.cjconf` leaves the credential fields blank on
 purpose. Fill them in with an editor, or append them from the shell:
 
+<!-- cjcheck: static -->
 ```sh
 cat >> sinopac_system.cjconf <<EOF
 # -------- overrides --------
@@ -168,6 +172,7 @@ has been superseded by the trading engine in
 [`poc/trading_engine/`](./poc/trading_engine/) — see
 [Backtesting](#backtesting) below for why.
 
+<!-- cjcheck: static -->
 ```sh
 # Picking `sinopac` as the broker places REAL orders once a strategy fires,
 # unless you export SIMULATION=y before running this.
@@ -192,6 +197,7 @@ give you the same answer.
 Gathers all the K-bar data before the backtest starts and matches orders
 bar-by-bar (逐根K線分析), usually finishing in seconds.
 
+<!-- cjcheck: smoke timeout=12 -->
 ```sh
 bash poc/backtest.sh \
   --watch-list 2317,2357,2454,2890,3443 \
@@ -225,6 +231,7 @@ Where it asks is up to you. `--renderer` applies to both forms at once, so add
 browser tab — which is what you want over SSH, or on a machine with no browser
 to open:
 
+<!-- cjcheck: smoke timeout=12 -->
 ```sh
 bash poc/backtest.sh --renderer=cli --watch-list 2317 --interval 1d
 ```
@@ -234,6 +241,7 @@ bash poc/backtest.sh --renderer=cli --watch-list 2317 --interval 1d
 at `1m` and 100 trading days at `1d` — a different strategy, not a coarser one.
 To see the values an interval will actually use:
 
+<!-- cjcheck: run timeout=20 -->
 ```sh
 uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
   --interval 1m --show-params
@@ -256,6 +264,7 @@ and every step pushes the server's market time to match. The sequence of bars
 is therefore a property of the data, not of the machine, and `--speed=0` (flat
 out, no pacing at all) produces exactly the same bars as `--speed=60`.
 
+<!-- cjcheck: static -->
 ```sh
 # the engine expects the backtest backend, which listens on 8802
 unset AX_HOST_PORT AX_HOST_ADDRESS AX_LAUNCH_MODE AX_STATE_FILE
@@ -284,6 +293,7 @@ at high playback speed the timing of each sample drifts, so the bars depend on
 how busy the machine was and two identical runs need not agree. Use the engine
 or `oneshot` for anything you intend to compare.
 
+<!-- cjcheck: static -->
 ```sh
 bash poc/backtest_full_simulation.sh
 ```
@@ -298,6 +308,7 @@ the 1-minute price history on disk for the same window and puts the two side by
 side. That is what lets it answer whether the market suited the strategy, rather
 than only how the strategy ended up.
 
+<!-- cjcheck: static -->
 ```sh
 uv run insight            # the most recent run
 uv run insight --list     # every run on this machine
@@ -310,6 +321,7 @@ uv run insight 51702f96   # by session id, or any unique prefix
 
 1. Shell-level smoke tests — runs every command in the CJTrade shell:
 
+<!-- cjcheck: static -->
 ```sh
 uv run atest --broker=arenax --group=all
 # groups: trading | query | market | system | all
@@ -317,15 +329,35 @@ uv run atest --broker=arenax --group=all
 
 2. Broker hot paths — normal input, edge cases and stress:
 
+<!-- cjcheck: static -->
 ```sh
 bash tests/run_broker_stability_tests.sh --broker=arenax
 ```
 
 3. Unit tests:
 
+<!-- cjcheck: static -->
 ```sh
 uv run pytest tests/unit
 ```
+
+4. The examples in these READMEs — that every documented command still starts,
+   and that the paths, entry points, API routes and flags they name still
+   exist:
+
+<!-- cjcheck: static -->
+```sh
+uv run python scripts/check_readme_examples.py
+uv run python scripts/check_readme_examples.py --list      # what is covered
+CJ_CHECK_NO_SMOKE=1 uv run python scripts/check_readme_examples.py  # static only
+```
+
+Every fenced block in a covered README carries an invisible
+`<!-- cjcheck: ... -->` marker saying how it is checked, and a block without
+one is an error — so a new example cannot be added without someone deciding
+whether it can be launched. The script's docstring has the details. It runs as
+a pre-commit hook, first, because a reader who copies a command that errors is
+worse off than one with no docs at all.
 
 ## 3. Start developing your trading strategy using the CJTrade API
 

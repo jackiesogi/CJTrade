@@ -55,6 +55,7 @@ Replays historical prices at high playback speed, sampling and aggregating them
 into K-bars as it goes, against a fully simulated broker backend doing the order
 matching. The closest thing to watching the system trade.
 
+<!-- cjcheck: static -->
 ```sh
 bash poc/backtest_full_simulation.sh
 ```
@@ -64,6 +65,7 @@ fresh account state, opens a couple of monitoring windows, and then runs
 `uv run system`. Every form field has a matching command-line flag, so you can
 supply some or all of the answers up front:
 
+<!-- cjcheck: static -->
 ```sh
 bash poc/backtest_full_simulation.sh \
   --broker=arenax --mode=backtest \
@@ -76,6 +78,7 @@ Fetches every K-bar before the backtest begins and matches orders bar by bar.
 No clock, no server-side timing, and it finishes in seconds — which is what
 makes it the right tool for sweeping a parameter.
 
+<!-- cjcheck: static -->
 ```sh
 bash poc/backtest.sh
 ```

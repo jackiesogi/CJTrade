@@ -13,6 +13,7 @@
 and more. `help` lists everything; `help <command>` shows one command's
 arguments and an example.
 
+<!-- cjcheck: static -->
 ```sh
 uv run cjtrade --broker=arenax     # or --broker=sinopac
 ```

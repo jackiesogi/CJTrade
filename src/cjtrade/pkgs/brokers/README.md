@@ -43,6 +43,7 @@ broker must be able to do:
 
 `base_broker_api.py` defines the contract every implementation must satisfy:
 
+<!-- cjcheck: skip reason="interface sketch, deliberately not valid Python" -->
 ```python
 class BrokerAPIBase(ABC):
     def connect(self) -> bool
@@ -76,6 +77,7 @@ tends to get wrong.
 
 ### Step 1: Create the directory
 
+<!-- cjcheck: static -->
 ```bash
 cd src/cjtrade/pkgs/brokers/
 mkdir your_broker_name
@@ -83,6 +85,7 @@ cd your_broker_name
 ```
 
 Create the following files:
+<!-- cjcheck: static -->
 ```bash
 touch your_broker_api.py   # the implementation
 touch _internal_func.py    # data conversion and other helpers (if needed)
@@ -90,6 +93,7 @@ touch _internal_func.py    # data conversion and other helpers (if needed)
 
 ### Step 2: Implement the interface
 
+<!-- cjcheck: static -->
 ```python
 # your_broker_api.py
 class YourBroker(BrokerAPIBase):
@@ -117,6 +121,7 @@ Most broker APIs answer in their own shapes. Convert those into the standard
 models in `pkgs/models/` before they leave your class, so nothing above this
 layer has to know which broker it is talking to.
 
+<!-- cjcheck: static -->
 ```python
 def _convert_to_position(self, broker_position_data) -> Position:
     """Convert broker-specific position data to our Position model"""
@@ -153,6 +158,7 @@ Both the enum and the dispatch live in
 
 1. **Add your broker to the enum:**
 
+<!-- cjcheck: static -->
 ```python
 class BrokerType(Enum):
     SINOPAC = "sinopac"  # 永豐金
@@ -165,6 +171,7 @@ class BrokerType(Enum):
 
 2. **Add a branch to the dispatch:**
 
+<!-- cjcheck: static -->
 ```python
 def _set_broker_api(self, broker_type: BrokerType, **config) -> BrokerAPIBase:
     if broker_type == BrokerType.SINOPAC:

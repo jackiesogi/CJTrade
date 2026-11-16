@@ -45,6 +45,7 @@ so two modes can run side by side without fighting over one.
 | `backtest` | Custom broker API | 8802 | Historical market replay for backtesting |
 | `paper` | Custom broker API | 8803 | Paper trading with real-time market data |
 
+<!-- cjcheck: static -->
 ```sh
 uv run arenaxd --backend=backtest        # or demo / paper / real
 ```
@@ -65,6 +66,7 @@ guessing with `sleep`.
 
 ### Start the server first!
 
+<!-- cjcheck: static -->
 ```sh
 uv run arenaxd
 ```
@@ -73,6 +75,7 @@ uv run arenaxd
 
 ### Then open the admin shell
 
+<!-- cjcheck: static -->
 ```sh
 uv run aresh  # stands for "ARE"nax "SH"ell
 ```
@@ -87,23 +90,27 @@ mode.
 ### Server and backend
 
 1. Check health — also the readiness probe:
+<!-- cjcheck: static -->
 ```sh
 curl http://127.0.0.1:8801/health
 ```
 
 2. Start the simulated backend:
+<!-- cjcheck: static -->
 ```sh
 curl -X PUT -H "Content-Type: application/json" \
   -d '{"running": true}' http://127.0.0.1:8801/api/v1/backend
 ```
 
 3. Stop it again (the server process stays up):
+<!-- cjcheck: static -->
 ```sh
 curl -X PUT -H "Content-Type: application/json" \
   -d '{"running": false}' http://127.0.0.1:8801/api/v1/backend
 ```
 
 4. Read the configuration the server and the backend are actually running with:
+<!-- cjcheck: static -->
 ```sh
 curl http://127.0.0.1:8801/api/v1/config
 ```
@@ -115,6 +122,7 @@ curl http://127.0.0.1:8801/api/v1/config
 ### Clock
 
 5. Read the current market time:
+<!-- cjcheck: static -->
 ```sh
 curl http://127.0.0.1:8801/api/v1/clock
 ```
@@ -122,6 +130,7 @@ curl http://127.0.0.1:8801/api/v1/clock
 6. Set where the timeline BEGINS. This is not "jump to this moment": it snaps to
 09:00, and unless told otherwise it also starts the clock and refetches the data
 cache.
+<!-- cjcheck: static -->
 ```sh
 curl -X PUT -H "Content-Type: application/json" \
   -d '{"mock_init_time": "2026-03-20T00:00:00"}' \
@@ -150,11 +159,13 @@ The full interactive spec is served by the process itself — open
 ### Useful test scripts
 
 1. Watch how fast time progresses inside the ArenaX virtual environment:
+<!-- cjcheck: static -->
 ```sh
 watch -n 3 -d --color "curl -s http://127.0.0.1:8801/api/v1/clock | jq ."
 ```
 
 2. Print the backend and server config as it changes:
+<!-- cjcheck: static -->
 ```sh
 watch -n 3 -d --color "curl -s http://127.0.0.1:8801/api/v1/config | jq ."
 ```
