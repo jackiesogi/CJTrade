@@ -1,0 +1,53 @@
+# Builds the documentation site (mkdocs.yml) on every push and pull request,
+# so a broken link or a renamed API fails the check; publishes it to GitHub
+# Pages only from master.
+#
+# One-time setup: Settings > Pages > Build and deployment > Source:
+# "GitHub Actions".
+name: Docs
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      # Only the docs group: mkdocstrings reads the source without importing
+      # it, so the project's own dependencies are not needed.
+      - run: uv sync --locked --only-group docs
+      - run: uv run --no-sync mkdocs build --strict --site-dir site
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write      # publish to Pages
+      id-token: write   # prove the deployment came from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

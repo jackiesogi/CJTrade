@@ -1,0 +1,70 @@
+# Documentation site, published to GitHub Pages by .github/workflows/docs.yml.
+# Preview locally:  uv run --group docs mkdocs serve   (http://127.0.0.1:8000)
+site_name: CJTrade
+site_description: A Python framework for building trading systems for TWSE
+site_url: https://jackiesogi.github.io/CJTrade/
+repo_url: https://github.com/jackiesogi/CJTrade
+repo_name: jackiesogi/CJTrade
+edit_uri: edit/master/doc/
+docs_dir: doc
+strict: true   # a broken link or reference fails the build
+
+exclude_docs: |
+  README.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {icon: material/weather-sunny, name: Light mode}
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          # Read the source statically: building the docs never imports
+          # cjtrade, so it needs none of its dependencies (ta-lib, shioaji...).
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            members_order: source
+            filters: ["!^_"]
+            merge_init_into_class: true
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Beginner API: API.md
+  - API reference:
+      - Strategy authoring: reference/strategy-authoring.md
+      - BaseStrategy: reference/base-strategy.md
+      - AccountClient: reference/account-client.md
+      - Models: reference/models.md
+      - Cost model: reference/cost-model.md
+      - Risk gate: reference/risk.md
+      - Backtest engine: reference/backtest-engine.md
+      - Technical indicators: reference/technical.md
+  - Design notes:
+      - Oneshot vs full_sim: ONESHOT_VS_FULLSIM_ANALYSIS.md
+      - Fill callback test plan: CALLBACK_TEST_PLAN.md

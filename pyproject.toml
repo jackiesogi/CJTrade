@@ -94,3 +94,9 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
 ]
+# Pinned below 2: MkDocs 2.0 drops the plugin system mkdocstrings needs.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.29",
+]
