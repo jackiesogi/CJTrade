@@ -205,9 +205,11 @@ class _Handler(BaseHTTPRequestHandler):
     result_box: list  # shared container; filled on POST
 
     def log_message(self, fmt, *args):  # suppress request logs
+        """Discard request logs."""
         pass
 
     def do_GET(self):
+        """Serve the form page for any path."""
         page = _build_html(self.schema).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -216,6 +218,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(page)
 
     def do_POST(self):
+        """Parse the submitted form into `result_box` and serve a done page.
+
+        Empty or unparseable values fall back to the field's resolved default.
+        """
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode()
         raw = urllib.parse.parse_qs(body, keep_blank_values=True)
@@ -274,11 +280,22 @@ class _Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 class WebRenderer(FormRenderer):
-    """
-    Renders the form as a local HTML page.
+    """Renders the form as a local HTML page.
 
     Starts a one-shot HTTP server on ``localhost:{port}`` (default 9876),
     opens the browser, waits for the form to be submitted, then shuts down.
+
+    Parameters
+    ----------
+    port : int, optional
+        Port to bind on 127.0.0.1.
+    auto_open : bool, optional
+        Open the browser automatically (default True).
+
+    Warnings
+    --------
+    Starts an HTTP server (127.0.0.1 only, no authentication) and opens a
+    browser. The page loads Tailwind from cdn.tailwindcss.com.
     """
 
     def __init__(self, port: int = 9876, auto_open: bool = True) -> None:
@@ -286,6 +303,23 @@ class WebRenderer(FormRenderer):
         self.auto_open = auto_open
 
     def render(self, schema: FormSchema) -> dict[str, Any]:
+        """Serve the form and block until the first POST arrives.
+
+        Parameters
+        ----------
+        schema : FormSchema
+            The form to show.
+
+        Returns
+        -------
+        dict
+            ``{field_name: value}`` from the first submission.
+
+        Warnings
+        --------
+        Blocks with no timeout until a submission arrives. Raises OSError if
+        the port is already in use.
+        """
         result_box: list = []
 
         # Patch class-level attributes used by the handler

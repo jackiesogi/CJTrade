@@ -6,6 +6,7 @@ from ._base import News
 from ._base import NewsInterface
 
 class MockNewsProvider(NewsInterface):
+    """Offline news provider that returns three fixed Chinese news items."""
     def __init__(self, **config):
         super().__init__(**config)
         self.mock_data: List[News] = [
@@ -67,18 +68,27 @@ class MockNewsProvider(NewsInterface):
 
 
     def fetch_headline_news(self, n: int = 10) -> List[News]:
+        """Return the first `n` mock news items."""
         return self.mock_data[:n]
 
     async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        """Return the first `n` mock news items after a simulated delay.
+
+        Warnings
+        --------
+        Sleeps 5 seconds to simulate network latency.
+        """
         await asyncio.sleep(5)  # Simulate network delay
         return self.mock_data[:n]
 
 
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
         # keyword search using simple substring match
+        """Return up to `n` mock items whose title or content contains `keyword`."""
         all = [news for news in self.mock_data if keyword in news.title or keyword in news.content]
         return all[:n]
 
 
     def get_provider_name(self) -> str:
+        """Return ``"mock"``."""
         return "mock"

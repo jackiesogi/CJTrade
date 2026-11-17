@@ -73,22 +73,61 @@ class CostModel:
 
     # ------------------------------------------------------------------
     def effective_rate(self) -> float:
-        """Commission rate after applying the broker discount."""
+        """Return the commission rate after applying the broker discount."""
         return self.commission_rate * self.commission_discount
 
     def calc_commission(self, value: float) -> float:
-        """Return the commission for a trade of notional *value* TWD."""
+        """Return the commission for a trade of `value` TWD.
+
+        Parameters
+        ----------
+        value : float
+            Notional of the trade.
+
+        Returns
+        -------
+        float
+            At least `min_commission`, rounded to 2 decimals.
+        """
         return round(max(value * self.effective_rate(), self.min_commission), 2)
 
     def calc_tax(self, value: float, side: str, symbol: str) -> float:
-        """Return transaction tax for a trade.  Zero for BUY; non-zero for SELL."""
+        """Return transaction tax for a trade.  Zero for BUY; non-zero for SELL.
+
+        Parameters
+        ----------
+        value : float
+            Notional of the trade.
+        side : str
+            Only ``"SELL"`` is taxed.
+        symbol : str
+            Symbols starting with ``"0"`` (ETFs) use `etf_tax_rate`.
+
+        Returns
+        -------
+        float
+            Rounded to 2 decimals.
+        """
         if side != "SELL":
             return 0.0
         rate = self.etf_tax_rate if symbol.startswith("0") else self.stock_tax_rate
         return round(value * rate, 2)
 
     def apply_slippage(self, price: float, side: str) -> float:
-        """Return *price* adjusted for slippage (adverse to the trader)."""
+        """Return `price` adjusted for slippage (adverse to the trader).
+
+        Parameters
+        ----------
+        price : float
+            Unadjusted price.
+        side : str
+            ``"BUY"`` raises the price; any other value lowers it.
+
+        Returns
+        -------
+        float
+            Unchanged for ``slippage_model="none"``, otherwise rounded to 2 decimals.
+        """
         if self.slippage_model == "none":
             return price
         if self.slippage_model == "fixed_pct":
@@ -109,6 +148,15 @@ class CostModel:
 
         *tax* is always ``0.0`` for BUY; included for API symmetry.
         *notional* is computed from the slippage-adjusted *adj_price*.
+
+        Parameters
+        ----------
+        price : float
+            Unadjusted price.
+        qty : int
+            Number of shares.
+        symbol : str, optional
+            Unused for BUY; accepted for symmetry with `sell_total`.
         """
         adj = self.apply_slippage(price, "BUY")
         notional = adj * qty
@@ -118,7 +166,17 @@ class CostModel:
     def sell_total(
         self, price: float, qty: int, symbol: str = ""
     ) -> tuple[float, float, float, float]:
-        """Return ``(adj_price, notional, commission, tax)`` for a SELL."""
+        """Return ``(adj_price, notional, commission, tax)`` for a SELL.
+
+        Parameters
+        ----------
+        price : float
+            Unadjusted price.
+        qty : int
+            Number of shares.
+        symbol : str, optional
+            Decides the tax rate (see `calc_tax`).
+        """
         adj = self.apply_slippage(price, "SELL")
         notional = adj * qty
         comm = self.calc_commission(notional)

@@ -7,11 +7,13 @@ from typing import List
 
 
 class Exchange(str, Enum):
+    """Exchange a product is listed on (only TSE for now)."""
     TSE = "TSE"
     # to be added (e.g., OTC, NYSE, NASDAQ, etc.)
 
 
 class ProductType(str, Enum):
+    """Type of a product (only stocks for now)."""
     STOCK = "Stocks"
     # ETF = "ETF"
     # REIT = "REIT"
@@ -37,6 +39,23 @@ class ProductType(str, Enum):
 # {ProductType}.{Exchange}.{Symbol}
 @dataclass(frozen=True)  # Note that Product == Contract == 標的
 class Product:
+    """An immutable tradable instrument (contract, 標的).
+
+    Attributes
+    ----------
+    symbol : str
+        Ticker, e.g. ``"2330"``.
+    type : ProductType
+        STOCK by default.
+    exchange : Exchange
+        TSE by default.
+    category : str
+        Category label; empty by default.
+    tags : list of str
+        Free-form tags.
+    metadata : dict
+        Free-form extra data.
+    """
     symbol: str
     type: ProductType = ProductType.STOCK
     exchange: Exchange = Exchange.TSE
@@ -45,6 +64,7 @@ class Product:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the product as a dict, with enum fields as their string values."""
         return {
             "symbol": self.symbol,
             "type": self.type.value if hasattr(self.type, 'value') else self.type,

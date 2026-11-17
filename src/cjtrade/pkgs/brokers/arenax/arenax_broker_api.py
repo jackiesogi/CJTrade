@@ -41,6 +41,14 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     For unit tests, inject a mock middleware via the `middleware` keyword argument:
         api = ArenaXBrokerAPI_v2(middleware=MockMiddleWare())
+
+    Parameters
+    ----------
+    **config
+        ``arenax_host`` (default ``'localhost'``), ``arenax_port`` (default
+        ``$ARENAX_PORT`` or 8801), ``middleware``, ``api_key`` (needed by
+        connect()), ``username`` (default ``'Ariana'``) and
+        ``mirror_db_path``.
     """
     def __init__(self, **config: Any):
         super().__init__(**config)
@@ -61,9 +69,18 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def connect(self) -> bool:
-        """Connect to the ArenaX standalone server via ArenaXMiddleWare
-            and set up the local SQLite mirror database.
-            Returns True if connection is successful, False otherwise.
+        """Connect to the ArenaX standalone server and set up the local SQLite mirror database.
+
+        Logs in via ArenaXMiddleWare.
+
+        Returns
+        -------
+        bool
+            True if connection is successful, False otherwise.
+
+        Warnings
+        --------
+        Makes a network call and opens (creating if needed) the mirror database file.
         """
         try:
             self.middleware.login(self.config['api_key'])
@@ -79,6 +96,12 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def disconnect(self) -> None:
+        """Log out of the server and close the mirror database.
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         if self._connected:
             try:
                 self.middleware.logout()
@@ -91,6 +114,16 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def is_connected(self) -> bool:
+        """Return whether connect() succeeded and disconnect() has not been called.
+
+        Returns
+        -------
+        bool
+
+        Warnings
+        --------
+        Raises AttributeError if called before connect(); disconnect() does too.
+        """
         return self._connected
 
 
@@ -118,11 +151,41 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def get_positions(self) -> List[Position]:
+        """Return current positions from the server.
+
+        Returns
+        -------
+        List[Position]
+
+        Raises
+        ------
+        ConnectionError
+            The server did not answer.
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         pos = self._account_summary().get("positions")
         return [Position(**p) for p in (pos or [])]
 
 
     def get_balance(self) -> float:
+        """Return the account balance from the server.
+
+        Returns
+        -------
+        float
+
+        Raises
+        ------
+        ConnectionError
+            The server did not answer or sent no balance.
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         balance = self._account_summary().get("balance")
         if balance is None:
             raise ConnectionError(
@@ -132,6 +195,28 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
+        """Return a simulated five-level bid/ask quote for a product.
+
+        Parameters
+        ----------
+        product : Product
+        intraday_odd : bool, optional
+            Accepted for interface compatibility; not used.
+
+        Returns
+        -------
+        BidAsk
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Not real quotes: prices are spaced 0.5 around the last close (100.0 if
+        no snapshot), volumes are random, and the timestamp is the local wall clock.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -150,6 +235,27 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
+        """Return snapshots for the given products.
+
+        Products the server returns no snapshot for are skipped.
+
+        Parameters
+        ----------
+        products : List[Product]
+
+        Returns
+        -------
+        List[Snapshot]
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -165,6 +271,29 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     # TODO: Call backend to query real kbar rather than using yfinane one in user-side
     def get_kbars(self, product: Product, start: str, end: str, interval: str = "1m"):
+        """Return kbars for a product from the ArenaX server.
+
+        Does not require connect().
+
+        Parameters
+        ----------
+        product : Product
+        start : str
+            Start date.
+        end : str
+            End date, exclusive.
+        interval : str, optional
+            '1m', '5m', '1h' or '1d'. Any other value prints a message and
+            falls back to '1m'.
+
+        Returns
+        -------
+        List[Kbar]
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         # Note: kbar fetching is a read-only data operation and does not require
         # an authenticated trading session.  No _connected guard here.
 
@@ -217,6 +346,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         callbacks, and the backend would only append to the log from the two
         places that already own every transition -- _apply_fill() and the
         cancel path.
+
+        Warnings
+        --------
+        Placeholder: always raises NotImplementedError.
         """
         raise NotImplementedError(
             "ArenaX has no push callback yet; poll sync_state() or list_orders()."
@@ -227,12 +360,42 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     def get_market_movers(self, top_n: int = 10,
                           by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,
                           ascending: bool = True) -> Dict[str, Snapshot]:
+        """Not implemented; returns None.
+
+        Warnings
+        --------
+        Placeholder: always returns None.
+        """
         # Mock implementation - return None for simplicity
         # Caller should handle None return value
         return None
 
 
     def place_order(self, order: Order) -> OrderResult:
+        """Place an order on the ArenaX server and record it in the mirror database.
+
+        Sets ``order.created_at`` to the current market time before sending.
+
+        Parameters
+        ----------
+        order : Order
+
+        Returns
+        -------
+        OrderResult
+
+        Raises
+        ------
+        ConnectionError
+            Not connected, or the server did not answer.
+        ValueError
+            The server rejected the order.
+
+        Warnings
+        --------
+        Makes a network call (simulated order, not a real one) and writes the
+        order to the local mirror database.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -248,6 +411,28 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def cancel_order(self, order_id: str) -> OrderResult:
+        """Cancel an order on the ArenaX server.
+
+        The mirror database is updated only when the result is CANCELLED.
+
+        Parameters
+        ----------
+        order_id : str
+            The CJTrade order id.
+
+        Returns
+        -------
+        OrderResult
+
+        Raises
+        ------
+        ConnectionError
+            The server did not answer.
+
+        Warnings
+        --------
+        Makes network calls and writes to the local mirror database.
+        """
         res = self.middleware.cancel_order(order_id=order_id)
 
         update_at = self.get_market_time()["mock_current_time"]
@@ -259,7 +444,18 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def sync_state(self) -> List[OrderResult]:
-        """Refresh status of all committed orders from the broker backend."""
+        """Refresh status of all committed orders from the broker backend.
+
+        Returns
+        -------
+        List[OrderResult]
+            One result per refreshed order. Per-order errors are printed and
+            skipped.
+
+        Warnings
+        --------
+        Makes network calls and writes order status to the local mirror database.
+        """
         res = []
         orders = self.middleware.list_orders()
         committed_statuses = {OrderStatus.COMMITTED_WAIT_MATCHING.value, OrderStatus.COMMITTED_WAIT_MARKET_OPEN.value}
@@ -278,16 +474,37 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
 
     def list_orders(self) -> List[Trade]:
+        """Return the account's orders.
+
+        Returns
+        -------
+        List[Trade]
+
+        Warnings
+        --------
+        Makes a network call to the ArenaX server.
+        """
         # GET /api/v1/orders, not the whole account: this skips rebuilding and
         # re-pricing every position just to read the order list.
         return [Trade(**o) for o in self.middleware.list_orders()]
 
 
     def is_market_open(self) -> bool:
+        """Return whether the server's market time is on a weekday, 09:00-13:30.
+
+        Returns
+        -------
+        bool
+
+        Warnings
+        --------
+        Makes a network call. Holidays are not considered.
+        """
         return self.middleware.is_market_open()
 
 
     def get_broker_name(self) -> str:
+        """Return ``'arenax (<port>)'``."""
         return f"arenax ({self.port})"
 
 
@@ -300,6 +517,18 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
     # 接收方用 fromisoformat() 反序列化 任何地方不做 timezone 轉換!!
     # 所有 datetime 都是 隱性台北時間的 naive datetime
     def get_market_time(self) -> dict:
+        """Return the server clock, with datetimes parsed from ISO 8601.
+
+        See BrokerAPIBase.get_market_time for the keys.
+
+        Returns
+        -------
+        dict
+
+        Warnings
+        --------
+        Makes a network call; the result depends on the server clock.
+        """
         # Server emits all datetime fields as ISO 8601 (naive Asia/Taipei).
         # Parse with fromisoformat(); no timezone conversion needed.
         #
@@ -321,6 +550,33 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                   opt_field: dict = None) -> OrderResult:
+        """Place a limit buy order for a stock.
+
+        Builds a TSE stock order with LMT price type and ROD order type and passes
+        it to place_order().
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Extra fields attached to the order.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        Makes a network call (simulated order, not a real one) and writes the
+        order to the local mirror database.
+        """
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,
@@ -343,6 +599,33 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                    opt_field: dict = None) -> OrderResult:
+        """Place a limit sell order for a stock.
+
+        Builds a TSE stock order with LMT price type and ROD order type and passes
+        it to place_order().
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Extra fields attached to the order.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        Makes a network call (simulated order, not a real one) and writes the
+        order to the local mirror database.
+        """
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,

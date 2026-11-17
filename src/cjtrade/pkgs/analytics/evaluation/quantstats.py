@@ -39,12 +39,19 @@ def quick_report(result: "BacktestResult", output: str = "html",
     Parameters
     ----------
     result : BacktestResult
+        Backtest output to report on.
     output : "html" | "full" | "basic"
         "html"  → save HTML file (requires ``path``)
         "full"  → open full quantstats report in browser
         "basic" → print key metrics to stdout only
     path : str, optional
-        File path for HTML output (used when output="html").
+        File path for HTML output (used when output="html"). Defaults to
+        ``backtest_<session>.html``.
+
+    Warnings
+    --------
+    "html" and "full" write an HTML file in the working directory unless
+    `path` is given; "full" also opens it in the default browser.
     """
     report = BacktestReport(result)
     if output == "html":
@@ -62,8 +69,13 @@ def quick_report(result: "BacktestResult", output: str = "html",
 class BacktestReport:
     """Wraps a BacktestResult and exposes reporting helpers.
 
-    Example
-    -------
+    Parameters
+    ----------
+    result : BacktestResult
+        Backtest output to report on.
+
+    Examples
+    --------
     >>> report = BacktestReport(result)
     >>> report.summary()
     >>> report.save_html("report.html")
@@ -265,6 +277,18 @@ class BacktestReport:
         -------
         str
             Absolute path to the saved HTML file.
+
+        Raises
+        ------
+        ImportError
+            If quantstats is not installed.
+        ValueError
+            If the equity curve is empty.
+
+        Warnings
+        --------
+        Writes (overwrites) an HTML file and, by default, opens a browser. With no
+        fills, a minimal "no trades" page is written instead.
         """
         import os, webbrowser
         qs = self._require_qs()
@@ -390,11 +414,21 @@ class BacktestReport:
     # ------------------------------------------------------------------
 
     def save_html(self, path: str) -> None:
-        """Save a full quantstats HTML report to ``path``."""
+        """Save a full quantstats HTML report to ``path``.
+
+        Warnings
+        --------
+        Writes (overwrites) `path`; does not open a browser.
+        """
         return self.full_report(path=path, open_browser=False)
 
     def save_csv(self, path: str) -> None:
-        """Save daily_summary() as a CSV to ``path``."""
+        """Save daily_summary() as a CSV to ``path``.
+
+        Warnings
+        --------
+        Writes (overwrites) `path`.
+        """
         df = self.result.daily_summary()
         df.to_csv(path, index=False)
         print(f"[BacktestReport] CSV saved → {path}")

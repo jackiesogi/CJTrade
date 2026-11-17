@@ -14,6 +14,23 @@ from ._base import News
 from ._base import NewsInterface
 
 class NewsAPIProvider(NewsInterface):
+    """News provider backed by NewsAPI (newsapi.org).
+
+    Parameters
+    ----------
+    **config
+        Must include ``api_key``, the NewsAPI key.
+
+    Raises
+    ------
+    ValueError
+        If ``api_key`` is missing.
+
+    Warnings
+    --------
+    Requires the ``news`` extra. Methods call the NewsAPI web service; results
+    change over time and count against the API quota.
+    """
     def __init__(self, **config):
         if NewsApiClient is None:
             raise missing_extra("news")
@@ -40,6 +57,13 @@ class NewsAPIProvider(NewsInterface):
 
 
     async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` top business headlines for "Taiwan" (bbc-news, the-verge).
+
+        Warnings
+        --------
+        Makes a network call to NewsAPI. Sleeps 1 s first; the NewsAPI call itself
+        is blocking.
+        """
         await asyncio.sleep(1)  # Simulate async behavior
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_top_headlines(q=self.default_query,
@@ -58,6 +82,12 @@ class NewsAPIProvider(NewsInterface):
         return self._response_to_news_list(all_articles)[:n]
 
     def fetch_headline_news(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` top headlines for "Taiwan" from bbc-news.
+
+        Warnings
+        --------
+        Makes a network call to NewsAPI.
+        """
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_top_headlines(q=self.default_query,
                                                  sources='bbc-news',
@@ -69,6 +99,12 @@ class NewsAPIProvider(NewsInterface):
         return self._response_to_news_list(all_articles)[:n]
 
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
+        """Search the last 30 days of bbc-news and the-verge for `keyword`.
+
+        Warnings
+        --------
+        Makes a network call to NewsAPI. The date range depends on the current date.
+        """
         newsapi = NewsApiClient(api_key=self.api_key)
         all_articles = newsapi.get_everything(q=keyword,
                                       sources='bbc-news,the-verge',
@@ -82,4 +118,5 @@ class NewsAPIProvider(NewsInterface):
 
 
     def get_provider_name(self) -> str:
+        """Return ``"news_api"``."""
         return "news_api"

@@ -11,6 +11,13 @@ from .engine import FormEngine
 
 
 def main() -> None:
+    """Parse ``config`` and ``--renderer``, run the form and print export lines.
+
+    Warnings
+    --------
+    Runs FormEngine.run, so it persists answers to the state dir; the web
+    renderer starts a local server and opens a browser.
+    """
     parser = argparse.ArgumentParser(
         prog="python -m cjtrade.pkgs.ui",
         description="Run a FormEngine and print shell export lines.",

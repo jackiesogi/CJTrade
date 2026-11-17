@@ -7,13 +7,31 @@ from .news_providers._base import News
 from .news_providers._base import NewsInterface
 
 class NewsProviderType(Enum):
+    """Supported news providers."""
     STATEMENT_DOG = "statement_dog"  # 財報狗
     NEWS_API = "news_api"            # NewsAPI
     MOCK = "mock"                    # Simulated News Source
     CNYES = "cnyes"                  # 鉅亨網
 
 class NewsClient:
-    """An unified API to interact with different news providers."""
+    """An unified API to interact with different news providers.
+
+    Parameters
+    ----------
+    provider_type : NewsProviderType or str
+        Provider to use; a string is converted with ``NewsProviderType(value)``.
+    **config : Any
+        Passed to the provider constructor (e.g. ``api_key`` for NewsAPI).
+
+    Raises
+    ------
+    ValueError
+        If the provider type is not supported.
+
+    Warnings
+    --------
+    All providers except ``MOCK`` make network calls; results vary over time.
+    """
 
     # TODO: provider_type should be union of str or Enum
     def __init__(self, provider_type: NewsProviderType, **config):
@@ -39,17 +57,22 @@ class NewsClient:
             raise ValueError(f"Unsupported news provider type: {provider_type}")
 
     async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` headline news items asynchronously from the provider."""
         return await self.provider.fetch_headline_news_async(n=n)
 
     def fetch_headline_news(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` headline news items from the provider (blocking)."""
         return self.provider.fetch_headline_news(n=n)
 
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
+        """Search the provider for up to `n` news items matching `keyword`."""
         return self.provider.search_by_keyword(keyword, n=n)
 
     def get_provider_name(self) -> str:
+        """Return the provider name."""
         return self.provider.get_provider_name()
 
     @property
     def current_provider_type(self) -> NewsProviderType:
+        """The provider type this client was created with."""
         return self.provider_type

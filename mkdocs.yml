@@ -1,5 +1,9 @@
 # Documentation site, published to GitHub Pages by .github/workflows/docs.yml.
 # Preview locally:  uv run --group docs mkdocs serve   (http://127.0.0.1:8000)
+#
+# Two languages. English pages are `name.md`; a Traditional Chinese page sits
+# next to it as `name.zh-TW.md` and is served under /zh-TW/. A page with no
+# translation falls back to the English one. Docstrings are English in both.
 site_name: CJTrade
 site_description: A Python framework for building trading systems for TWSE
 site_url: https://jackiesogi.github.io/CJTrade/
@@ -37,6 +41,57 @@ markdown_extensions:
 
 plugins:
   - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true      # adds the language switcher
+      reconfigure_search: true
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: zh-TW
+          name: 繁體中文
+          build: true
+          nav_translations:
+            Home: 首頁
+            Guides: 指南
+            Quickstart: 快速開始
+            Writing a strategy: 撰寫策略
+            Backtesting: 回測
+            Beginner API: Beginner API
+            API reference: API 參考
+            Brokers: 券商
+            Strategies: 策略
+            Analytics: 分析
+            Infrastructure: 基礎設施
+            Built-in strategies: 內建策略
+            Strategy parameters: 策略參數
+            Strategy authoring: 策略撰寫
+            Loading strategy files: 載入策略檔
+            Broker interface: 券商介面
+            ArenaX client: ArenaX 用戶端
+            Sinopac adapter: 永豐金轉接層
+            Models: 資料模型
+            Cost model: 交易成本模型
+            Risk gate: 風控閘門
+            Backtest engine: 回測引擎
+            Technical indicators: 技術指標
+            Reports: 績效報告
+            News: 新聞
+            Fundamentals: 基本面
+            LLM clients: LLM 用戶端
+            Charts: K 線圖
+            Configuration and paths: 設定與路徑
+            Forms: 表單
+            Design notes: 設計筆記
+            Oneshot vs full_sim: Oneshot 與 full_sim
+            Fill callback test plan: 成交回呼測試計畫
+  # Each reference page exists once per language, so every object has two
+  # URLs; link to the one in the language of the page doing the linking.
+  - autorefs:
+      resolve_closest: true
   - mkdocstrings:
       handlers:
         python:
@@ -55,16 +110,37 @@ plugins:
 nav:
   - Home: index.md
   - Guides:
-      - Beginner API: API.md
+      - Quickstart: guides/quickstart.md
+      - Writing a strategy: guides/strategy-authoring.md
+      - Backtesting: guides/backtesting.md
+      - Beginner API: guides/beginner-api.md
   - API reference:
-      - Strategy authoring: reference/strategy-authoring.md
-      - BaseStrategy: reference/base-strategy.md
-      - AccountClient: reference/account-client.md
+      - Brokers:
+          - AccountClient: reference/account-client.md
+          - Broker interface: reference/broker-base.md
+          - ArenaX client: reference/arenax-client.md
+          - Sinopac adapter: reference/sinopac.md
+      - Strategies:
+          - Strategy authoring: reference/strategy-authoring.md
+          - Loading strategy files: reference/user-strategy.md
+          - BaseStrategy: reference/base-strategy.md
+          - Built-in strategies: reference/strategies.md
+          - Strategy parameters: reference/strategy-parameters.md
       - Models: reference/models.md
-      - Cost model: reference/cost-model.md
-      - Risk gate: reference/risk.md
-      - Backtest engine: reference/backtest-engine.md
-      - Technical indicators: reference/technical.md
+      - Analytics:
+          - Backtest engine: reference/backtest-engine.md
+          - Cost model: reference/cost-model.md
+          - Risk gate: reference/risk.md
+          - Technical indicators: reference/technical.md
+          - Reports: reference/reports.md
+          - News: reference/news.md
+          - Fundamentals: reference/fundamentals.md
+          - LLM clients: reference/llm.md
+          - Charts: reference/charts.md
+      - Infrastructure:
+          - Beginner API: reference/beginner.md
+          - Configuration and paths: reference/config.md
+          - Forms: reference/forms.md
   - Design notes:
-      - Oneshot vs full_sim: ONESHOT_VS_FULLSIM_ANALYSIS.md
-      - Fill callback test plan: CALLBACK_TEST_PLAN.md
+      - Oneshot vs full_sim: design/oneshot-vs-fullsim.md
+      - Fill callback test plan: design/callback-test-plan.md

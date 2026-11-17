@@ -1,10 +1,10 @@
-"""
-Beginner-friendly API for CJTrade Strategy Editor
+"""Beginner-friendly API for CJTrade Strategy Editor
 
 This module provides a Pine Script-like experience for users who want to write
 trading strategies without worrying about the underlying implementation details.
 
-Example:
+Examples
+--------
     from cjtrade.pkgs.api.beginner import *
 
     def setup():
@@ -16,6 +16,11 @@ Example:
         if kbar.close > ema[-1]:
             return buy(qty=100)
         return None
+
+Warnings
+--------
+Functions share one module-level broker client and current symbol.
+`buy` and `sell` can place REAL orders.
 """
 import os
 from dataclasses import dataclass
@@ -58,27 +63,39 @@ class KbarSeries:
 
     @property
     def open(self) -> float:
+        """Latest open, or 0.0 if there are no bars."""
         return float(self.opens[-1]) if len(self.opens) else 0.0
 
     @property
     def high(self) -> float:
+        """Latest high, or 0.0 if there are no bars."""
         return float(self.highs[-1]) if len(self.highs) else 0.0
 
     @property
     def low(self) -> float:
+        """Latest low, or 0.0 if there are no bars."""
         return float(self.lows[-1]) if len(self.lows) else 0.0
 
     @property
     def close(self) -> float:
+        """Latest close, or 0.0 if there are no bars."""
         return float(self.closes[-1]) if len(self.closes) else 0.0
 
     @property
     def volume(self) -> int:
+        """Latest volume, or 0 if there are no bars."""
         return int(self.volumes[-1]) if len(self.volumes) else 0
 
 
 def to_kbar_series(kbars: Optional[list], symbol: str = "") -> Optional[KbarSeries]:
-    """Convert a list[Kbar] to KbarSeries used by beginner strategies."""
+    """Convert a list[Kbar] to KbarSeries used by beginner strategies.
+
+    Returns
+    -------
+    KbarSeries or None
+        `kbars` itself if it already looks like a series; None if `kbars` is
+        empty or conversion fails.
+    """
     if not kbars:
         return None
 
@@ -110,22 +127,26 @@ def _get_client() -> AccountClient:
 
 
 def set_client(client: AccountClient) -> None:
-    """
-    Manually set the global client instance.
+    """Manually set the global client instance.
+
     Useful for testing or using pre-configured clients.
+
+    Warnings
+    --------
+    If `client` is a live broker, later `buy` / `sell` calls place real orders.
     """
     global _global_client
     _global_client = client
 
 
 def set_current_symbol(symbol: str) -> None:
-    """Set the current trading symbol for buy/sell operations"""
+    """Set the current trading symbol for buy/sell operations."""
     global _current_symbol
     _current_symbol = symbol
 
 
 def get_current_symbol() -> Optional[str]:
-    """Get the current trading symbol"""
+    """Get the current trading symbol."""
     return _current_symbol
 
 
@@ -134,18 +155,32 @@ def create_client(
     broker_type: BrokerType = BrokerType.MOCK,
     simulation: bool = False,
 ) -> AccountClient:
-    """
-    Create and connect a broker client with environment config.
+    """Create and connect a broker client with environment config.
 
-    Args:
-        broker_type: Which broker to connect to (default: SINOPAC)
-        simulation: Whether to use mock broker (default: False)
+    Credentials are read from the ``API_KEY``, ``SECRET_KEY``, ``CA_CERT_PATH``
+    and ``CA_PASSWORD`` environment variables (``.env`` is loaded on import).
 
-    Returns:
+    Parameters
+    ----------
+    broker_type : BrokerType
+        Which broker to connect to (default: MOCK)
+    simulation : bool
+        Passed to the broker as ``simulation`` (default: False); for SINOPAC
+        this selects the Shioaji sandbox instead of the live account.
+
+    Returns
+    -------
+    AccountClient
         Connected AccountClient instance
 
-    Example:
-        client = create_client(simulation=True)  # Use mock broker
+    Examples
+    --------
+    >>> client = create_client(simulation=True)
+
+    Warnings
+    --------
+    Connects to the broker over the network. With a live broker and
+    ``simulation=False`` the client trades a real account.
     """
     config = {
         'api_key': os.getenv('API_KEY'),
@@ -165,21 +200,41 @@ def buy(
     symbol: Optional[str] = None,
     intraday_odd: bool = True,
 ) -> Optional[Order]:
-    """
-    Place a buy order.
+    """Place a buy order.
 
-    Args:
-        qty: Quantity to buy
-        price: Order price (if None, uses market price)
-        symbol: Stock symbol (if None, uses current symbol from context)
-        intraday_odd: Allow intraday odd lots (default: True)
+    Parameters
+    ----------
+    qty : int
+        Quantity to buy
+    price : float, optional
+        Order price. None is sent to the broker as 0; the Sinopac broker
+        places a ROD limit order at the given price.
+    symbol : str, optional
+        Stock symbol (if None, uses current symbol from context)
+    intraday_odd : bool
+        Allow intraday odd lots (default: True)
 
-    Returns:
-        Order object if successful, None otherwise
+    Returns
+    -------
+    Order or None
+        Order object if successful, None otherwise (the error is printed).
 
-    Example:
-        buy(qty=100)  # Buy 100 shares at market price
-        buy(qty=50, price=150.5)  # Buy 50 shares at specific price
+    Raises
+    ------
+    ValueError
+        If no symbol is given and none is set in context.
+
+    Examples
+    --------
+    >>> buy(qty=100)
+    >>> buy(qty=50, price=150.5)  # Buy 50 shares at specific price
+
+    Warnings
+    --------
+    Places an order through the global client. This is a REAL order if that
+    client is a live broker (e.g. SINOPAC with ``simulation=False``, set via
+    `set_client` or `create_client`). If no client is set, a MOCK client is
+    created on first use.
     """
     symbol = symbol or get_current_symbol()
     if not symbol:
@@ -204,20 +259,40 @@ def sell(
     symbol: Optional[str] = None,
     intraday_odd: bool = True,
 ) -> Optional[Order]:
-    """
-    Place a sell order.
+    """Place a sell order.
 
-    Args:
-        qty: Quantity to sell
-        price: Order price (if None, uses market price)
-        symbol: Stock symbol (if None, uses current symbol from context)
-        intraday_odd: Allow intraday odd lots (default: True)
+    Parameters
+    ----------
+    qty : int
+        Quantity to sell
+    price : float, optional
+        Order price. None is sent to the broker as 0; the Sinopac broker
+        places a ROD limit order at the given price.
+    symbol : str, optional
+        Stock symbol (if None, uses current symbol from context)
+    intraday_odd : bool
+        Allow intraday odd lots (default: True)
 
-    Returns:
-        Order object if successful, None otherwise
+    Returns
+    -------
+    Order or None
+        Order object if successful, None otherwise (the error is printed).
 
-    Example:
-        sell(qty=50)  # Sell 50 shares at market price
+    Raises
+    ------
+    ValueError
+        If no symbol is given and none is set in context.
+
+    Examples
+    --------
+    >>> sell(qty=50)
+
+    Warnings
+    --------
+    Places an order through the global client. This is a REAL order if that
+    client is a live broker (e.g. SINOPAC with ``simulation=False``, set via
+    `set_client` or `create_client`). If no client is set, a MOCK client is
+    created on first use.
     """
     symbol = symbol or get_current_symbol()
     if not symbol:
@@ -237,17 +312,31 @@ def sell(
 
 
 def get_current_price(symbol: Optional[str] = None) -> Optional[float]:
-    """
-    Get the latest price for a symbol.
+    """Get the latest price for a symbol.
 
-    Args:
-        symbol: Stock symbol (if None, uses current symbol)
+    Parameters
+    ----------
+    symbol : str, optional
+        Stock symbol (if None, uses current symbol)
 
-    Returns:
-        Current price or None if failed
+    Returns
+    -------
+    float or None
+        Current price (snapshot close) or None if failed
 
-    Example:
-        price = get_current_price("2330")
+    Raises
+    ------
+    ValueError
+        If no symbol is given and none is set in context.
+
+    Examples
+    --------
+    >>> price = get_current_price("2330")
+
+    Warnings
+    --------
+    Queries the broker through the global client (a network call for a live
+    broker). Errors are printed and None is returned.
     """
     symbol = symbol or get_current_symbol()
     if not symbol:
@@ -264,16 +353,23 @@ def get_current_price(symbol: Optional[str] = None) -> Optional[float]:
 
 
 def get_positions() -> list:
-    """
-    Get all current positions.
+    """Get all current positions.
 
-    Returns:
+    Returns
+    -------
+    list of Position
         List of Position objects
 
-    Example:
-        positions = get_positions()
-        for pos in positions:
-            print(f"{pos.symbol}: {pos.quantity} @ {pos.current_price}")
+    Examples
+    --------
+    >>> positions = get_positions()
+    >>> for pos in positions:
+    ...     print(f"{pos.symbol}: {pos.quantity} @ {pos.current_price}")
+
+    Warnings
+    --------
+    Queries the broker through the global client (a network call for a live
+    broker). Errors are printed and an empty list is returned.
     """
     client = _get_client()
     try:
@@ -284,15 +380,22 @@ def get_positions() -> list:
 
 
 def get_balance() -> float:
-    """
-    Get current available cash balance.
+    """Get current available cash balance.
 
-    Returns:
+    Returns
+    -------
+    float
         Cash balance in TWD
 
-    Example:
-        cash = get_balance()
-        print(f"Available cash: {cash}")
+    Examples
+    --------
+    >>> cash = get_balance()
+    >>> print(f"Available cash: {cash}")
+
+    Warnings
+    --------
+    Queries the broker through the global client (a network call for a live
+    broker). Errors are printed and 0.0 is returned.
     """
     client = _get_client()
     try:
@@ -303,11 +406,17 @@ def get_balance() -> float:
 
 
 def get_total_equity() -> float:
-    """
-    Get total equity (cash + position values).
+    """Get total equity (cash + position values).
 
-    Returns:
+    Returns
+    -------
+    float
         Total equity in TWD
+
+    Warnings
+    --------
+    Queries the broker through the global client (a network call for a live
+    broker). Errors are printed and 0.0 is returned.
     """
     client = _get_client()
     try:
@@ -326,22 +435,36 @@ def get_kbars(
     end: str,
     interval: str = "1d",
 ) -> Optional[list]:
-    """
-    Get K-bar data for a symbol in a date range.
+    """Get K-bar data for a symbol in a date range.
 
-    Args:
-        symbol: Stock symbol
-        start: Start date (YYYY-MM-DD)
-        end: End date (YYYY-MM-DD)
-        interval: Time interval (1m, 5m, 15m, 60m, D, etc.)
+    Also sets `symbol` as the current symbol for `buy` / `sell`.
 
-    Returns:
+    Parameters
+    ----------
+    symbol : str
+        Stock symbol
+    start : str
+        Start date (YYYY-MM-DD)
+    end : str
+        End date (YYYY-MM-DD)
+    interval : str
+        Time interval (1m, 5m, 15m, 60m, D, etc.)
+
+    Returns
+    -------
+    list of Kbar or None
         List of Kbar objects or None if failed
 
-    Example:
-        kbars = get_kbars("2330", "2025-01-01", "2025-01-31", "1D")
-        for kbar in kbars:
-            print(f"{kbar.date}: {kbar.close}")
+    Examples
+    --------
+    >>> kbars = get_kbars("2330", "2025-01-01", "2025-01-31", "1D")
+    >>> for kbar in kbars:
+    ...     print(f"{kbar.date}: {kbar.close}")
+
+    Warnings
+    --------
+    Queries the broker through the global client (a network call for a live
+    broker). Errors are printed and None is returned.
     """
     client = _get_client()
     try:
@@ -360,7 +483,14 @@ def get_kbar_series(
     end: str,
     interval: str = "1d",
 ) -> Optional[KbarSeries]:
-    """Fetch kbars and return beginner-friendly KbarSeries."""
+    """Fetch kbars and return beginner-friendly KbarSeries.
+
+    Also sets `symbol` as the current symbol, like `get_kbars`.
+
+    Warnings
+    --------
+    Queries the broker through the global client. Returns None on error.
+    """
     raw = get_kbars(symbol=symbol, start=start, end=end, interval=interval)
     return to_kbar_series(raw, symbol=symbol)
 

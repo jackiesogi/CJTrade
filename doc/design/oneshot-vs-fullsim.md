@@ -1,5 +1,10 @@
 # Oneshot vs Full\_sim 回測邏輯差異深度分析
 
+!!! warning "Design note"
+    A record of a past investigation, kept for reference. It is not
+    updated as the code changes, so details may be out of date. This note
+    is written in Chinese.
+
 > 生成日期：2026-04-15
 > 分析資料：`poc/1.log` (oneshot, 172 筆) vs `poc/2.log` (full\_sim, 53 筆)
 

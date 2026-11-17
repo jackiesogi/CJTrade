@@ -11,6 +11,19 @@ from cjtrade.pkgs.models.order import *
 
 @dataclass
 class Quote:
+    """Last price and volume of a symbol.
+
+    Attributes
+    ----------
+    symbol : str
+        Ticker.
+    price : float
+        Last price.
+    volume : int
+        Volume.
+    timestamp : str
+        Time of the quote.
+    """
     symbol: str
     price: float
     volume: int
@@ -41,6 +54,34 @@ class Quote:
 # OCHLV
 @dataclass
 class Snapshot:
+    """Market snapshot of one symbol: day OHLCV plus best bid and ask.
+
+    ``open``, ``high``, ``low`` and ``volume`` cover the trading day so far,
+    not a single bar (see `Kbar.from_snapshot`).
+
+    Attributes
+    ----------
+    symbol : str
+        Ticker.
+    exchange : str
+        Exchange code, e.g. ``"TSE"``.
+    timestamp : datetime
+        Time of the snapshot.
+    open, close, high, low : float
+        Day prices; ``close`` is the latest price.
+    volume : int
+        Volume.
+    average_price : float
+        Average traded price.
+    action : OrderAction
+        Side of the last trade (buy, sell or none).
+    buy_price, sell_price : float
+        Best bid and best ask.
+    buy_volume, sell_volume : int
+        Volume at the best bid and best ask.
+    additional_note : str, optional
+        Free-form note.
+    """
     symbol: str
     exchange: str
     timestamp: datetime
@@ -59,6 +100,23 @@ class Snapshot:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Snapshot":
+        """Build a Snapshot from a dict such as the one `to_dict` returns.
+
+        Parameters
+        ----------
+        d : dict
+            Snapshot fields. ``timestamp`` may be an ISO string and ``action``
+            a string; both are converted.
+
+        Returns
+        -------
+        Snapshot
+
+        Raises
+        ------
+        KeyError
+            If a required field is missing.
+        """
         ts = d.get("timestamp")
         if isinstance(ts, str):
             ts = datetime.fromisoformat(ts)
@@ -84,6 +142,7 @@ class Snapshot:
         )
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the snapshot as a JSON-friendly dict (ISO timestamp, enum values as strings)."""
         return {
             "symbol": self.symbol,
             "exchange": self.exchange,
@@ -105,6 +164,19 @@ class Snapshot:
 
 @dataclass
 class BidAsk:
+    """Five-level order book of one symbol.
+
+    Attributes
+    ----------
+    symbol : str
+        Ticker.
+    datetime : datetime
+        Time of the book.
+    bid_price, ask_price : list of float
+        Prices of the five bid and ask levels.
+    bid_volume, ask_volume : list of int
+        Volumes of the five bid and ask levels.
+    """
     symbol: str
     datetime: datetime
     bid_price: List[float]  # Five levels
@@ -113,6 +185,7 @@ class BidAsk:
     ask_volume: List[int]
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the order book as a JSON-friendly dict."""
         return {
             "symbol": self.symbol,
             "datetime": self.datetime.isoformat(),

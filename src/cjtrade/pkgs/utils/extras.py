@@ -21,7 +21,15 @@ _INSTALL_HINT = (
 
 
 def missing_extra(extra: str, cause: BaseException | None = None) -> ImportError:
-    """The ImportError to raise when the ``extra`` optional dependency is absent."""
+    """Return the ImportError to raise when the ``extra`` optional dependency is absent.
+
+    Parameters
+    ----------
+    extra : str
+        Name of the extra in pyproject.toml, e.g. ``"sinopac"``.
+    cause : BaseException, optional
+        Original import error, quoted in the message.
+    """
     detail = f" ({cause})" if cause else ""
     return ImportError(
         f"This feature needs the '{extra}' extra{detail}. Install it with: "

@@ -12,17 +12,19 @@ from .product import Product
 
 # PARTIALLY ALIGNED WITH SINOPAC
 class OrderAction(str, Enum):
+    """Side of an order: BUY, SELL or CANCEL."""
     BUY = "BUY"
     SELL = "SELL"
     CANCEL = "CANCEL"
 
 class PriceType(str, Enum):
+    """Price type of an order: limit (LMT) or market (MKT)."""
     LMT = "LMT"    # 限價單
     MKT = "MKT"    # 市價單
     # STOP = "STOP"  # 停損單
 
 class OrderType(str, Enum):
-    """Common order types"""
+    """Common order types (time in force): ROD, IOC, FOK, GTC."""
     ROD = "ROD"    # 當日有效
     IOC = "IOC"    # 立即成交否則取消
     FOK = "FOK"    # 立即全部成交否則取消
@@ -30,12 +32,14 @@ class OrderType(str, Enum):
     GTC = "GTC"    # 長效單（Good Till Cancelled）
 
 class OrderLot(str, Enum):
+    """Order lot: intraday odd lot (盤中零股) or common lot (一般交易)."""
     IntraDayOdd = "IntraDayOdd"  # 盤中零股
     Common = "Common"            # 一般交易
 
 # TODO: more useful and descriptive status set
 # TODO: align with SINOPAC status as much as possible, and add more custom status if needed
 class OrderStatus(str, Enum):
+    """Lifecycle status of an order."""
     PLACED = "PLACED"         # Order created locally, pending commit (PendingSubmit)
     COMMITTED_WAIT_MARKET_OPEN = "COMMITTED_WAIT_MARKET_OPEN" # PreSubmitted
     COMMITTED_WAIT_MATCHING = "COMMITTED_WAIT_MATCHING"   # Submitted
@@ -60,6 +64,38 @@ class OrderStatus(str, Enum):
 # )
 @dataclass
 class Order:
+    """A CJTrade order for one product.
+
+    Attributes
+    ----------
+    product : Product
+        What to trade.
+    action : OrderAction
+        BUY or SELL.
+    price : float
+        Order price.
+    quantity : int
+        Order quantity.
+    price_type : PriceType
+        LMT or MKT.
+    order_type : OrderType
+        Time in force, e.g. ROD.
+    order_lot : OrderLot
+        Common or intraday odd lot.
+    id : str
+        CJ order id; a random uuid4 hex by default.
+    created_at : datetime
+        Creation time as a naive UTC+8 datetime.
+    broker : str
+        Broker name, ``'na'`` by default.
+    opt_field : dict
+        Optional broker-specific fields.
+
+    Warnings
+    --------
+    ``created_at`` defaults to the wall clock (``datetime.utcnow() + 8h``)
+    at construction, not to any simulated or replayed time.
+    """
     product: Product
     action: OrderAction
     price: float
@@ -105,12 +141,28 @@ class Order:
 # NOT ALIGNED WITH SINOPAC
 @dataclass
 class OrderResult:
+    """Result of an order operation reported by a broker client.
+
+    Attributes
+    ----------
+    status : OrderStatus
+        Status after the operation.
+    message : str
+        Human-readable message from the broker or engine.
+    metadata : dict
+        Extra broker-specific detail.
+    linked_order : str
+        Id of the order this result refers to; may be empty.
+    id : str
+        Result id; a random uuid4 hex by default.
+    """
     status: OrderStatus
     message: str
     metadata: Dict[str, Any]
     linked_order: str
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     def to_dict(self) -> Dict[str, Any]:
+        """Return the result as a JSON-friendly dict, with ``status`` as its string value."""
         # Serialize to JSON-friendly dict
         status_val = self.status.value if hasattr(self.status, 'value') else self.status
         return {

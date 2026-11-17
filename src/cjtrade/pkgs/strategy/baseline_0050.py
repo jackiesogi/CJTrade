@@ -61,9 +61,20 @@ class BaselineStrategy(BaseStrategy):
     - All other symbols: ignored
     - No selling: pure accumulation
 
-    Parameters (constructor or via ctx.params)
-    - baseline_symbol: Override the hardcoded symbol (default: "0050")
-    - baseline_monthly_amount: Amount to invest per month in NT$ (default: 10000)
+    Parameters
+    ----------
+    baseline_symbol : str, optional
+        Override the hardcoded symbol (default: "0050"). Also read from
+        ctx.params["baseline_symbol"].
+    monthly_amount : float, optional
+        Amount to invest per month in NT$ (default: 10000). Also read from
+        ctx.params["baseline_monthly_amount"].
+
+    Warnings
+    --------
+    The code does not match the text above: the default amount is
+    BASELINE_MONTHLY_AMOUNT (4,888,888) and on_bar waits 2001 days, not 30,
+    between buys.
     """
 
     name = "Baseline_0050"
@@ -80,6 +91,7 @@ class BaselineStrategy(BaseStrategy):
         self._last_buy_time: Dict[str, datetime] = {}
 
     def on_start(self, ctx: StrategyContext) -> None:
+        """Read `baseline_symbol` and `baseline_monthly_amount` from ctx.params."""
         p = ctx.params
         self._baseline_symbol = p.get("baseline_symbol", self._baseline_symbol)
         self._monthly_amount = float(p.get("baseline_monthly_amount", self._monthly_amount))
@@ -90,7 +102,13 @@ class BaselineStrategy(BaseStrategy):
         )
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
-        """Monthly DCA: buy NT$10,000 worth of 0050 every 30 days."""
+        """Monthly DCA: buy NT$10,000 worth of 0050 every 30 days.
+
+        Returns
+        -------
+        list of Signal
+            One BUY when due, otherwise empty. Other symbols are ignored.
+        """
         # Ignore all symbols except the baseline
         if bar.symbol != self._baseline_symbol:
             return []

@@ -78,8 +78,7 @@ def _hr(char: str = "─", width: int = 56) -> str:
 
 
 class CLIRenderer(FormRenderer):
-    """
-    Renders each field as a terminal prompt.
+    """Renders each field as a terminal prompt.
 
     UX contract
     -----------
@@ -93,6 +92,18 @@ class CLIRenderer(FormRenderer):
     """
 
     def render(self, schema: FormSchema) -> dict[str, Any]:
+        """Prompt for each field in order, writing all UI to stderr.
+
+        Parameters
+        ----------
+        schema : FormSchema
+            The form to show.
+
+        Returns
+        -------
+        dict
+            ``{field_name: value}``, without display-only fields.
+        """
         print(f"\n{_BOLD}{_CYAN}{_hr('═')}{_RESET}", file=sys.stderr)
         print(f"{_BOLD}{_CYAN}  {schema.title}{_RESET}", file=sys.stderr)
         print(f"{_BOLD}{_CYAN}{_hr('═')}{_RESET}", file=sys.stderr)

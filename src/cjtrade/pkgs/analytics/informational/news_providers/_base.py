@@ -4,6 +4,15 @@ from typing import Any
 from typing import List
 
 class News:
+    """A news item.
+
+    Parameters
+    ----------
+    title : str
+        Headline.
+    content : str
+        Body text or summary.
+    """
     def __init__(self, title: str, content: str):
         self.title = title
         self.content = content

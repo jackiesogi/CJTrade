@@ -53,14 +53,24 @@ DCA_MONTHLY_AMOUNT = 10_000.0
 class DCA_Monthly(BaseStrategy):
     """Buy a fixed amount of each symbol, once per calendar month.
 
-    Parameters (constructor, or via ctx.params in on_start)
-    - dca__amount: NT$ to spend per instalment, per symbol.
-    - dca__max_position_pct: size the instalment as this fraction of current
-      equity instead of a fixed sum. Takes precedence over dca__amount when
-      present, because it is the one the interval presets actually ship.
-    - dca__buy_frequency_months: months between instalments (default 1).
-    - dca__last_buy_time: optional {symbol: ISO timestamp} of the last purchase
-      made before this run, so a resumed run does not buy twice in one month.
+    Parameters
+    ----------
+    amount : float, optional
+        NT$ to spend per instalment, per symbol (`dca__amount`).
+    max_position_pct : float, optional
+        Size the instalment as this fraction of current equity instead of a
+        fixed sum (`dca__max_position_pct`). Takes precedence over `amount`
+        when non-zero, because it is the one the interval presets actually
+        ship.
+    buy_frequency_months : int, optional
+        Months between instalments (`dca__buy_frequency_months`, default 1).
+
+    Notes
+    -----
+    The same values can be given via ctx.params in on_start, plus
+    `dca__last_buy_time`: optional {symbol: ISO timestamp} of the last
+    purchase made before this run, so a resumed run does not buy twice in one
+    month.
     """
 
     name = "DCA"
@@ -93,6 +103,12 @@ class DCA_Monthly(BaseStrategy):
         self._last_reason = "not started"
 
     def on_start(self, ctx: StrategyContext) -> None:
+        """Read parameters from `ctx.params` and seed last-buy months.
+
+        Warnings
+        --------
+        `dca__buy_frequency_days` is not used; only a warning is logged.
+        """
         p = ctx.params
         # Support the older spellings so an existing config keeps working.
         self._amount = float(p.get("dca__amount",
@@ -175,6 +191,21 @@ class DCA_Monthly(BaseStrategy):
     # ── strategy ─────────────────────────────────────────────────────────────
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
+        """Buy one instalment on the first bar of a due month.
+
+        Parameters
+        ----------
+        bar : Kbar
+            The bar that just closed.
+        ctx : StrategyContext
+            Account and price history as of this bar; `ctx.timestamp` decides
+            the month.
+
+        Returns
+        -------
+        list of Signal
+            One BUY, or empty if already bought this period or unaffordable.
+        """
         self._n_bars += 1
 
         now: datetime = ctx.timestamp
@@ -248,6 +279,7 @@ class DCA_Monthly(BaseStrategy):
         )]
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
+        """Log BUY fills at debug level."""
         if fill.action.upper() == "BUY":
             log.debug(f"[{self.name}] BUY filled for {fill.symbol} "
                       f"@ {fill.price:.2f}")

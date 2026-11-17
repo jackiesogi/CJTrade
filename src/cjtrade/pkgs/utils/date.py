@@ -9,8 +9,19 @@ from datetime import datetime
 
 
 def format_date(dt: datetime, format_str: str = None) -> str:
-    """
-    Format a datetime object.
+    """Format a datetime object.
+
+    Parameters
+    ----------
+    dt : datetime
+        Time to format.
+    format_str : str, optional
+        strftime format. Without it the output mimics GNU date, e.g.
+        ``"Wed Feb  4 09:04:06 Taipei Standard Time 2026"``.
+
+    Returns
+    -------
+    str
     """
     if format_str:
         return dt.strftime(format_str)
@@ -36,17 +47,30 @@ def format_date(dt: datetime, format_str: str = None) -> str:
 
 
 def parse_date_string(date_str: str) -> datetime:
-    """
-    Parse various date string formats.
+    """Parse various date string formats.
 
-    Args:
-        date_str: Date string to parse
+    Accepts ``@<unix seconds>``, ``now``, ``today``, ``yesterday``,
+    ``tomorrow`` and a fixed list of strptime formats.
 
-    Returns:
-        Parsed datetime object
+    Parameters
+    ----------
+    date_str : str
+        Date string to parse.
 
-    Raises:
-        ValueError: If the date string cannot be parsed
+    Returns
+    -------
+    datetime
+        Parsed datetime object.
+
+    Raises
+    ------
+    ValueError
+        If the date string cannot be parsed.
+
+    Warnings
+    --------
+    The relative words and ``@`` timestamps resolve against the local wall
+    clock and time zone.
     """
     # Handle Unix timestamp format: @1234567890
     if date_str.startswith('@'):

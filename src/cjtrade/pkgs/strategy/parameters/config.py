@@ -37,6 +37,11 @@ class ParameterConfig:
         User-specified overrides (what params they changed)
     created_at : str
         ISO timestamp of when this config was created
+
+    Warnings
+    --------
+    `created_at` defaults to the wall-clock time (datetime.now()); it is not
+    part of `params_hash`.
     """
 
     interval: str

@@ -60,6 +60,15 @@ class StrategyError(Exception):
 
     `line` and `offset` are 1-based and may be None -- a SyntaxError has them,
     a missing on_bar does not. The editor turns them into a marker.
+
+    Parameters
+    ----------
+    message : str
+        What is wrong.
+    line : int, optional
+        1-based line in the strategy source.
+    offset : int, optional
+        1-based column in that line.
     """
 
     def __init__(self, message: str, line: Optional[int] = None,
@@ -70,19 +79,33 @@ class StrategyError(Exception):
         self.offset = offset
 
     def to_dict(self) -> dict:
+        """Return message, line and offset as a dict."""
         return {"message": self.message, "line": self.line,
                 "offset": self.offset}
 
 
 @dataclass
 class Diagnostic:
-    """One problem found in a strategy, at a position in the source."""
+    """One problem found in a strategy, at a position in the source.
+
+    Parameters
+    ----------
+    message : str
+        What is wrong.
+    line : int
+        1-based line.
+    offset : int, optional
+        1-based column (default 1).
+    severity : str, optional
+        'error' or 'warning'.
+    """
     message: str
     line: int
     offset: int = 1
     severity: str = "error"          # error | warning
 
     def to_dict(self) -> dict:
+        """Return all fields as a dict."""
         return {"message": self.message, "line": self.line,
                 "offset": self.offset, "severity": self.severity}
 
@@ -108,6 +131,16 @@ def check(source: str) -> List[Diagnostic]:
     editor runs this on every save, so it has to be fast and it has to never
     report a false problem -- a red squiggle on correct code teaches people to
     ignore squiggles.
+
+    Parameters
+    ----------
+    source : str
+        The strategy file's source.
+
+    Returns
+    -------
+    list of Diagnostic
+        Empty if nothing was found.
     """
     try:
         tree = ast.parse(source, filename=MODULE_NAME)
@@ -236,10 +269,28 @@ def _namespace() -> dict:
 def load(source: str) -> "UserStrategy":
     """Compile and execute a strategy module, and wrap it for the engine.
 
-    Raises StrategyError for anything that makes the source unusable, with a
-    line number where one exists. Problems the static check found are raised
-    first, because "name is not defined on line 12" is a better answer than
-    the NameError the same file produces on bar 1.
+    Parameters
+    ----------
+    source : str
+        The strategy file's source.
+
+    Returns
+    -------
+    UserStrategy
+        The loaded strategy.
+
+    Raises
+    ------
+    StrategyError
+        For anything that makes the source unusable, with a line number where
+        one exists. Problems the static check found are raised first, because
+        "name is not defined on line 12" is a better answer than the NameError
+        the same file produces on bar 1.
+
+    Warnings
+    --------
+    Runs the user's code with exec() in this process, with full builtins.
+    This is not a sandbox.
     """
     problems = [d for d in check(source) if d.severity == "error"]
     if problems:
@@ -268,6 +319,21 @@ def collect_params(source: str) -> List[dict]:
     ordinary call whose side effect is the declaration -- there is no separate
     manifest to keep in step with the code. Running it is acceptable here for
     the same reason it is acceptable at all: single trust domain.
+
+    Parameters
+    ----------
+    source : str
+        The strategy file's source.
+
+    Returns
+    -------
+    list of dict
+        One ParamSpec.to_dict() per declaration; empty if the source does not
+        load.
+
+    Warnings
+    --------
+    Executes the user's module (via load) to find the declarations.
     """
     authoring.param._drain()                 # discard anything left over
     try:
@@ -314,6 +380,25 @@ def template(kind: str = "bb", name: str = "My strategy",
     They are not the same code: a subclass with 200 lines of machinery and a
     25-line on_bar are different artifacts for different readers, and these are
     the ones a person is meant to read.
+
+    Parameters
+    ----------
+    kind : str, optional
+        One of TEMPLATE_KINDS: 'bb', 'dca', 'adx' or 'blank'.
+    name : str, optional
+        Title written into the template's docstring.
+    symbol : str, optional
+        Symbol written into the template's docstring.
+
+    Returns
+    -------
+    str
+        The strategy source.
+
+    Raises
+    ------
+    ValueError
+        If `kind` is not a known template.
     """
     if kind not in TEMPLATE_KINDS:
         raise ValueError(f"unknown template {kind!r}; "
@@ -524,6 +609,11 @@ def api_reference() -> List[dict]:
     editor's completion list from drifting away from the code: there is no
     second list to maintain, and a name that is added or removed here changes
     the editor on the next request.
+
+    Returns
+    -------
+    list of dict
+        Each with 'name', 'qualified', 'kind', 'signature' and 'doc'.
     """
     import inspect
 
@@ -603,6 +693,18 @@ class UserStrategy(BaseStrategy):
     One instance per strategy module. Holds the module's namespace and the
     bookkeeping the module is deliberately not given: how many shares are this
     bot's, what the last bar reported, and how many bars in a row have raised.
+
+    Parameters
+    ----------
+    namespace : dict
+        The executed module's namespace; must contain `on_bar`.
+    name : str, optional
+        Display name (default "Custom").
+
+    Warnings
+    --------
+    Every hook calls the user's code. After MAX_CONSECUTIVE_ERRORS bars in a
+    row raise, the strategy disables itself for the rest of the run.
     """
 
     name = "Custom"
@@ -641,6 +743,12 @@ class UserStrategy(BaseStrategy):
     # -- lifecycle --------------------------------------------------------
 
     def on_start(self, ctx: StrategyContext) -> None:
+        """Read `risk__max_position_pct`, reset `state`, and call the user's init().
+
+        Warnings
+        --------
+        Clears the module-global `authoring.state`.
+        """
         self._max_pct = float(ctx.params.get(
             "risk__max_position_pct",
             ctx.params.get("risk_max_position_pct", self._max_pct)))
@@ -656,6 +764,20 @@ class UserStrategy(BaseStrategy):
                 self._note_error("init", exc)
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
+        """Call the user's on_bar and turn its intents into sized signals.
+
+        Parameters
+        ----------
+        bar : Kbar
+            The bar that just closed.
+        ctx : StrategyContext
+            Account and price history as of this bar.
+
+        Returns
+        -------
+        list of Signal
+            Empty if the strategy held, raised, or is disabled.
+        """
         self._n_bars += 1
         if self._disabled_reason:
             return []
@@ -681,6 +803,7 @@ class UserStrategy(BaseStrategy):
         return self._to_signals(returned, bar, account)
 
     def on_fill(self, fill: EngineFill, ctx: StrategyContext) -> None:
+        """Update this bot's own share count, then call the user's on_fill."""
         # Before the callback, so a strategy reading account.shares inside
         # on_fill sees the position the fill produced rather than the one
         # before it.
@@ -709,6 +832,7 @@ class UserStrategy(BaseStrategy):
                 self._note_error("on_fill", exc)
 
     def on_end(self, ctx: StrategyContext) -> None:
+        """Call the user's on_end, if defined and not disabled."""
         if self._on_end is None or self._disabled_reason:
             return
         with self._active():
@@ -720,6 +844,10 @@ class UserStrategy(BaseStrategy):
     # -- monitoring -------------------------------------------------------
 
     def monitors(self) -> Dict[str, Any]:
+        """See BaseStrategy.monitors; adds the values passed to watch().
+
+        A watched name that clashes with a built-in key is prefixed with `w_`.
+        """
         out: Dict[str, Any] = {
             "bars_seen": self._n_bars,
             "signals_emitted": self._n_signals,

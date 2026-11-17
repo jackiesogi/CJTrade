@@ -6,6 +6,17 @@ class Kbar:
     `symbol` is optional only for backward compatibility; anything that merges
     bars from several symbols into one stream (multi-symbol backtest, live
     feed) needs it set.
+
+    Parameters
+    ----------
+    timestamp : datetime
+        Bar time.
+    open, high, low, close : float
+        Bar prices.
+    volume : int
+        Bar volume.
+    symbol : str, optional
+        Ticker; empty by default.
     """
 
     def __init__(self, timestamp: datetime, open: float, high: float, low: float,
@@ -52,6 +63,7 @@ class Kbar:
                 f"high={self.high}, low={self.low}, close={self.close}, volume={self.volume})")
 
     def to_dict(self):
+        """Return the bar as a dict with an ISO-format timestamp."""
         return {
             "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),

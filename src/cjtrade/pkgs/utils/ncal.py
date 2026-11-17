@@ -11,8 +11,20 @@ from typing import Optional
 
 def display_calendar(target_date: Optional[datetime] = None, monday_first: bool = True,
                      highlight: bool = True) -> None:
-    """
-    Display a calendar for the given date's month.
+    """Display a calendar for the given date's month.
+
+    Parameters
+    ----------
+    target_date : datetime, optional
+        Month to show and day to highlight; defaults to now.
+    monday_first : bool
+        Start weeks on Monday; otherwise Sunday.
+    highlight : bool
+        Show the target day in inverse video.
+
+    Warnings
+    --------
+    Calls ``calendar.setfirstweekday``, which changes a process-wide setting.
     """
     if target_date is None:
         target_date = datetime.now()

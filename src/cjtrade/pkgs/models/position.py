@@ -6,6 +6,23 @@ from typing import List
 
 @dataclass
 class Position:
+    """A held position in one symbol.
+
+    Attributes
+    ----------
+    symbol : str
+        Ticker.
+    quantity : int
+        Held quantity; ``__str__`` reports it as ``quantity * 1000`` shares.
+    avg_cost : float
+        Average cost.
+    current_price : float
+        Latest price.
+    market_value : float
+        Current market value.
+    unrealized_pnl : float
+        Unrealized profit/loss; 0.0 by default.
+    """
     symbol: str
     quantity: int
     avg_cost: float
@@ -17,6 +34,7 @@ class Position:
         return (f"Hold {self.quantity * 1000} shares of {self.symbol} with avg cost {self.avg_cost}")
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the position as a dict."""
         return {
             "symbol": self.symbol,
             "quantity": self.quantity,

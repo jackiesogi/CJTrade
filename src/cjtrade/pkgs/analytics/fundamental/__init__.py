@@ -35,11 +35,22 @@ logger = logging.getLogger(__name__)
 
 
 class CompanyInfoProvider:
-    """
-    Unified company information provider interface
+    """Unified company information provider interface.
 
     Integrates multiple data sources and provides a simple API
     to retrieve company fundamental information
+
+    Parameters
+    ----------
+    default_provider : str
+        Provider used when a method gets no `provider`; only ``"twse"`` is supported.
+    timeout : int
+        HTTP timeout in seconds passed to the provider.
+
+    Warnings
+    --------
+    All ``get_*`` methods make network calls to TWSE. They log errors and
+    return None, an empty list or an error dict instead of raising.
     """
 
     def __init__(self, default_provider: str = "twse", timeout: int = 30):
@@ -61,6 +72,7 @@ class CompanyInfoProvider:
 
 
     async def close(self):
+        """Close all created providers and forget them."""
         for provider in self._providers.values():
             if hasattr(provider, 'close'):
                 await provider.close()
@@ -76,8 +88,17 @@ class CompanyInfoProvider:
 
 
     async def get_company_basic_info(self, symbol: str, provider: str = None) -> Optional[CompanyBasicInfo]:
-        """
-        Get company basic information
+        """Get company basic information.
+
+        Returns
+        -------
+        CompanyBasicInfo or None
+            None if not found or on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -89,8 +110,17 @@ class CompanyInfoProvider:
 
 
     async def get_financial_ratios(self, symbol: str, provider: str = None) -> Optional[FinancialRatios]:
-        """
-        Get company financial ratios (PE/PB, etc.)
+        """Get company financial ratios (PE/PB, etc.).
+
+        Returns
+        -------
+        FinancialRatios or None
+            None if not found or on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -102,8 +132,17 @@ class CompanyInfoProvider:
 
 
     async def get_eps_info(self, symbol: str, provider: str = None) -> List[EPSInfo]:
-        """
-        Get company EPS information
+        """Get company EPS information.
+
+        Returns
+        -------
+        list of EPSInfo
+            Empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -114,15 +153,24 @@ class CompanyInfoProvider:
 
 
     async def get_income_statements(self, symbol: str, provider: str = None) -> List[IncomeStatementInfo]:
-        """
-        Get company consolidated statements of comprehensive income
+        """Get company consolidated statements of comprehensive income.
 
-        Args:
-            symbol: Stock symbol
-            provider: Specify the data provider
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol
+        provider : str, optional
+            Specify the data provider
 
-        Returns:
-            List[IncomeStatementInfo]: List of comprehensive income statement information
+        Returns
+        -------
+        List[IncomeStatementInfo]
+            List of comprehensive income statement information; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -133,8 +181,17 @@ class CompanyInfoProvider:
 
 
     async def get_balance_sheet(self, symbol: str, provider: str = None) -> List[BalanceSheetInfo]:
-        """
-        Get company balance sheet
+        """Get company balance sheet.
+
+        Returns
+        -------
+        list of BalanceSheetInfo
+            Empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -145,8 +202,20 @@ class CompanyInfoProvider:
 
 
     async def get_recent_announcements(self, days: int = 7, provider: str = None) -> List[Announcement]:
-        """
-        Get recent major announcements
+        """Get recent major announcements.
+
+        Keeps announcements whose ``event_date`` is within the last `days` days,
+        newest first.
+
+        Returns
+        -------
+        list of Announcement
+            Empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to TWSE. The cutoff is computed from the current
+        wall-clock time.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -169,8 +238,22 @@ class CompanyInfoProvider:
 
 
     async def get_company_summary(self, symbol: str, provider: str = None) -> Dict[str, Any]:
-        """
-        Get complete company summary information
+        """Get complete company summary information.
+
+        Fetches basic info, ratios, EPS, balance sheet and income statements
+        concurrently.
+
+        Returns
+        -------
+        dict
+            Keys ``symbol``, ``basic_info``, ``financial_ratios``, ``eps_info``,
+            ``balance_sheet``, ``income_statements`` and ``updated_at``; on error
+            ``updated_at`` is replaced by ``error``.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             provider_obj = self._get_provider(provider)
@@ -222,6 +305,12 @@ __all__ = [
 
 
 async def example_usage():
+    """Print a TSMC (2330) summary and the past 7 days of announcements.
+
+    Warnings
+    --------
+    Demo only; makes network calls to TWSE.
+    """
     async with CompanyInfoProvider() as provider:
         # Get complete information for TSMC (2330)
         summary = await provider.get_company_summary("2330")

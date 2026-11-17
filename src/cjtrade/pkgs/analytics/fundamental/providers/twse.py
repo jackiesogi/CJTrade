@@ -25,7 +25,16 @@ logger = logging.getLogger(__name__)
 
 
 class TWSEProvider:
-    """台灣證券交易所資料"""
+    """台灣證券交易所資料。
+
+    Async client for the TWSE open data API (``BASE_URL``). Use as an async
+    context manager or call `close`.
+
+    Warnings
+    --------
+    Makes HTTP requests to TWSE; data changes daily and endpoints may change.
+    The HTTP session skips TLS certificate verification.
+    """
 
     BASE_URL = "https://openapi.twse.com.tw/v1"
 
@@ -48,11 +57,12 @@ class TWSEProvider:
     }
 
     def __init__(self, timeout: int = 30):
-        """
-        初始化TWSE提供者
+        """初始化TWSE提供者。
 
-        Args:
-            timeout: HTTP請求超時時間(秒)
+        Parameters
+        ----------
+        timeout : int
+            HTTP請求超時時間(秒)
         """
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: Optional[aiohttp.ClientSession] = None
@@ -71,7 +81,7 @@ class TWSEProvider:
         return self._session
 
     async def close(self):
-        """關閉HTTP session"""
+        """關閉HTTP session。"""
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -82,18 +92,24 @@ class TWSEProvider:
         await self.close()
 
     async def _fetch_data(self, endpoint: str) -> Dict[str, Any]:
-        """
-        通用的API資料獲取方法
+        """通用的API資料獲取方法。
 
-        Args:
-            endpoint: API endpoint路径
+        Parameters
+        ----------
+        endpoint : str
+            API endpoint路径
 
-        Returns:
+        Returns
+        -------
+        Dict[str, Any]
             API回傳的JSON資料
 
-        Raises:
-            aiohttp.ClientError: HTTP請求錯誤
-            ValueError: JSON解析錯誤
+        Raises
+        ------
+        aiohttp.ClientError
+            HTTP請求錯誤
+        ValueError
+            JSON解析錯誤
         """
         url = f"{self.BASE_URL}{endpoint}"
         session = await self._get_session()
@@ -113,11 +129,17 @@ class TWSEProvider:
             raise
 
     async def get_daily_announcements(self) -> List[Announcement]:
-        """
-        獲取每日重大訊息
+        """獲取每日重大訊息。
 
-        Returns:
-            List[Announcement]: 重大訊息列表
+        Returns
+        -------
+        List[Announcement]
+            重大訊息列表; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             data = await self._fetch_data(self.ENDPOINTS['announcements'])
@@ -172,14 +194,22 @@ class TWSEProvider:
             return []
 
     async def get_company_basic_info(self, symbol: Optional[str] = None) -> List[CompanyBasicInfo]:
-        """
-        獲取上市公司基本資料
+        """獲取上市公司基本資料。
 
-        Args:
-            symbol: 股票代號，若為None則返回所有公司資料
+        Parameters
+        ----------
+        symbol : str, optional
+            股票代號，若為None則返回所有公司資料
 
-        Returns:
-            List[CompanyBasicInfo]: 公司基本資料列表
+        Returns
+        -------
+        List[CompanyBasicInfo]
+            公司基本資料列表; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             data = await self._fetch_data(self.ENDPOINTS['company_basic'])
@@ -244,14 +274,22 @@ class TWSEProvider:
             return []
 
     async def get_eps_info(self, symbol: Optional[str] = None) -> List[EPSInfo]:
-        """
-        獲取上市公司EPS資訊
+        """獲取上市公司EPS資訊。
 
-        Args:
-            symbol: 股票代號，若為None則返回所有公司EPS資料
+        Parameters
+        ----------
+        symbol : str, optional
+            股票代號，若為None則返回所有公司EPS資料
 
-        Returns:
-            List[EPSInfo]: EPS資訊列表
+        Returns
+        -------
+        List[EPSInfo]
+            EPS資訊列表; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             data = await self._fetch_data(self.ENDPOINTS['eps_info'])
@@ -310,14 +348,22 @@ class TWSEProvider:
             return []
 
     async def get_financial_ratios(self, symbol: Optional[str] = None) -> List[FinancialRatios]:
-        """
-        獲取上市公司PE/PB Ratio等財務比率
+        """獲取上市公司PE/PB Ratio等財務比率。
 
-        Args:
-            symbol: 股票代號，若為None則返回所有公司財務比率
+        Parameters
+        ----------
+        symbol : str, optional
+            股票代號，若為None則返回所有公司財務比率
 
-        Returns:
-            List[FinancialRatios]: 財務比率列表
+        Returns
+        -------
+        List[FinancialRatios]
+            財務比率列表; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             data = await self._fetch_data(self.ENDPOINTS['pe_pb_ratios'])
@@ -369,14 +415,22 @@ class TWSEProvider:
             return []
 
     async def get_balance_sheet_info(self, symbol: Optional[str] = None) -> List[BalanceSheetInfo]:
-        """
-        獲取上市公司資產負債表資訊
+        """獲取上市公司資產負債表資訊。
 
-        Args:
-            symbol: 股票代號，若為None則返回所有公司資產負債表資料
+        Parameters
+        ----------
+        symbol : str, optional
+            股票代號，若為None則返回所有公司資產負債表資料
 
-        Returns:
-            List[BalanceSheetInfo]: 資產負債表資訊列表
+        Returns
+        -------
+        List[BalanceSheetInfo]
+            資產負債表資訊列表; empty on error.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         try:
             data = await self._fetch_data(self.ENDPOINTS['balance_sheet_general'])
@@ -444,14 +498,25 @@ class TWSEProvider:
             return []
 
     async def get_income_statements(self, symbol: Optional[str] = None) -> List[IncomeStatementInfo]:
-        """
-        獲取綜合損益表資訊 (自動選擇適當的行業API)
+        """獲取綜合損益表資訊 (自動選擇適當的行業API)。
 
-        Args:
-            symbol: 股票代號，若為None則返回所有公司綜合損益表資料
+        Queries the general, banking, securities, insurance and financial holding
+        endpoints.
 
-        Returns:
-            List[IncomeStatementInfo]: 綜合損益表資訊列表
+        Parameters
+        ----------
+        symbol : str, optional
+            股票代號，若為None則返回所有公司綜合損益表資料
+
+        Returns
+        -------
+        List[IncomeStatementInfo]
+            綜合損益表資訊列表. An industry endpoint that fails is skipped.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         all_income_statements = []
 
@@ -561,14 +626,23 @@ class TWSEProvider:
         return all_income_statements
 
     async def get_company_all_info(self, symbol: str) -> Dict[str, Any]:
-        """
-        獲取特定公司的所有資訊
+        """獲取特定公司的所有資訊。
 
-        Args:
-            symbol: 股票代號
+        Parameters
+        ----------
+        symbol : str
+            股票代號
 
-        Returns:
-            Dict包含所有公司資訊
+        Returns
+        -------
+        dict
+            Dict包含所有公司資訊: ``basic_info``, ``eps_info``, ``financial_ratios``,
+            ``balance_sheet``.
+
+        Warnings
+        --------
+        Makes HTTP requests to the TWSE open data API; data changes daily and the
+        endpoints or field names may change.
         """
         tasks = [
             self.get_company_basic_info(symbol),
@@ -589,7 +663,12 @@ class TWSEProvider:
 
 # 使用範例
 async def main():
-    """使用範例"""
+    """使用範例。
+
+    Warnings
+    --------
+    Demo only; makes network calls to TWSE.
+    """
     async with TWSEProvider() as provider:
         # 獲取台積電的所有資訊
         tsmc_info = await provider.get_company_all_info("2330")

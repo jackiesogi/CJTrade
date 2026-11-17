@@ -105,6 +105,30 @@ class Bar:
     `ta.bb(bar.closes, 20)` reads the way every other Python series does. Pine
     Script indexes the other way round (`close[1]` is the previous bar); use
     `bar.ago(1)` for that, which cannot be confused with `closes[1]`.
+
+    Parameters
+    ----------
+    symbol : str
+        Stock ticker.
+    time : datetime
+        Time of this bar.
+    open : float
+        Open price.
+    close : float
+        Close price.
+    volume : int
+        Volume.
+    closes : sequence of float
+        Close prices seen so far, oldest first, including this bar.
+    day_high : float
+        The trading day's high up to this bar, not this bar's own.
+    day_low : float
+        The trading day's low up to this bar, not this bar's own.
+
+    Warnings
+    --------
+    `day_high` / `day_low` are day-to-date extremes; the feed has no per-bar
+    high or low. History length in `closes` is counted in bars.
     """
     symbol: str
     time: datetime
@@ -124,6 +148,17 @@ class Bar:
         None rather than an IndexError when the history is not that long yet:
         every strategy's first bars are short, and a crash there is a crash on
         bar 1 of every run.
+
+        Parameters
+        ----------
+        n : int
+            How many bars back to look.
+
+        Returns
+        -------
+        float or None
+            The close `n` bars ago, or None if `n` is negative or the history
+            is shorter than that.
         """
         if n < 0 or n >= len(self.closes):
             return None
@@ -131,6 +166,7 @@ class Bar:
 
     @property
     def bars_seen(self) -> int:
+        """Number of closes seen so far, including this bar."""
         return len(self.closes)
 
 
@@ -144,6 +180,17 @@ class Account:
     long-term holding seeded into a paper account, and the chain that did so
     had no provenance check anywhere. `cash` and `equity` are the account's,
     because they genuinely are shared.
+
+    Parameters
+    ----------
+    cash : float
+        The account's available cash.
+    equity : float
+        The account's equity.
+    shares : int
+        Shares held by this bot.
+    avg_cost : float
+        Average cost of this bot's shares.
     """
     cash: float
     equity: float
@@ -152,16 +199,34 @@ class Account:
 
     @property
     def holding(self) -> bool:
+        """True if this bot holds any shares."""
         return self.shares > 0
 
     @property
     def market_value(self) -> float:
+        """This bot's shares valued at `avg_cost` (not at the current price)."""
         return self.shares * self.avg_cost
 
 
 @dataclass(frozen=True)
 class Fill:
-    """An order of this bot's that executed."""
+    """An order of this bot's that executed.
+
+    Parameters
+    ----------
+    symbol : str
+        Stock ticker.
+    action : str
+        'BUY' or 'SELL'.
+    quantity : int
+        Shares filled.
+    price : float
+        Fill price.
+    time : datetime
+        Fill time.
+    reason : str, optional
+        Reason carried from the intent.
+    """
     symbol: str
     action: str          # BUY | SELL
     quantity: int
@@ -182,6 +247,21 @@ class Intent:
     `shares is None` means "whatever the risk budget allows", which is the
     normal case and the reason position sizing is not a thing a strategy
     computes: the budget is risk policy and it lives with the risk gate.
+
+    Parameters
+    ----------
+    action : str
+        'BUY' or 'SELL'.
+    shares : int, optional
+        Exact share count; None means whatever the risk budget allows.
+    amount : float, optional
+        NT$ to spend, converted at the bar's close.
+    price : float, optional
+        Limit price; None means the bar's close.
+    reason : str, optional
+        Human-readable explanation.
+    meta : dict, optional
+        Extra data attached to the intent.
     """
     action: str                        # BUY | SELL
     shares: Optional[int] = None
@@ -199,6 +279,29 @@ def buy(shares: Optional[int] = None, *, amount: Optional[float] = None,
     buy(100)             -> exactly 100 shares
     buy(amount=10_000)   -> about NT$10,000 worth, whole shares, rounded down
     buy(price=250.0)     -> limit at 250 instead of the bar's close
+
+    Parameters
+    ----------
+    shares : int, optional
+        Exact share count. Mutually exclusive with `amount`.
+    amount : float, optional
+        NT$ to spend; whole shares, rounded down.
+    price : float, optional
+        Limit price; defaults to the bar's close.
+    reason : str, optional
+        Human-readable explanation.
+    **meta
+        Extra data attached to the intent.
+
+    Returns
+    -------
+    Intent
+        A BUY intent.
+
+    Raises
+    ------
+    ValueError
+        If both `shares` and `amount` are given.
     """
     if shares is not None and amount is not None:
         raise ValueError("buy() takes shares or amount, not both")
@@ -213,6 +316,22 @@ def sell(shares: Optional[int] = None, *, price: Optional[float] = None,
     sell()      -> everything THIS BOT holds (account.shares), not everything
                    the account holds
     sell(50)    -> exactly 50 shares
+
+    Parameters
+    ----------
+    shares : int, optional
+        Exact share count; None sells everything this bot holds.
+    price : float, optional
+        Limit price; defaults to the bar's close.
+    reason : str, optional
+        Human-readable explanation.
+    **meta
+        Extra data attached to the intent.
+
+    Returns
+    -------
+    Intent
+        A SELL intent.
     """
     return Intent("SELL", shares=shares, price=price, reason=reason, meta=meta)
 
@@ -226,6 +345,15 @@ def hold(reason: str = "") -> None:
     monitors()["last_decision"], which the engine's status API and FinHub both
     show. Returning None without calling hold() is allowed and simply leaves
     the previous reason standing.
+
+    Parameters
+    ----------
+    reason : str, optional
+        Why nothing happened this bar.
+
+    Returns
+    -------
+    None
     """
     _sink().decision = reason
     return None
@@ -301,6 +429,19 @@ class ParamSpec:
     Collected by reading the module in a declaration pass (see
     user_strategy.collect_params), which is how the editor gets a parameters
     panel without anyone maintaining a second list of what is tunable.
+
+    Parameters
+    ----------
+    kind : str
+        'int', 'float', 'bool' or 'choice'.
+    default : Any
+        Default value.
+    label : str
+        Form label.
+    minimum, maximum : float, optional
+        Bounds, if any.
+    choices : tuple, optional
+        Allowed values for a 'choice' parameter.
     """
     kind: str                       # int | float | bool | choice
     default: Any
@@ -310,6 +451,7 @@ class ParamSpec:
     choices: tuple = ()
 
     def to_dict(self) -> dict:
+        """Return a JSON-friendly dict; bounds and choices only when set."""
         out = {"kind": self.kind, "default": self.default, "label": self.label}
         if self.minimum is not None:
             out["min"] = self.minimum
@@ -343,21 +485,93 @@ class _Param:
 
     def int(self, default: int, label: str = "", *, min: Optional[int] = None,
             max: Optional[int] = None) -> int:
+        """Declare an integer parameter and return its default.
+
+        Parameters
+        ----------
+        default : int
+            Default value.
+        label : str, optional
+            Form label; "value" if empty.
+        min, max : int, optional
+            Bounds shown in the form.
+
+        Returns
+        -------
+        int
+            `default`, as an int.
+
+        Warnings
+        --------
+        A window parameter is counted in bars, so its meaning changes with
+        the bar interval.
+        """
         return self._declare(ParamSpec("int", int(default), label or "value",
                                        min, max), int(default))
 
     def float(self, default: float, label: str = "", *,
               min: Optional[float] = None, max: Optional[float] = None) -> float:
+        """Declare a float parameter and return its default.
+
+        Parameters
+        ----------
+        default : float
+            Default value.
+        label : str, optional
+            Form label; "value" if empty.
+        min, max : float, optional
+            Bounds shown in the form.
+
+        Returns
+        -------
+        float
+            `default`, as a float.
+        """
         return self._declare(ParamSpec("float", float(default),
                                        label or "value", min, max),
                              float(default))
 
     def bool(self, default: bool, label: str = "") -> bool:
+        """Declare a boolean parameter and return its default.
+
+        Parameters
+        ----------
+        default : bool
+            Default value.
+        label : str, optional
+            Form label; "flag" if empty.
+
+        Returns
+        -------
+        bool
+            `default`, as a bool.
+        """
         return self._declare(ParamSpec("bool", bool(default), label or "flag"),
                              bool(default))
 
     def choice(self, default: str, label: str = "", *,
                choices: Sequence[str] = ()) -> str:
+        """Declare a choice parameter and return its default.
+
+        Parameters
+        ----------
+        default : str
+            Default value; must be one of `choices`.
+        label : str, optional
+            Form label; "choice" if empty.
+        choices : sequence of str, optional
+            Allowed values; defaults to just `default`.
+
+        Returns
+        -------
+        str
+            `default`.
+
+        Raises
+        ------
+        ValueError
+            If `default` is not in `choices`.
+        """
         opts = tuple(choices) or (default,)
         if default not in opts:
             raise ValueError(f"default {default!r} is not one of {opts}")
@@ -398,6 +612,12 @@ class _Indicators:
     would otherwise open with -- a length check and a `[-1]` -- and it removes
     the commonest mistake, which is forgetting the length check and reading
     nan.
+
+    Warnings
+    --------
+    `ta.adx`, `ta.atr` and `ta.stoch` deliberately raise AttributeError: they
+    need a per-bar high and low that this feed does not have. All
+    `timeperiod` / `lookback` arguments are counted in bars.
     """
 
     @staticmethod
@@ -415,8 +635,23 @@ class _Indicators:
 
     def bb(self, closes: Sequence[float], timeperiod: int = 20,
            nbdevup: float = 2, nbdevdn: float = 2):
-        """Bollinger bands. Returns (upper, middle, lower), or (None, None,
-        None) until `timeperiod` bars have been seen."""
+        """Bollinger bands of the latest bar.
+
+        Parameters
+        ----------
+        closes : sequence of float
+            Close prices, oldest first.
+        timeperiod : int, optional
+            Window, in bars.
+        nbdevup, nbdevdn : float, optional
+            Band widths in standard deviations.
+
+        Returns
+        -------
+        tuple
+            (upper, middle, lower), or (None, None, None) until `timeperiod`
+            bars have been seen.
+        """
         if len(closes) < timeperiod:
             return (None, None, None)
         arrays = _talib.bb(_as_array(closes, timeperiod), timeperiod=timeperiod,
@@ -448,7 +683,14 @@ class _Indicators:
 
     def macd(self, closes: Sequence[float], fastperiod: int = 12,
              slowperiod: int = 26, signalperiod: int = 9):
-        """Returns (macd, signal, histogram), or (None, None, None) while short."""
+        """MACD of the latest bar.
+
+        Returns
+        -------
+        tuple
+            (macd, signal, histogram), or (None, None, None) while there are
+            fewer than `slowperiod + signalperiod` bars.
+        """
         need = slowperiod + signalperiod
         if len(closes) < need:
             return (None, None, None)

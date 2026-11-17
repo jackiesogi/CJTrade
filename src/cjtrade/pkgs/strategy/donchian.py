@@ -48,11 +48,25 @@ class DonchianBreakoutStrategy(BaseStrategy):
     This is a classic trend-following approach that works best in
     strongly trending markets.
 
-    Parameters (constructor or via ctx.params)
-    - period: Bars to look back for the channel, current bar excluded (default: 20)
-    - breakout_mode: 'close' = close above/below, 'touch' = touches (default: 'close')
-    - trailing_stop_pct: Stop as % below the peak since entry (0.0 = disabled)
-    - max_position_pct: Max position size as fraction of equity (default: 0.05)
+    Parameters
+    ----------
+    period : int, optional
+        Bars to look back for the channel, current bar excluded (default: 20).
+    breakout_mode : str, optional
+        'close' = close above/below, 'touch' = touches (default: 'close').
+    trailing_stop_pct : float, optional
+        Stop as % below the peak since entry (0.0 = disabled).
+    max_position_pct : float, optional
+        Max position size as fraction of equity (default: 0.05).
+
+    Notes
+    -----
+    All can also be set via ctx.params (`donchian__*`,
+    `risk__max_position_pct`).
+
+    Warnings
+    --------
+    `period` is counted in bars, so its time span changes with the interval.
 
     Note on 'touch' mode: it reads bar.high/bar.low, which only describe this
     bar on a kbar feed. Under the trading engine the bars come from snapshots,
@@ -104,7 +118,20 @@ class DonchianBreakoutStrategy(BaseStrategy):
         )
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
-        """Process incoming bar and generate signals."""
+        """Process incoming bar and generate signals.
+
+        Parameters
+        ----------
+        bar : Kbar
+            The bar that just closed.
+        ctx : StrategyContext
+            Account and price history as of this bar.
+
+        Returns
+        -------
+        list of Signal
+            Breakout or trailing-stop signals; empty while warming up.
+        """
         symbol = bar.symbol
         close = bar.close
         high = bar.high

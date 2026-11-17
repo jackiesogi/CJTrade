@@ -57,7 +57,36 @@ log = logging.getLogger(__name__)
 
 
 class ADXAdaptiveStrategy(BaseStrategy):
-    """Adaptive strategy using ADX to switch between Donchian breakout and SNR."""
+    """Adaptive strategy using ADX to switch between Donchian breakout and SNR.
+
+    Parameters
+    ----------
+    adx_period : int, optional
+        Trend-strength window, in bars.
+    adx_strong_threshold : float, optional
+        Strength above which the TREND regime is used.
+    adx_weak_threshold : float, optional
+        Strength below which the CONSOLIDATION regime is used.
+    adx_donchian_period : int, optional
+        Donchian channel lookback, in bars.
+    adx_snr_lookback_days : int, optional
+        Support/resistance lookback, in days (converted to bars via the
+        interval hint).
+    adx_snr_threshold_pct : float, optional
+        How close to support/resistance before trading.
+    max_position_pct : float, optional
+        Max position size as a fraction of equity.
+
+    Notes
+    -----
+    All of these can be overridden by `ctx.params` in on_start.
+
+    Warnings
+    --------
+    `adx__period` and `adx__donchian_period` are counted in bars and change
+    meaning with the bar interval. `adx__snr_lookback_days` is converted with
+    a fixed bars-per-day table keyed on `adx__interval` (default 1m).
+    """
 
     name = "ADX_Adaptive"
     long_name = "ADX Adaptive Trend/Consolidation"
@@ -107,7 +136,11 @@ class ADXAdaptiveStrategy(BaseStrategy):
         self._last_reason = "not started"
 
     def on_start(self, ctx: StrategyContext) -> None:
-        """Initialize parameters from ctx.params."""
+        """Initialize parameters from ctx.params.
+
+        Also sets bars-per-day from `adx__interval` (falling back to
+        `sr__interval` / `sr_interval`, default "1m").
+        """
         p = ctx.params
 
         # Read ADX parameters (support both old and new naming)
@@ -188,7 +221,20 @@ class ADXAdaptiveStrategy(BaseStrategy):
         return out
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
-        """Process incoming bar and generate signals."""
+        """Process incoming bar and generate signals.
+
+        Parameters
+        ----------
+        bar : Kbar
+            The bar that just closed.
+        ctx : StrategyContext
+            Account and price history as of this bar.
+
+        Returns
+        -------
+        list of Signal
+            At most one signal; empty while warming up or when no level is hit.
+        """
         self._n_bars += 1
         symbol = bar.symbol
         close = bar.close

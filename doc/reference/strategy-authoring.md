@@ -1,6 +1,7 @@
 # Strategy authoring
 
-The vocabulary a strategy file written for the trading engine may use.
+The vocabulary a strategy file written for the trading engine may use. See
+[Writing a strategy](../guides/strategy-authoring.md) for usage.
 
 ::: cjtrade.pkgs.strategy.authoring
     options:

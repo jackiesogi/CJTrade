@@ -84,6 +84,23 @@ CHART_THEMES = {
 
 
 class PlotlyKbarChart(KbarChartBase):
+    """K-bar chart drawn with plotly: candlesticks over a volume subplot.
+
+    Parameters
+    ----------
+    width : int, default 1200
+        Figure width in pixels.
+    height : int, default 600
+        Figure height in pixels.
+    auto_save : bool, default True
+        Rewrite the HTML file whenever the chart changes; the page then
+        polls itself for live updates.
+
+    Warnings
+    --------
+    With ``auto_save=True`` the chart writes ``kbar_<symbol>_<timestamp>.html``
+    in the current directory once a product is set.
+    """
     def __init__(self, width: int = 1200, height: int = 600, auto_save: bool = True):
         super().__init__()
         self.width = width
@@ -96,6 +113,22 @@ class PlotlyKbarChart(KbarChartBase):
         self.indicators = []
 
     def set_theme(self, theme: str) -> None:
+        """Set the colour theme and redraw if a chart exists.
+
+        Parameters
+        ----------
+        theme : str
+            One of ``nordic``, ``gruvbox``, ``light``, ``dark``.
+
+        Raises
+        ------
+        ValueError
+            If `theme` is not a known theme.
+
+        Warnings
+        --------
+        The redraw rewrites the HTML file when auto-save is on.
+        """
         valid_themes = list(CHART_THEMES.keys())
         if theme not in valid_themes:
             raise ValueError(f"Invalid theme '{theme}'. Valid themes: {valid_themes}")
@@ -108,13 +141,26 @@ class PlotlyKbarChart(KbarChartBase):
         return CHART_THEMES.get(self.theme, CHART_THEMES['nordic'])
 
     def set_kbar_data(self, data: List[KbarData], product: Product) -> None:
+        """Replace the bars, set the product and output filename, and redraw.
+
+        Parameters
+        ----------
+        data : list of KbarData
+            Bars in time order.
+        product : Product
+            The product; its symbol names the output file.
+
+        Warnings
+        --------
+        Writes the HTML file when auto-save is on.
+        """
         self.kbar_data = data
         self.product = product
         self._generate_filename()
         self._create_chart()
 
     def set_product(self, product: Product) -> None:
-        """Set product and generate filename without needing data"""
+        """Set product and generate filename without needing data."""
         self.product = product
         self._generate_filename()
         # print(f"Chart will be saved to: {self.output_filename}")
@@ -126,6 +172,17 @@ class PlotlyKbarChart(KbarChartBase):
             self.output_filename = f"kbar_{self.product.symbol}_{timestamp}.html"
 
     def append_kbar(self, kbar: KbarData) -> None:
+        """Append one bar, print it, and update the figure.
+
+        Parameters
+        ----------
+        kbar : KbarData
+            The new bar.
+
+        Warnings
+        --------
+        Rewrites the HTML file when auto-save is on and a filename is set.
+        """
         # Initialize data list if empty
         if not hasattr(self, 'kbar_data') or self.kbar_data is None:
             self.kbar_data = []
@@ -446,11 +503,24 @@ class PlotlyKbarChart(KbarChartBase):
             )
 
     def render_chart(self) -> go.Figure:
+        """Return the plotly figure, building it first if needed.
+
+        Returns
+        -------
+        plotly.graph_objects.Figure or None
+            None if there are no bars or no product.
+        """
         if not self.fig:
             self._create_chart()
         return self.fig
 
     def show_chart(self) -> None:
+        """Write the chart's HTML file, or call ``fig.show()`` if no filename is set.
+
+        Warnings
+        --------
+        Writes a file; without a filename plotly's ``show()`` may open a browser.
+        """
         if not self.fig:
             self._create_chart()
 
@@ -462,6 +532,20 @@ class PlotlyKbarChart(KbarChartBase):
             self.fig.show(config=theme_config['config'])
 
     def save_chart(self, filename: str) -> None:
+        """Save the chart to `filename`.
+
+        ``.png`` and ``.pdf`` are written as images; anything else is
+        written as HTML, adding ``.html`` if missing.
+
+        Parameters
+        ----------
+        filename : str
+            Output path.
+
+        Warnings
+        --------
+        Writes a file.
+        """
         if not self.fig:
             self._create_chart()
 

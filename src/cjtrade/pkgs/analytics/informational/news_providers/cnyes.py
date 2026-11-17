@@ -16,11 +16,32 @@ from ._base import NewsInterface
 
 # Source: https://blog.jiatool.com/posts/cnyes_news_spider by Jia
 class CnyesNewsSpider():
+    """Scraper for the cnyes.com (鉅亨網) headline news list.
+
+    Warnings
+    --------
+    Scrapes the unofficial cnyes.com news API; results change over time and
+    may break if the site changes.
+    """
     def get_newslist_info(self, page=1, limit=30):
-        """
-        :param page: 頁數
-        :param limit: 一頁新聞數量
-        :return newslist_info: 新聞資料
+        """Fetch one page of cnyes headline news.
+
+        Parameters
+        ----------
+        page : int
+            頁數 (page number).
+        limit : int
+            一頁新聞數量 (news items per page).
+
+        Returns
+        -------
+        dict or None
+            新聞資料: ``{'data': [item, ...]}``, or None if the request or parsing fails.
+
+        Warnings
+        --------
+        Scrapes the unofficial cnyes.com news API; results change over time and
+        may break if the site changes.
         """
         headers = {
             'Origin': 'https://news.cnyes.com/',
@@ -57,11 +78,24 @@ class CnyesNewsSpider():
             return None
 
     async def get_newslist_info_async(self, page=1, limit=30):
-        """
-        Async version of get_newslist_info
-        :param page: 頁數
-        :param limit: 一頁新聞數量
-        :return newslist_info: 新聞資料
+        """Async version of get_newslist_info.
+
+        Parameters
+        ----------
+        page : int
+            頁數 (page number).
+        limit : int
+            一頁新聞數量 (news items per page).
+
+        Returns
+        -------
+        dict or None
+            新聞資料: ``{'data': [item, ...]}``, or None if the request fails.
+
+        Warnings
+        --------
+        Scrapes the unofficial cnyes.com news API; results change over time and
+        may break if the site changes.
         """
         headers = {
             'Origin': 'https://news.cnyes.com/',
@@ -102,6 +136,13 @@ class CnyesNewsSpider():
 ##############################################################################
 
 class CnyesProvider(NewsInterface):
+    """News provider for cnyes.com (鉅亨網) headlines.
+
+    Warnings
+    --------
+    Scrapes the unofficial cnyes.com news API; results change over time and
+    may break if the site changes.
+    """
     def __init__(self, **config):
         super().__init__(**config)
         self.config = config
@@ -162,6 +203,17 @@ class CnyesProvider(NewsInterface):
 
 
     async def fetch_headline_news_async(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` cnyes headlines asynchronously.
+
+        Returns
+        -------
+        list of News
+            Empty on error.
+
+        Warnings
+        --------
+        Sleeps a random 1-3 s, then scrapes cnyes.com; results change over time.
+        """
         delay = random.uniform(1, 3)
         await asyncio.sleep(delay)
 
@@ -174,6 +226,17 @@ class CnyesProvider(NewsInterface):
 
 
     def fetch_headline_news(self, n: int = 10) -> List[News]:
+        """Fetch up to `n` cnyes headlines (blocking).
+
+        Returns
+        -------
+        list of News
+            Empty on error.
+
+        Warnings
+        --------
+        Sleeps a random 1-3 s, then scrapes cnyes.com; results change over time.
+        """
         delay = random.uniform(1, 3)
         time.sleep(delay)
 
@@ -187,6 +250,21 @@ class CnyesProvider(NewsInterface):
 
     # TODO: Currently we still search from headlines only, to be improved later
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:
+        """Return up to `n` of the latest 50 headlines matching `keyword`.
+
+        Matches case-insensitively against title, summary and the item's keywords.
+        Only headlines are searched, not the full archive.
+
+        Returns
+        -------
+        list of News
+            Empty on error.
+
+        Warnings
+        --------
+        Scrapes the unofficial cnyes.com news API; results change over time and
+        may break if the site changes.
+        """
         try:
             newslist_info = self.spider.get_newslist_info(page=1, limit=50)
             if not newslist_info or not isinstance(newslist_info, dict) or 'data' not in newslist_info:
@@ -232,4 +310,5 @@ class CnyesProvider(NewsInterface):
 
 
     def get_provider_name(self) -> str:
+        """Return ``"cnyes"``."""
         return "cnyes"

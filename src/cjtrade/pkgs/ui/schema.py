@@ -41,6 +41,33 @@ from typing import Any
 
 @dataclass
 class FormField:
+    """One field of a form, as declared by a ``[[field]]`` TOML block.
+
+    Parameters
+    ----------
+    name : str
+        Result dict key.
+    label : str
+        Display label.
+    type : str
+        text | number | select | multiselect | checkbox | date | file | display.
+    default : Any, optional
+        Hardcoded default.
+    env_in : str, optional
+        Env var read as default (beats `default`).
+    env_out : str, optional
+        Env var the result is exported into.
+    placeholder : str, optional
+        Hint shown in the prompt.
+    optional : bool, optional
+        If true, empty input is accepted.
+    persist_key : str, optional
+        Key used in the per-schema state file.
+    cli_arg : str, optional
+        CLI flag, e.g. "--watch-list"; the prompt is skipped if it is given.
+    config : dict, optional
+        Type-specific options from ``[field.config]``.
+    """
     name: str
     label: str
     type: str  # "text" | "number" | "select" | "multiselect" | "checkbox" | "date" | "file" | "display"
@@ -61,21 +88,25 @@ class FormField:
     # ------------------------------------------------------------------
     @property
     def eff_min(self) -> float | None:
+        """``config["min"]`` as a float, or None."""
         v = self.config.get("min")
         return float(v) if v is not None else None
 
     @property
     def eff_max(self) -> float | None:
+        """``config["max"]`` as a float, or None."""
         v = self.config.get("max")
         return float(v) if v is not None else None
 
     @property
     def eff_step(self) -> float | None:
+        """``config["step"]`` as a float, or None."""
         v = self.config.get("step")
         return float(v) if v is not None else None
 
     @property
     def eff_options(self) -> list | None:
+        """``config["options"]`` for select / multiselect, or None."""
         return self.config.get("options")
 
     @property
@@ -90,7 +121,18 @@ class FormField:
 
     # ------------------------------------------------------------------
     def resolved_default(self, persisted: dict | None = None) -> Any:
-        """Effective default — priority: env-var > state-file > TOML default > None."""
+        """Effective default — priority: env-var > state-file > TOML default > None.
+
+        Parameters
+        ----------
+        persisted : dict, optional
+            State-file values, keyed by ``persist_key``.
+
+        Returns
+        -------
+        Any
+            For multiselect, a list (comma-separated strings are split).
+        """
         if self.env_in:
             env_val = os.environ.get(self.env_in)
             if env_val is not None:
@@ -107,7 +149,13 @@ class FormField:
 
     # ------------------------------------------------------------------
     def coerce(self, raw: Any) -> Any:
-        """Convert a raw value from the renderer into the correct Python type."""
+        """Convert a raw value from the renderer into the correct Python type.
+
+        Raises
+        ------
+        ValueError
+            If a number field's value does not parse.
+        """
         if self.type == "checkbox":
             if isinstance(raw, bool):
                 return raw
@@ -134,11 +182,30 @@ class FormField:
 
 @dataclass
 class FormSchema:
+    """A whole form: a title and its fields.
+
+    Parameters
+    ----------
+    title : str
+        Form title.
+    fields : list of FormField
+        Fields in declaration order.
+    """
     title: str
     fields: list[FormField]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FormSchema":
+        """Build a schema from parsed TOML data.
+
+        Fields without a ``name`` are named ``_display_<index>``; ``title``
+        defaults to "Form".
+
+        Raises
+        ------
+        KeyError
+            If a field has no ``type``.
+        """
         title = data.get("title", "Form")
 
         fields = [
@@ -162,10 +229,12 @@ class FormSchema:
 
     @classmethod
     def loads(cls, toml_str: str) -> "FormSchema":
+        """Build a schema from a TOML string."""
         return cls.from_dict(tomllib.loads(toml_str))
 
     @classmethod
     def load(cls, path: str | Path) -> "FormSchema":
+        """Build a schema from a TOML file; the title defaults to the file stem."""
         path = Path(path)
         with open(path, "rb") as fh:
             data = tomllib.load(fh)

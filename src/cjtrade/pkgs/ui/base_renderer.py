@@ -9,9 +9,7 @@ from .schema import FormSchema
 
 
 class FormRenderer(ABC):
-    """
-    A FormRenderer takes a :class:`FormSchema` and presents it to the user
-    via some UI backend (CLI, Zenity, web, …).
+    """Present a :class:`FormSchema` via some UI backend (CLI, Zenity, web, …).
 
     Implementors must override :meth:`render`.
     The returned dict maps ``field.name → coerced Python value``.
@@ -19,8 +17,12 @@ class FormRenderer(ABC):
 
     @abstractmethod
     def render(self, schema: FormSchema) -> dict[str, Any]:
-        """
-        Show the form and collect user input.
+        """Show the form and collect user input.
+
+        Parameters
+        ----------
+        schema : FormSchema
+            The form to show.
 
         Returns
         -------
