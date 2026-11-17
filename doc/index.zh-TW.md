@@ -38,15 +38,15 @@ pip install 'cjtrade[sinopac,llm] @ git+https://github.com/jackiesogi/CJTrade'
 
 | 你想要 | 請看 |
 |---|---|
-| 連上券商、讀取帳戶、下單和取消委託 | [快速開始](guides/quickstart.md) |
-| 寫一個策略檔並檢查它 | [撰寫策略](guides/strategy-authoring.md) |
-| 在 Python 裡用歷史 K 棒跑策略 | [回測](guides/backtesting.md) |
-| 在 REPL 裡用簡短的函式操作券商 | [Beginner API](guides/beginner-api.md) |
+| 啟動模擬券商並連線 | [連線到券商](get-started/connect.md) |
+| 讀取帳戶、下單和取消委託 | [帳戶與委託](get-started/account-and-orders.md) |
+| 取得報價、歷史 K 棒和技術指標 | [行情資料](get-started/market-data.md) |
+| 寫一個策略檔並檢查它 | [撰寫策略](get-started/strategy.md) |
+| 用歷史 K 棒跑策略 | [回測](get-started/backtesting.md) |
 | 查某個 class 或函式 | [API 參考](reference/account-client.md) |
 
 各個 app（互動式 shell、ArenaX 伺服器、trading engine、`insight`）的說明在
 [GitHub 上的 README](https://github.com/jackiesogi/CJTrade#readme)。
 
 !!! note
-    API 還沒有穩定，1.0 之前名稱可能會改。「設計筆記」底下的頁面是過去的分析紀錄，
-    不會隨程式更新。API 參考裡的 docstring 只有英文版。
+    API 還沒有穩定，1.0 之前名稱可能會改。API 參考裡的 docstring 只有英文版。

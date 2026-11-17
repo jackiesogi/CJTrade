@@ -13,9 +13,6 @@ edit_uri: edit/master/doc/
 docs_dir: doc
 strict: true   # a broken link or reference fails the build
 
-exclude_docs: |
-  README.md
-
 theme:
   name: material
   language: en
@@ -56,11 +53,12 @@ plugins:
           build: true
           nav_translations:
             Home: 首頁
-            Guides: 指南
-            Quickstart: 快速開始
-            Writing a strategy: 撰寫策略
+            Get started: 開始使用
+            Connect to a broker: 連線到券商
+            Account and orders: 帳戶與委託
+            Market data: 行情資料
+            Write a strategy: 撰寫策略
             Backtesting: 回測
-            Beginner API: Beginner API
             API reference: API 參考
             Brokers: 券商
             Strategies: 策略
@@ -85,9 +83,7 @@ plugins:
             Charts: K 線圖
             Configuration and paths: 設定與路徑
             Forms: 表單
-            Design notes: 設計筆記
-            Oneshot vs full_sim: Oneshot 與 full_sim
-            Fill callback test plan: 成交回呼測試計畫
+
   # Each reference page exists once per language, so every object has two
   # URLs; link to the one in the language of the page doing the linking.
   - autorefs:
@@ -109,11 +105,12 @@ plugins:
 
 nav:
   - Home: index.md
-  - Guides:
-      - Quickstart: guides/quickstart.md
-      - Writing a strategy: guides/strategy-authoring.md
-      - Backtesting: guides/backtesting.md
-      - Beginner API: guides/beginner-api.md
+  - Get started:
+      - Connect to a broker: get-started/connect.md
+      - Account and orders: get-started/account-and-orders.md
+      - Market data: get-started/market-data.md
+      - Write a strategy: get-started/strategy.md
+      - Backtesting: get-started/backtesting.md
   - API reference:
       - Brokers:
           - AccountClient: reference/account-client.md
@@ -138,9 +135,5 @@ nav:
           - LLM clients: reference/llm.md
           - Charts: reference/charts.md
       - Infrastructure:
-          - Beginner API: reference/beginner.md
           - Configuration and paths: reference/config.md
           - Forms: reference/forms.md
-  - Design notes:
-      - Oneshot vs full_sim: design/oneshot-vs-fullsim.md
-      - Fill callback test plan: design/callback-test-plan.md

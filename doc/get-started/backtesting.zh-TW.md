@@ -5,7 +5,7 @@
 
 ## 取得 K 棒
 
-任何 `Kbar` 的 list 都可以。最簡單的來源是 ArenaX（啟動方式見[快速開始](quickstart.md)）：
+任何 `Kbar` 的 list 都可以。最簡單的來源是 ArenaX（啟動方式見[連線到券商](connect.md)）：
 
 ```python
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
@@ -36,7 +36,7 @@ print(result.final_equity, len(result.fill_history))
 
 ## 跑策略檔
 
-用 [authoring 模組](strategy-authoring.md)寫的檔案，載入之後用同樣的方式跑：
+用 [authoring 模組](strategy.md)寫的檔案，載入之後用同樣的方式跑：
 
 ```python
 from pathlib import Path

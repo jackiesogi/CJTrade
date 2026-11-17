@@ -1,4 +1,4 @@
-# Writing a strategy
+# Write a strategy
 
 A strategy is a Python file that imports one module,
 `cjtrade.pkgs.strategy.authoring`, and defines `on_bar(bar, account)`. The
@@ -102,3 +102,5 @@ bot's symbol in `--watch-list`.
 
 !!! warning
     The trading engine lives in `poc/` and is still a proof of concept.
+
+Next: [Backtesting](backtesting.md).

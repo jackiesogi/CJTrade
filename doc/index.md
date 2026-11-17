@@ -42,10 +42,11 @@ pip install 'cjtrade[sinopac,llm] @ git+https://github.com/jackiesogi/CJTrade'
 
 | You want to | Read |
 |---|---|
-| Connect to a broker, read the account, place and cancel an order | [Quickstart](guides/quickstart.md) |
-| Write a strategy file and check it | [Writing a strategy](guides/strategy-authoring.md) |
-| Run a strategy over historical bars from Python | [Backtesting](guides/backtesting.md) |
-| Poke at a broker from a REPL with short helper functions | [Beginner API](guides/beginner-api.md) |
+| Start the simulated broker and connect to it | [Connect to a broker](get-started/connect.md) |
+| Read the account, place and cancel an order | [Account and orders](get-started/account-and-orders.md) |
+| Get quotes, historical bars and indicators | [Market data](get-started/market-data.md) |
+| Write a strategy file and check it | [Write a strategy](get-started/strategy.md) |
+| Run a strategy over historical bars | [Backtesting](get-started/backtesting.md) |
 | Look up a class or function | [API reference](reference/account-client.md) |
 
 The apps (interactive shell, ArenaX server, the trading engine, `insight`)
@@ -53,5 +54,4 @@ are documented in the
 [README on GitHub](https://github.com/jackiesogi/CJTrade#readme).
 
 !!! note
-    The API is not stable yet; names may change before 1.0. Pages under
-    *Design notes* record past investigations and are not kept up to date.
+    The API is not stable yet; names may change before 1.0.

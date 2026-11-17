@@ -29,14 +29,14 @@ A strategy written against this module is a file like:
 
 `init()`, `on_fill(fill, account)` and `on_end(account)` are optional.
 
-Why this is a separate module from pkgs/api/beginner.py
-------------------------------------------------------
-beginner.py's `buy()` calls `client.buy_stock(...)`: it holds a broker session
-and places the order itself. That is right for a human at a REPL and wrong for
-a bot, where it would give every bot process its own broker session, put every
+Why `buy()` here does not place an order
+----------------------------------------
+A `buy()` that called `client.buy_stock(...)` would hold a broker session and
+place the order itself. That is right for a human at a REPL and wrong for a
+bot, where it would give every bot process its own broker session, put every
 order outside the RiskGate, and create a second answer for balance and
-positions alongside master's ledger. Same vocabulary, inverted control flow:
-here `buy()` returns an *intent* and master's ExecutionEngine decides.
+positions alongside master's ledger. So the control flow is inverted: here
+`buy()` returns an *intent* and master's ExecutionEngine decides.
 
 So this module imports no broker client and nothing that opens a socket: no
 name in a strategy's namespace, and no attribute of any name in it, reaches a

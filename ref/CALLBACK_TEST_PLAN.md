@@ -1,9 +1,5 @@
 # Order Callback Test Plan (Sinopac / CJTrade `AccountClient`)
 
-!!! warning "Design note"
-    A record of a past investigation, kept for reference. It is not
-    updated as the code changes, so details may be out of date.
-
 > **Goal**: Cover every callback-related code path in `SinopacBrokerAPI` and
 > `AccountClient` while spending the **absolute minimum real money**.
 >

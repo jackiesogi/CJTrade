@@ -6,8 +6,8 @@ result.
 
 ## Get the bars
 
-Any `Kbar` list works. The simplest source is ArenaX (see the
-[Quickstart](quickstart.md) to start it):
+Any `Kbar` list works. The simplest source is ArenaX (see
+[Connect to a broker](connect.md) to start it):
 
 ```python
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
@@ -39,7 +39,7 @@ for their parameters.
 
 ## Run a strategy file
 
-A file written for [the authoring module](strategy-authoring.md) runs the
+A file written for [the authoring module](strategy.md) runs the
 same way once loaded:
 
 ```python

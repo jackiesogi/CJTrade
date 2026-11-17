@@ -26,7 +26,7 @@ Differences from git, deliberately kept for now
 overwrite, so the most specific wins by being applied last. Here the most
 specific wins by being applied *first*. The resolved value usually agrees, but
 the mechanism is inverted, and flipping it would silently change what every
-existing deployment resolves to. Tracked in TODO.md under "Config provenance",
+existing deployment resolves to. Tracked in ref/TODO.md under "Config provenance",
 together with recording which file each key came from.
 
 Within a directory the order used to be whatever ``rglob`` returned, i.e. the
@@ -44,7 +44,7 @@ from dotenv import load_dotenv
 
 # TODO: Implement a hierarchical configuration structure
 # e.g. a setting called "simulation.playback_speed"
-# See TODO.md "Config provenance" — hierarchical keys and provenance are two
+# See ref/TODO.md "Config provenance" — hierarchical keys and provenance are two
 # sides of the same change.
 class CJTradeConfiguration:
     """Placeholder for a hierarchical configuration object.
@@ -119,7 +119,7 @@ def config_sources(
     """The files that would be loaded, in precedence order. Loads nothing.
 
     Useful on its own for answering "which files is this process reading?", and
-    it is the ordering the provenance work in TODO.md will attach sources to.
+    it is the ordering the provenance work in ref/TODO.md will attach sources to.
 
     Pass None to mean "no sources at all"; omit the argument for the defaults.
 

@@ -388,7 +388,8 @@ worse off than one with no docs at all.
 
 :warning: The API is not stable yet.
 
-See the [API reference](https://github.com/jackiesogi/CJTrade/tree/master/doc).
+See the [documentation site](https://jackiesogi.github.io/CJTrade/) for a
+Get started guide and the API reference.
 
 The shortest path to a strategy of your own is
 `cjtrade.pkgs.strategy.authoring`: a single module holding the entire
