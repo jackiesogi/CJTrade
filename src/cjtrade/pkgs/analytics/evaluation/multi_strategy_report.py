@@ -80,7 +80,15 @@ class MultiStrategyBacktestReport:
         log.info(f"[MultiStrategyBacktestReport] Added strategy: {name}")
 
     def run(self) -> None:
-        """Run all registered strategies on the same kbars."""
+        """Run all registered strategies on the same kbars.
+
+        Each strategy gets its own BacktestEngine and a random session id.
+
+        Raises
+        ------
+        ValueError
+            If no strategies are registered.
+        """
         from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
         import uuid
 
@@ -109,7 +117,15 @@ class MultiStrategyBacktestReport:
             )
 
     def compare_summary(self) -> None:
-        """Print a comparison table of all strategies' key metrics to stdout."""
+        """Print a comparison table of all strategies' key metrics to stdout.
+
+        Raises
+        ------
+        ValueError
+            If `run` has not been called.
+        ImportError
+            If quantstats is not installed.
+        """
         if not self._results:
             raise ValueError("No results to compare. Call run() first.")
 
@@ -179,6 +195,17 @@ class MultiStrategyBacktestReport:
         -------
         str
             Absolute path to the saved HTML file.
+
+        Raises
+        ------
+        ValueError
+            If `run` has not been called.
+        ImportError
+            If quantstats is not installed.
+
+        Warnings
+        --------
+        Writes (overwrites) `path` and, by default, opens a browser.
         """
         if not self._results:
             raise ValueError("No results to compare. Call run() first.")
@@ -323,6 +350,17 @@ class MultiStrategyBacktestReport:
         -------
         str
             Absolute path to the saved HTML file.
+
+        Raises
+        ------
+        ImportError
+            If plotly is not installed.
+        ValueError
+            If `run` has not been called.
+
+        Warnings
+        --------
+        Writes (overwrites) `path` and, by default, opens a browser.
         """
         try:
             import plotly.graph_objects as go
@@ -371,8 +409,8 @@ class MultiStrategyBacktestReport:
                                           open_browser: bool = True) -> str:
         """Generate overlaid cumulative equity chart using plotly.
 
-        Plots the equity curve for each strategy on the same chart, normalized
-        to the initial balance so you can see relative performance.
+        Plots the equity curve (in TWD, not normalized) for each strategy on the
+        same chart.
 
         Parameters
         ----------
@@ -385,6 +423,17 @@ class MultiStrategyBacktestReport:
         -------
         str
             Absolute path to the saved HTML file.
+
+        Raises
+        ------
+        ImportError
+            If plotly is not installed.
+        ValueError
+            If `run` has not been called.
+
+        Warnings
+        --------
+        Writes (overwrites) `path` and, by default, opens a browser.
         """
         try:
             import plotly.graph_objects as go

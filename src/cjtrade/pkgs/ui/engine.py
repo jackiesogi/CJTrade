@@ -31,17 +31,25 @@ from .user_state import UserState
 
 
 class FormEngine:
-    """
-    High-level facade: load schema → pick renderer → collect input → return results.
+    """High-level facade: load schema → pick renderer → collect input → return results.
 
     Parameters
     ----------
-    schema_path:
-        Path to the TOML schema file.
-    renderer:
+    schema_path : str or Path, optional
+        Path to the TOML schema file. Its stem names the state file.
+    toml_str : str, optional
+        TOML schema as a string; its state file is named "inline". Give
+        exactly one of `schema_path` and `toml_str`.
+    renderer : str or FormRenderer, optional
         ``"cli"`` | ``"zenity"`` | ``"web"`` | ``"auto"`` | a :class:`FormRenderer` instance.
-    web_port:
+    web_port : int, optional
         Port for the WebRenderer (default 9876).
+
+    Raises
+    ------
+    ValueError
+        If both or neither of `schema_path` / `toml_str` are given, or the
+        renderer name is unknown.
     """
 
     def __init__(
@@ -141,12 +149,21 @@ class FormEngine:
 
     # ------------------------------------------------------------------
     def run(self) -> dict[str, Any]:
-        """
-        Present the form, **block** until submitted, persist relevant values,
-        and return the result dict.
+        """Present the form and **block** until it is submitted.
 
+        Persists relevant values and returns the result dict.
         Fields whose ``cli_arg`` flag was found in ``sys.argv`` are skipped
         entirely — the renderer never sees them.
+
+        Returns
+        -------
+        dict
+            ``{field_name: value}``, without display-only fields.
+
+        Warnings
+        --------
+        Writes fields with ``persist_key`` to the user state file. On
+        KeyboardInterrupt it calls ``sys.exit(0)`` instead of raising.
         """
         import dataclasses
 
@@ -190,22 +207,21 @@ class FormEngine:
         on_cancel: Callable[[], None] | None = None,
         daemon: bool = True,
     ) -> threading.Thread:
-        """
-        Show the form in a **background thread** and call *callback* when done.
+        """Show the form in a **background thread** and call *callback* when done.
 
         The calling thread is **never blocked** — it can keep doing work
         (e.g. running a live strategy) while the user fills the form.
 
         Parameters
         ----------
-        callback:
+        callback : callable
             Called with the result dict once the user submits.
             Runs on the background thread, so keep it thread-safe
             (use a ``threading.Lock`` if you mutate shared state).
-        on_cancel:
+        on_cancel : callable, optional
             Optional callable invoked if the user cancels (Ctrl-C / dialog close).
             If ``None``, cancellation is silently ignored.
-        daemon:
+        daemon : bool, optional
             When ``True`` (default) the thread won't prevent the program from
             exiting if the main thread finishes first.
 
@@ -214,6 +230,11 @@ class FormEngine:
         threading.Thread
             The background thread (already started).
             Call ``.join()`` if you later want to wait for it.
+
+        Warnings
+        --------
+        Unlike :meth:`run`, this renders the full schema directly; it does not
+        apply CLI-flag overrides, inject persisted defaults or save state.
 
         Example
         -------
@@ -244,9 +265,15 @@ class FormEngine:
 
     # ------------------------------------------------------------------
     def run_and_export(self) -> dict[str, Any]:
-        """
-        Like :meth:`run`, but also writes each field's result into the env var
-        named by ``field.env_out`` (if set). Useful when the form feeds a shell script.
+        """Like :meth:`run`, but also export results into ``os.environ``.
+
+        Writes each field's result into the env var named by
+        ``field.env_out`` (if set). Useful when the form feeds a shell script.
+
+        Warnings
+        --------
+        Mutates this process's environment, in addition to everything
+        :meth:`run` does.
         """
         results = self.run()
         for f in self.schema.fields:
@@ -256,10 +283,15 @@ class FormEngine:
 
     # ------------------------------------------------------------------
     def print_exports(self, results: dict[str, Any]) -> None:
-        """
-        Print ``export VAR=value`` lines for all fields that have an ``env_out`` key.
+        """Print ``export VAR=value`` lines for all fields that have an ``env_out`` key.
+
         Pipe this into a shell ``eval`` to inject values into the calling process.
         List values (multiselect) are serialised as comma-separated strings.
+
+        Parameters
+        ----------
+        results : dict
+            Result dict from :meth:`run`.
         """
         for f in self.schema.fields:
             if f.env_out and f.name in results:

@@ -21,6 +21,20 @@ from cjtrade.pkgs.models import *
 
 
 class ArenaXMiddleWare:
+    """HTTP client for the ArenaX broker-side server.
+
+    Parameters
+    ----------
+    host : str, optional
+        Server host.
+    port : int, optional
+        Server port.
+
+    Warnings
+    --------
+    Every method makes a plain-HTTP request. Transport failures are printed
+    and returned as None, not raised.
+    """
     def __init__(self, host: str = "localhost", port: int = 8801):
         self.host = host
         self.port = port
@@ -90,11 +104,32 @@ class ArenaXMiddleWare:
 
 
     def check_health(self, **kwargs) -> bool:
+        """Return the server's health response (GET health).
+
+        Returns
+        -------
+        Any
+            Parsed JSON, or None if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         data = self._get("health")
         return data
 
     def get_market_time(self, **kwargs) -> dict:
-        """Raw clock dict from the server. See BrokerAPIBase.get_market_time."""
+        """Raw clock dict from the server. See BrokerAPIBase.get_market_time.
+
+        Returns
+        -------
+        dict or None
+            None if the server did not answer.
+
+        Warnings
+        --------
+        Sends an HTTP request; the result depends on the server clock.
+        """
         t = self._get("api/v1/clock")
         if t:
             return t
@@ -107,6 +142,17 @@ class ArenaXMiddleWare:
         return self.get_market_time(**kwargs)
 
     def is_market_open(self, **kwargs) -> bool:
+        """Return whether the server's market time is on a weekday, 09:00-13:30.
+
+        Returns
+        -------
+        bool
+
+        Warnings
+        --------
+        Sends an HTTP request. Ignores holidays. Raises TypeError if the clock
+        request fails, because get_market_time() then returns None.
+        """
         # mock_current_time is an ISO 8601 naive datetime (Asia/Taipei).
         # No timezone conversion — parse as-is.
         mct = self.get_market_time()["mock_current_time"]
@@ -117,21 +163,51 @@ class ArenaXMiddleWare:
         )
 
     def get_config(self, **kwargs):
+        """Return the server configuration (GET api/v1/config).
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         return self._get("api/v1/config")
 
     def start_backend(self, **kwargs):
+        """Start the server backend (PUT api/v1/backend).
+
+        Warnings
+        --------
+        Sends an HTTP request that changes server state.
+        """
         return self._put("api/v1/backend", {"running": True},
                          headers=kwargs.get("headers"))
 
     def stop_backend(self, **kwargs):
+        """Stop the server backend (PUT api/v1/backend).
+
+        Warnings
+        --------
+        Sends an HTTP request that changes server state.
+        """
         return self._put("api/v1/backend", {"running": False},
                          headers=kwargs.get("headers"))
 
     def pause_time_progress(self, **kwargs):
+        """Freeze the server market clock.
+
+        Warnings
+        --------
+        Sends an HTTP request that changes server state.
+        """
         return self._patch("api/v1/clock", {"paused": True},
                            headers=kwargs.get("headers"))
 
     def resume_time_progress(self, **kwargs):
+        """Resume the server market clock.
+
+        Warnings
+        --------
+        Sends an HTTP request that changes server state.
+        """
         return self._patch("api/v1/clock", {"paused": False},
                            headers=kwargs.get("headers"))
 
@@ -141,6 +217,21 @@ class ArenaXMiddleWare:
         Snaps to 09:00 server-side and, unless both flags are turned off, also
         starts the clock and clears + refetches the price cache. To move the
         current moment within an existing timeline, use set_market_time().
+
+        Parameters
+        ----------
+        mock_init_time : str
+            Start of the simulated timeline.
+        real_init_time : str, optional
+            Ignored; it is not sent to the server.
+        auto_start_progress : bool, optional
+            Start the clock after setting the origin.
+        auto_preload_data : bool, optional
+            Clear and refetch the price cache.
+
+        Warnings
+        --------
+        Sends an HTTP request that resets the server clock and may clear its price cache.
         """
         data = {
             "mock_init_time": mock_init_time,
@@ -156,6 +247,10 @@ class ArenaXMiddleWare:
         The old name read as the setter-partner of get_system_time(), which it
         never was: that one reads the current moment, this one writes the
         timeline's start.
+
+        Warnings
+        --------
+        Sends an HTTP request that changes server state.
         """
         return self.set_timeline_origin(*args, **kwargs)
 
@@ -164,6 +259,15 @@ class ArenaXMiddleWare:
 
         Unlike set_timeline_origin(), this neither snaps to 09:00 nor touches
         the preloaded data, so it is safe to call once per replayed bar.
+
+        Parameters
+        ----------
+        t : datetime or str
+            New market time; datetimes are sent as ISO 8601.
+
+        Warnings
+        --------
+        Sends an HTTP request that changes the server clock.
         """
         iso = t.isoformat() if hasattr(t, "isoformat") else str(t)
         return self._patch("api/v1/clock", {"mock_current_time": iso},
@@ -175,10 +279,34 @@ class ArenaXMiddleWare:
         Used to have its own GET /control/get-price, which duplicated the
         snapshot route and answered with str(Snapshot) -- a Python repr, not
         JSON. Same data, one endpoint.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
         """
         return self.snapshot(symbol, **kwargs)
 
     def login(self, api_key: str, **kwargs) -> bool:
+        """Open a session on the server with an API key.
+
+        Parameters
+        ----------
+        api_key : str
+
+        Returns
+        -------
+        bool
+            Always True; failure raises.
+
+        Raises
+        ------
+        ValueError
+            The server did not answer or did not confirm the login.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         data = {"api_key": api_key}
         response = self._post("api/v1/session", data, headers=kwargs.get("headers"))
         if response and response.get("ok") and response.get("message") == "Login successful":
@@ -188,10 +316,26 @@ class ArenaXMiddleWare:
             raise ValueError(f"Login failed: {msg}")
 
     def logout(self, **kwargs):
+        """Close the server session (DELETE api/v1/session).
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         return self._delete("api/v1/session", headers=kwargs.get("headers"))
 
     def account_summary(self, **kwargs) -> dict:
-        """Balance, positions and orders from one read."""
+        """Balance, positions and orders from one read.
+
+        Returns
+        -------
+        dict or None
+            Keys ``balance``, ``positions``, ``orders``; None if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         summary = self._get("api/v1/account")
         if summary is None:
             return None
@@ -203,8 +347,20 @@ class ArenaXMiddleWare:
             return res
 
     def list_orders(self, **kwargs) -> list:
-        """Just the orders. Cheaper than account_summary when that is all you
-        want -- it skips rebuilding and re-pricing every position."""
+        """Just the orders.
+
+        Cheaper than account_summary when that is all you
+        want -- it skips rebuilding and re-pricing every position.
+
+        Returns
+        -------
+        list
+            Order dicts; empty if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         res = self._get("api/v1/orders")
         if res and res.get("ok"):
             return res.get("orders", [])
@@ -217,11 +373,22 @@ class ArenaXMiddleWare:
         equity_curve is NOT fetched from the server; the client (cjtrade_system)
         records it locally during the backtest run.
 
-        Args:
-            session_id: If provided, fill_history is filtered to only include
-                        entries that match this session_id.  This allows clean
-                        isolation when the server has been running across multiple
-                        backtest sessions or manual operations.
+        Parameters
+        ----------
+        session_id : str, optional
+            If provided, fill_history is filtered to only include
+            entries that match this session_id.  This allows clean
+            isolation when the server has been running across multiple
+            backtest sessions or manual operations.
+
+        Returns
+        -------
+        dict or None
+            None if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
         """
         # Ask the server to filter. fill_history only grows, so filtering here
         # meant downloading every other run's fills in order to throw them
@@ -249,6 +416,17 @@ class ArenaXMiddleWare:
         return None
 
     def snapshot(self, symbol: str, **kwargs) -> dict:
+        """Return the latest Snapshot for `symbol` as a dict.
+
+        Returns
+        -------
+        dict or None
+            None if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
         res = self._get(f"api/v1/market/{symbol}/snapshot")
         if res and res.get("ok"):
             return res.get("price")  # return Snapshot object
@@ -262,16 +440,27 @@ class ArenaXMiddleWare:
 
         Parameters
         ----------
-        symbol : str   e.g. '2330'
-        start  : str   ISO date or datetime string, e.g. '2024-01-02'
-        end    : str   ISO date or datetime string, e.g. '2024-06-30'
-        interval : str e.g. '1m', '5m', '1d'
-        fallback : bool  deprecated, ignored – the server now selects the data
-                         source automatically (price_db → real broker → yfinance).
+        symbol : str
+            e.g. '2330'
+        start : str
+            ISO date or datetime string, e.g. '2024-01-02'
+        end : str
+            ISO date or datetime string, e.g. '2024-06-30'
+        interval : str, optional
+            e.g. '1m', '5m', '1d'
+        fallback : bool, optional
+            Deprecated, ignored – the server now selects the data
+            source automatically (price_db → real broker → yfinance).
 
         Returns
         -------
-        list[dict]  raw dicts with keys: timestamp, open, high, low, close, volume
+        list[dict]
+            Raw dicts with keys: timestamp, open, high, low, close, volume.
+            Empty if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
         """
         res = self._get(
             f"api/v1/market/{symbol}/kbars?start={start}&end={end}&interval={interval}"
@@ -291,11 +480,37 @@ class ArenaXMiddleWare:
 
         Replaces is_kbar_data_available(), which took start/end the server
         ignored and then read a response key the server never sent.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
         """
         return self._get("api/v1/market/data-availability")
 
 
     def place_order(self, order: Order, **kwargs) -> OrderResult:
+        """Send an order to the server (POST api/v1/orders).
+
+        Parameters
+        ----------
+        order : Order
+
+        Returns
+        -------
+        OrderResult
+            Status is UNKNOWN if the server returns an unrecognised status.
+
+        Raises
+        ------
+        ConnectionError
+            The server did not answer.
+        ValueError
+            The server rejected the order or returned an empty result.
+
+        Warnings
+        --------
+        Sends an HTTP request that places an order on the simulated exchange.
+        """
         # Serialize Order to JSON-serializable payload
         product = {
             "symbol": getattr(order.product, 'symbol', None),
@@ -344,6 +559,26 @@ class ArenaXMiddleWare:
         return order_result
 
     def cancel_order(self, order_id: str, **kwargs) -> OrderResult:
+        """Cancel an order on the server (DELETE api/v1/orders/{order_id}).
+
+        Parameters
+        ----------
+        order_id : str
+
+        Returns
+        -------
+        OrderResult
+            Status is UNKNOWN if the server returns an unrecognised status.
+
+        Raises
+        ------
+        ConnectionError
+            The server did not answer.
+
+        Warnings
+        --------
+        Sends an HTTP request that cancels an order on the simulated exchange.
+        """
         res = self._delete(f"api/v1/orders/{order_id}", headers=kwargs.get("headers"))
 
         if res is None:
@@ -368,6 +603,25 @@ class ArenaXMiddleWare:
 
         A GET: the server re-runs the fill check and reports, it performs no
         transition of its own.
+
+        Parameters
+        ----------
+        order_id : str
+
+        Returns
+        -------
+        OrderResult or None
+            A single result despite the ``List`` annotation; None if the
+            request failed or the server returned no result.
+
+        Raises
+        ------
+        ValueError
+            The server answered with ``ok`` false.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
         """
         res = self._get(f"api/v1/orders/{order_id}")
         if res is None:

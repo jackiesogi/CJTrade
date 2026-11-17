@@ -536,7 +536,7 @@ class TestTheContract:
     def test_the_vocabulary_imports_nothing_that_can_trade(self):
         """No name in a strategy's namespace reaches a broker session.
 
-        beginner.py's `buy()` calls `client.buy_stock` -- right for a human at
+        A `buy()` that called `client.buy_stock` would be right for a human at
         a REPL, and in a bot it would give every bot process its own broker
         session and put every order outside the RiskGate. Asserted against
         authoring.py's own import statements rather than against sys.modules,

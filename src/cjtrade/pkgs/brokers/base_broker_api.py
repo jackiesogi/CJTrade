@@ -15,32 +15,52 @@ from cjtrade.pkgs.models.trade import Trade
 # get_positions / get_balance / get_quotes /
 # place_order / get_broker_name
 class BrokerAPIBase(ABC):
-    """
-    An unified interface for different brokers.
+    """A unified interface for different brokers.
+
     All broker implementations must inherit from
     this class and implement all abstract methods.
+
+    Parameters
+    ----------
+    **config : Any
+        Broker-specific settings, stored as ``self.config``.
     """
     def __init__(self, **config: Any):
         self.config = config
 
     @abstractmethod
     def connect(self) -> bool:
+        """Open the broker session.
+
+        Returns
+        -------
+        bool
+            True if the connection succeeded.
+        """
         pass
 
     @abstractmethod
     def disconnect(self) -> None:
+        """Close the broker session."""
         pass
 
     @abstractmethod
     def is_connected(self) -> bool:
+        """Return whether the broker session is open.
+
+        Returns
+        -------
+        bool
+        """
         pass
 
     @abstractmethod
     def get_positions(self) -> List[Position]:
         """Get current stock positions.
 
-        Returns:
-            List[Position]
+        Returns
+        -------
+        List[Position]
         """
         pass
 
@@ -48,20 +68,35 @@ class BrokerAPIBase(ABC):
     def get_balance(self) -> float:
         """Get account balance.
 
-        Returns:
-            float: account balance
+        Returns
+        -------
+        float
+            Account balance.
         """
         pass
 
     @abstractmethod
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
+        """Return the current bid/ask quote for a product.
+
+        Parameters
+        ----------
+        product : Product
+            The product to quote.
+        intraday_odd : bool, optional
+            Quote the intraday odd-lot book instead of the board-lot book.
+
+        Returns
+        -------
+        BidAsk
+        """
         pass
 
     @abstractmethod
     def get_kbars(self, products: List[Product], start: str, end: str, interval: str) -> List[Kbar]:
-        """
-        return a list of Kbar, 1-min kbar by default
-        note that the range is [start,end), end is exclusive.
+        """Return a list of Kbar, 1-min kbar by default.
+
+        Note that the range is [start, end), end is exclusive.
         """
         pass
 
@@ -82,43 +117,62 @@ class BrokerAPIBase(ABC):
     # - fill_period (e.g. every 100 trade ticks)
     # - volume_thresh (e.g. more than 100 shares traded)
     def register_price_callback():
-        """
-        Define what things to do when a certain price event happens.
+        """Define what things to do when a certain price event happens.
+
+        Warnings
+        --------
+        Placeholder: not abstract yet and does nothing.
         """
         pass
 
     @abstractmethod
     def register_order_callback(self, callback) -> None:
-        """
-        Register callback for order status changes (including fills).
+        """Register callback for order status changes (including fills).
+
         Callback receives OrderEvent with unified CJ abstraction layer format.
 
-        Args:
-            callback: Function that takes OrderEvent as parameter
+        Parameters
+        ----------
+        callback : callable
+            Function that takes OrderEvent as parameter.
 
-        Example:
-            def on_order_change(event: OrderEvent):
-                print(f"{event.old_status} → {event.new_status}")
-                if event.is_filled():
-                    print(f"Filled: {event.filled_quantity} @ {event.filled_price}")
+        Examples
+        --------
+        ```python
+        def on_order_change(event: OrderEvent):
+            print(f"{event.old_status} → {event.new_status}")
+            if event.is_filled():
+                print(f"Filled: {event.filled_quantity} @ {event.filled_price}")
+        ```
         """
         pass
 
     # @abstractmethod  # TODO: Un-comment this when implementation is done
     def unregister_callback():
+        """Unregister a previously registered callback.
+
+        Warnings
+        --------
+        Placeholder: not abstract yet and does nothing.
+        """
         pass
 
     @abstractmethod
     def place_order(self, order: Order) -> OrderResult:
-        """
-        Args:
-            symbol
-            action
-            quantity
-            price
+        """Submit an order to the broker.
 
-        Returns:
-            OrderResult
+        Parameters
+        ----------
+        order : Order
+            The order to place (symbol, action, quantity, price).
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        On a live broker (Sinopac) this places a real order on a real account.
         """
         pass
 
@@ -136,14 +190,41 @@ class BrokerAPIBase(ABC):
 
     @abstractmethod
     def cancel_order(self, order_id: str) -> OrderResult:
+        """Cancel an order.
+
+        Parameters
+        ----------
+        order_id : str
+            The CJTrade order id.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        On a live broker (Sinopac) this cancels a real order on a real account.
+        """
         pass
 
     @abstractmethod
     def list_orders(self) -> List[Trade]:
+        """Return the account's orders.
+
+        Returns
+        -------
+        List[Trade]
+        """
         pass
 
     @abstractmethod
     def is_market_open(self) -> bool:
+        """Return whether the market is open at the broker's market time.
+
+        Returns
+        -------
+        bool
+        """
         pass
 
     def get_market_time(self) -> dict:
@@ -190,15 +271,62 @@ class BrokerAPIBase(ABC):
 
     @abstractmethod
     def get_broker_name(self) -> str:
+        """Return a short name identifying the broker."""
         pass
 
     ##### SIMPLE HIGH-LEVEL METHODS #####
     @abstractmethod
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                   opt_field: dict = None) -> OrderResult:
+        """Place a buy order for a stock.
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Extra fields attached to the order.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        On a live broker (Sinopac) this places a real order on a real account.
+        """
         pass
 
     @abstractmethod
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True,
                    opt_field: dict = None) -> OrderResult:
+        """Place a sell order for a stock.
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Extra fields attached to the order.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        On a live broker (Sinopac) this places a real order on a real account.
+        """
         pass

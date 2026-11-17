@@ -1,3 +1,10 @@
+"""Demo script: fetch cnyes headlines and ask Gemini for hashtags and a summary.
+
+Warnings
+--------
+Running it as a script scrapes cnyes.com and calls the Gemini LLM
+(non-deterministic, uses API quota; needs ``GEMINI_API_KEY``).
+"""
 import asyncio
 import os
 

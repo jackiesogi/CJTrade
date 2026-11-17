@@ -61,27 +61,52 @@ def _resolve(category: str, platform_default: str, *, ensure: bool) -> Path:
 
 
 def data_dir(*, ensure: bool = True) -> Path:
-    """Durable user data: account states, mirror DBs. Losing this loses history."""
+    """Durable user data: account states, mirror DBs. Losing this loses history.
+
+    Warnings
+    --------
+    Creates the directory unless ``ensure=False``.
+    """
     return _resolve("data", _DIRS.user_data_dir, ensure=ensure)
 
 
 def config_dir(*, ensure: bool = True) -> Path:
-    """User config: .cjconf files and anything else the user edits by hand."""
+    """User config: .cjconf files and anything else the user edits by hand.
+
+    Warnings
+    --------
+    Creates the directory unless ``ensure=False``.
+    """
     return _resolve("config", _DIRS.user_config_dir, ensure=ensure)
 
 
 def cache_dir(*, ensure: bool = True) -> Path:
-    """Refetchable data: the ArenaX price cache. Safe to delete at any time."""
+    """Refetchable data: the ArenaX price cache. Safe to delete at any time.
+
+    Warnings
+    --------
+    Creates the directory unless ``ensure=False``.
+    """
     return _resolve("cache", _DIRS.user_cache_dir, ensure=ensure)
 
 
 def state_dir(*, ensure: bool = True) -> Path:
-    """Machine-local state that is not user-authored: saved form answers."""
+    """Machine-local state that is not user-authored: saved form answers.
+
+    Warnings
+    --------
+    Creates the directory unless ``ensure=False``.
+    """
     return _resolve("state", _DIRS.user_state_dir, ensure=ensure)
 
 
 def log_dir(*, ensure: bool = True) -> Path:
-    """Log files."""
+    """Log files.
+
+    Warnings
+    --------
+    Creates the directory unless ``ensure=False``.
+    """
     return _resolve("logs", _DIRS.user_log_dir, ensure=ensure)
 
 
@@ -89,7 +114,12 @@ def log_dir(*, ensure: bool = True) -> Path:
 # Defined here rather than at each call site so a filename appears exactly once.
 
 def price_db_path() -> Path:
-    """ArenaX historical price cache. Cache, not data: it is refetchable."""
+    """ArenaX historical price cache. Cache, not data: it is refetchable.
+
+    Warnings
+    --------
+    Creates the cache directory if missing (not the file).
+    """
     return cache_dir() / "arenax_price.db"
 
 
@@ -98,13 +128,29 @@ def mirror_db_path(broker: str, username: str = "") -> Path:
 
     Data, not cache: CJ_OrderMap here is the only link between a CJTrade order
     id and the broker's own id, so losing it orphans live orders.
+
+    Parameters
+    ----------
+    broker : str
+        Broker name.
+    username : str, optional
+        If given, the file is ``<broker>_<username>.db``.
+
+    Warnings
+    --------
+    Creates the data directory if missing, but not ``mirrors/`` or the file.
     """
     stem = f"{broker}_{username}" if username else broker
     return data_dir() / "mirrors" / f"{stem}.db"
 
 
 def account_states_dir() -> Path:
-    """Per-session account snapshots, one immutable uuid-named file each."""
+    """Per-session account snapshots, one immutable uuid-named file each.
+
+    Warnings
+    --------
+    Creates the directory if missing.
+    """
     d = data_dir() / "account_states"
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -116,6 +162,10 @@ def reports_dir() -> Path:
     Data, not cache: a report describes one run of a strategy against one
     account state, and neither can be reconstructed once the account has moved
     on -- so unlike the price cache, deleting this loses something.
+
+    Warnings
+    --------
+    Creates the directory if missing.
     """
     d = data_dir() / "reports"
     d.mkdir(parents=True, exist_ok=True)
@@ -123,14 +173,24 @@ def reports_dir() -> Path:
 
 
 def form_state_dir() -> Path:
-    """Remembered answers for pkgs.ui forms, keyed by schema stem."""
+    """Remembered answers for pkgs.ui forms, keyed by schema stem.
+
+    Warnings
+    --------
+    Creates the directory if missing.
+    """
     d = state_dir() / "form_state"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def log_path(name: str) -> Path:
-    """A named log file, e.g. log_path("cjtrade_system.log")."""
+    """A named log file, e.g. log_path("cjtrade_system.log").
+
+    Warnings
+    --------
+    Creates the log directory if missing (not the file).
+    """
     return log_dir() / name
 
 

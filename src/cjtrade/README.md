@@ -21,13 +21,6 @@ Commonly-used analytics methods, grouped by the kind of question they answer.
   quantstats tearsheets and multi-strategy comparison reports built from its
   results.
 
-## `api/`
-
-A deliberately small, friendly surface (`beginner.py`) for someone at a REPL
-who wants to buy something without first learning what an `AccountClient` is.
-It holds a broker session and places orders itself, which is why strategies use
-`strategy/authoring.py` instead.
-
 ## `brokers/`
 
 **Integration with each broker's API** — Sinopac (永豐金證券), Cathay

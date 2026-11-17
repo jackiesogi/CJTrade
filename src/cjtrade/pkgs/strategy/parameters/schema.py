@@ -270,7 +270,8 @@ def get_param_range(key: str) -> Dict[str, Any]:
     Returns
     -------
     dict
-        Dict with 'min', 'max', 'step', 'type'
+        Dict with 'min', 'max', 'step', 'type' and 'default'; empty if the
+        key is unknown or fixed.
     """
     if key not in PARAM_SCHEMA or not can_optimize(key):
         return {}

@@ -68,6 +68,11 @@ class _SimAccount:
     # ------------------------------------------------------------------
 
     def positions_list(self, price_map: Dict[str, float]) -> List[Dict]:
+        """Return open positions valued at `price_map`.
+
+        Symbols missing from `price_map` are valued at their average cost.
+        Quantities are in shares.
+        """
         result = []
         for sym, pos in self._positions.items():
             if pos["quantity"] <= 0:
@@ -86,6 +91,7 @@ class _SimAccount:
         return result
 
     def equity(self, price_map: Dict[str, float]) -> float:
+        """Return cash plus position value at `price_map`, rounded to 2 decimals."""
         pos_value = sum(
             price_map.get(sym, p["avg_cost"]) * p["quantity"]
             for sym, p in self._positions.items()
@@ -100,6 +106,13 @@ class _SimAccount:
     def buy(self, symbol: str, qty: int, price: float,
             timestamp: datetime, reason: str = "") -> Optional[Fill]:
         # print(f"Attempting to BUY {qty} shares of {symbol} at {price} TWD/share")
+        """Simulate a buy of `qty` shares at `price` after costs.
+
+        Returns
+        -------
+        Fill or None
+            None if `qty` <= 0 or the balance cannot cover notional plus commission.
+        """
         if qty <= 0:
             return None
         adj_price, notional, commission, tax = self._cost_model.buy_total(price, qty, symbol)
@@ -127,6 +140,13 @@ class _SimAccount:
 
     def sell(self, symbol: str, qty: int, price: float,
              timestamp: datetime, reason: str = "") -> Optional[Fill]:
+        """Simulate a sell of `qty` shares at `price` after costs.
+
+        Returns
+        -------
+        Fill or None
+            None if `qty` <= 0 or the position is smaller than `qty`.
+        """
         pos = self._positions.get(symbol)
         if not pos or pos["quantity"] < qty or qty <= 0:
             log.debug(f"[Engine] SELL rejected – no / insufficient position in {symbol}")
@@ -170,17 +190,25 @@ class BacktestEngine:
     Parameters
     ----------
     kbars : list[Kbar]
-        Pre-fetched bars, sorted ascending by timestamp.
+        Pre-fetched bars; the engine sorts them ascending by timestamp.
         May contain multiple symbols – the engine splits them automatically.
     symbol : str, optional
-        If provided, filter kbars to only this symbol before running.
-        Leave as None to pass all symbols to the strategy.
+        If provided, every bar is tagged with this symbol before running
+        (overriding the bar's own symbol). Leave as None to pass all symbols
+        to the strategy.
     initial_balance : float
         Starting cash in TWD.
     params : dict, optional
         Passed verbatim as ``ctx.params`` to every strategy call.
     session_id : str, optional
         Stored in the returned BacktestResult for traceability.
+    cost_model : CostModel, optional
+        Commission, tax and slippage model; defaults to ``CostModel()``.
+
+    Raises
+    ------
+    ValueError
+        If any bar has no symbol after tagging.
     """
 
     def __init__(
@@ -221,7 +249,13 @@ class BacktestEngine:
     # ------------------------------------------------------------------
 
     def run(self, strategy: BaseStrategy) -> BacktestResult:
-        """Run the strategy over all bars and return a BacktestResult."""
+        """Run the strategy over all bars and return a BacktestResult.
+
+        Raises
+        ------
+        ValueError
+            If there are no bars.
+        """
         if not self.kbars:
             raise ValueError("kbars list is empty – nothing to backtest.")
 

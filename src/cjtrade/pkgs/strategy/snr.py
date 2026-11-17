@@ -42,12 +42,27 @@ class SupportResistanceStrategy(BaseStrategy):
     - SELL when price approaches resistance (from below)
     - Optional: BUY on resistance breakout (if breakout_mode=True)
 
-    Parameters (constructor or via ctx.params)
-    - lookback_days: Number of days to look back for S/R levels (default: 20)
-    - support_threshold_pct: How close to support before buying (e.g. 0.01 = 1%)
-    - resistance_threshold_pct: How close to resistance before selling
-    - breakout_mode: If True, also buy when price breaks above resistance
-    - max_position_pct: Max position size as fraction of equity
+    Parameters
+    ----------
+    lookback_days : int, optional
+        Number of days to look back for S/R levels (default: 20).
+    support_threshold_pct : float, optional
+        How close to support before buying (e.g. 0.01 = 1%).
+    resistance_threshold_pct : float, optional
+        How close to resistance before selling.
+    breakout_mode : bool, optional
+        If True, also buy when price breaks above resistance.
+    max_position_pct : float, optional
+        Max position size as fraction of equity.
+
+    Notes
+    -----
+    All can also be set via ctx.params (`sr__*`, `risk__max_position_pct`).
+
+    Warnings
+    --------
+    `lookback_days` is converted to bars with a fixed bars-per-day table keyed
+    on `sr__interval` (default 1m); a wrong hint gives a wrong window.
     """
 
     name = "SNR"
@@ -73,6 +88,7 @@ class SupportResistanceStrategy(BaseStrategy):
         self._bars_per_day: int = 270  # default for 1m bars, will auto-detect
 
     def on_start(self, ctx: StrategyContext) -> None:
+        """Read parameters from ctx.params and set bars-per-day from `sr__interval`."""
         p = ctx.params
         # Support both old and new param names for backward compatibility
         self._lookback_days = int(p.get("sr__lookback_days", p.get("sr_lookback_days", self._lookback_days)))
@@ -102,7 +118,13 @@ class SupportResistanceStrategy(BaseStrategy):
         )
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
-        """Emit signals based on support/resistance levels."""
+        """Emit signals based on support/resistance levels.
+
+        Returns
+        -------
+        list of Signal
+            Empty until `lookback_days * bars_per_day` bars have been seen.
+        """
         prices = ctx.prices(bar.symbol)
 
         # Need enough history (based on detected/configured bars_per_day)

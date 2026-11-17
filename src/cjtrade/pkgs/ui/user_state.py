@@ -1,7 +1,8 @@
 """
 UserState — per-schema local persistence.
 
-Reads and writes ``~/.config/cjtrade/form_state/{schema_stem}.json``.
+Reads and writes ``{schema_stem}.json`` in ``cjtrade.pkgs.paths.form_state_dir()``
+(formerly ``~/.config/cjtrade/form_state/``).
 Only fields that declare ``persist_key`` in the TOML are persisted.
 
 Priority reminder (enforced in FormField.resolved_default):
@@ -27,14 +28,18 @@ def _state_dir() -> Path:
 
 
 class UserState:
-    """
-    Thin JSON key-value store scoped to one schema.
+    """Thin JSON key-value store scoped to one schema.
 
     Parameters
     ----------
-    schema_stem:
+    schema_stem : str
         Used as the file name — e.g. ``"poc_default"`` →
-        ``~/.config/cjtrade/form_state/poc_default.json``.
+        ``<form_state_dir>/poc_default.json``.
+
+    Warnings
+    --------
+    Construction creates the form state directory if missing; an unreadable
+    or corrupt state file is treated as empty.
     """
 
     def __init__(self, schema_stem: str) -> None:
@@ -51,15 +56,20 @@ class UserState:
         return {}
 
     def save(self, results: dict[str, Any], persist_map: dict[str, str]) -> None:
-        """
-        Persist values from *results* whose field name appears in *persist_map*.
+        """Persist values from *results* whose field name appears in *persist_map*.
+
+        None values are not saved.
 
         Parameters
         ----------
-        results:
+        results : dict
             The dict returned by a renderer (field_name → value).
-        persist_map:
+        persist_map : dict
             ``{field_name: persist_key}`` — built by FormEngine from the schema.
+
+        Warnings
+        --------
+        Overwrites the state file on disk.
         """
         for field_name, key in persist_map.items():
             if field_name in results and results[field_name] is not None:

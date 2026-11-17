@@ -10,6 +10,26 @@ from cjtrade.pkgs.models.order import *
 
 # Module-level connect functions
 def connect_sqlite(database: str = ":memory:"):
+    """Open a SQLite database and wrap it in a `SqliteDatabaseConnection`.
+
+    Opened with ``check_same_thread=False`` so broker callbacks on other
+    threads can use it.
+
+    Parameters
+    ----------
+    database : str
+        File path (``~`` is expanded) or ``":memory:"``.
+
+    Returns
+    -------
+    SqliteDatabaseConnection or None
+        None if a ConnectionError was caught; the error is printed.
+
+    Warnings
+    --------
+    Creates the parent directory of `database` if missing, and the
+    database file itself.
+    """
     import sqlite3
     from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
 
@@ -42,6 +62,20 @@ def connect_sqlite(database: str = ":memory:"):
 DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT = "./src/cjtrade/pkgs/db/sql/create_arenax_local_price_db.sql"
 
 def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script_path: str = None):
+    """Create the ArenaX local price tables by running a SQL script.
+
+    Parameters
+    ----------
+    conn : DatabaseConnection, optional
+        Target database; does nothing if None.
+    script_path : str, optional
+        Defaults to `DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT`, which is relative
+        to the current working directory.
+
+    Warnings
+    --------
+    Writes to the database. Errors are printed, not raised.
+    """
     if conn is None:
         return
     if script_path is None:
@@ -98,10 +132,21 @@ def compute_missing_ranges(conn: DatabaseConnection,
                            end_ts: int) -> list[tuple[int, int]]:
     """Return list of (start_ts, end_ts) sub-intervals of [start_ts, end_ts] NOT in cache.
 
-    Args:
-        start_ts / end_ts: Unix epoch seconds (inclusive on both ends).
-    Returns:
-        List of gap intervals that need to be fetched.
+    Parameters
+    ----------
+    conn : DatabaseConnection
+        Database holding ``arenax_symbol_coverage``.
+    symbol : str
+        Ticker.
+    timeframe : str
+        Bar timeframe, e.g. ``"1m"``.
+    start_ts, end_ts : int
+        Unix epoch seconds (inclusive on both ends).
+
+    Returns
+    -------
+    list of tuple of int
+        Gap intervals that need to be fetched.
     """
     covered = get_coverage_ranges(conn, symbol, timeframe)
     gaps: list[tuple[int, int]] = []
@@ -132,6 +177,12 @@ def upsert_coverage_range(conn: DatabaseConnection,
       2. Find all rows (including the new one) that overlap/touch the new interval.
       3. Merge them into a single row; delete the originals.
     This keeps the table tidy even after many incremental fetches.
+    Does nothing if ``start_ts > end_ts``.
+
+    Warnings
+    --------
+    Inserts, updates and deletes rows in ``arenax_symbol_coverage`` and
+    commits. ``last_checked`` and ``created_at`` come from the wall clock.
     """
     if start_ts > end_ts:
         return
@@ -185,7 +236,32 @@ def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
                                           overwrite: bool = True):
     """Insert a single Kbar into the local prices table.
 
-    Returns True on success, False on failure.
+    Parameters
+    ----------
+    conn : DatabaseConnection, optional
+        Target database.
+    symbol : str, optional
+        Ticker.
+    price : Kbar, optional
+        The bar to store.
+    timeframe : str
+        Bar timeframe, ``"1m"`` by default.
+    source : str
+        Data source label, part of the row's key.
+    overwrite : bool
+        If True, replace an existing row with the same
+        (symbol, timeframe, ts, source); otherwise keep it.
+
+    Returns
+    -------
+    bool
+        True on success, False on failure or if `conn`, `symbol` or
+        `price` is None.
+
+    Warnings
+    --------
+    Writes and commits. ``fetched_at`` is the wall-clock time. Errors are
+    printed, not raised.
     """
     if conn is None or symbol is None or price is None:
         return False
@@ -230,6 +306,25 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
                                          timeframe: str = "1m",
                                          start_ts: datetime = None,
                                          end_ts: datetime = None) -> List[Kbar]:
+    """Return the stored bars of `symbol` between `start_ts` and `end_ts`, oldest first.
+
+    Parameters
+    ----------
+    conn : DatabaseConnection, optional
+        Source database; returns ``[]`` if None.
+    symbol : str, optional
+        Ticker; returns ``[]`` if None.
+    timeframe : str
+        Bar timeframe, ``"1m"`` by default.
+    start_ts, end_ts : datetime, optional
+        Inclusive bounds; None leaves that side open.
+
+    Returns
+    -------
+    list of Kbar
+        Timestamps are naive local time (``datetime.fromtimestamp``);
+        NULL prices and volumes become 0. Empty on error (printed).
+    """
     results: List[Kbar] = []
     if conn is None or symbol is None:
         return results
@@ -267,6 +362,20 @@ from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
 
 DEFAUT_PREPARE_TABLE_SCRIPT="./src/cjtrade/pkgs/db/sql"
 def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str = None):
+    """Create the CJTrade tables by running every ``.sql`` file in `sql_dir`.
+
+    Parameters
+    ----------
+    conn : SqliteDatabaseConnection, optional
+        Target database; does nothing if None.
+    sql_dir : str, optional
+        Defaults to `DEFAUT_PREPARE_TABLE_SCRIPT`, which is relative to the
+        current working directory.
+
+    Warnings
+    --------
+    Writes to the database. Errors are printed, not raised.
+    """
     # Check if {orders,fills} table exists, if not create one
     if conn is None:
         return
@@ -290,6 +399,26 @@ def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
                                   cj_order_id: str = None,
                                   bkr_order_id: str = None,
                                   broker: str = None):
+    """Record which broker order id a CJ order id maps to, in ``CJ_OrderMap``.
+
+    This mapping is the only link from a CJTrade order to the broker's order.
+
+    Parameters
+    ----------
+    conn : SqliteDatabaseConnection, optional
+        Target database; does nothing if None.
+    cj_order_id : str, optional
+        CJTrade order id.
+    bkr_order_id : str, optional
+        Broker order id.
+    broker : str, optional
+        Broker name.
+
+    Warnings
+    --------
+    Writes and commits. Errors are printed, not raised, so the caller is
+    not told when a mapping is lost.
+    """
     if conn is None:
         return
     try:
@@ -302,6 +431,14 @@ def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
         print(f"Failed to insert order mapping for CJ order {cj_order_id} in local DB: {e}")
 
 def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id: str = None) -> str:
+    """Return the broker order id mapped to `cj_order_id`.
+
+    Returns
+    -------
+    str or None
+        None if `conn` is None, no mapping exists, or the query fails
+        (the error is printed).
+    """
     if conn is None:
         return None
     try:
@@ -319,6 +456,14 @@ def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id:
         return None
 
 def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id: str = None) -> str:
+    """Return the CJ order id mapped to `bkr_order_id`.
+
+    Returns
+    -------
+    str or None
+        None if `conn` is None, no mapping exists, or the query fails
+        (the error is printed).
+    """
     if conn is None:
         return None
     try:
@@ -337,6 +482,21 @@ def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id:
 def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
                            username: str = 'user_unknown',
                            order: Order = None):
+    """Insert `order` into the ``orders`` table with status ``'PLACED'``.
+
+    Parameters
+    ----------
+    conn : SqliteDatabaseConnection, optional
+        Target database; does nothing if None.
+    username : str
+        Stored as ``user_id``.
+    order : Order
+        Required despite the None default.
+
+    Warnings
+    --------
+    Writes and commits. Database errors are printed, not raised.
+    """
     if conn is None:
         return
 
@@ -361,6 +521,15 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
 
 
 def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: Order = None):
+    """Legacy form of `insert_new_order_to_db`.
+
+    Stores ``user_id='user_123'`` and status ``'NEW'``.
+
+    Warnings
+    --------
+    Legacy and unused in this repo. Writes and commits; errors are printed,
+    not raised.
+    """
     if conn is None:
         return
 
@@ -384,6 +553,25 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
         print(f"Failed to insert order {order.id} in local DB: {e}")
 
 def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str, updated_at: datetime = datetime.utcnow() + timedelta(hours=8)):
+    """Set ``status`` and ``updated_at`` of order `oid` in the ``orders`` table.
+
+    Parameters
+    ----------
+    conn : SqliteDatabaseConnection
+        Target database; does nothing if None.
+    oid : str
+        CJ order id.
+    status : str
+        New status.
+    updated_at : datetime, optional
+        Stored as ``"%Y-%m-%d %H:%M:%S"``.
+
+    Warnings
+    --------
+    The `updated_at` default (``datetime.utcnow() + 8h``) is evaluated once
+    at import time, so every call that omits it stores the module load time.
+    Writes and commits; errors are printed, not raised.
+    """
     if conn is None:
         return
 

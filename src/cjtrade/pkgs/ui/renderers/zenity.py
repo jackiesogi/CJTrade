@@ -23,14 +23,35 @@ def _zenity(*args: str, **kwargs) -> subprocess.CompletedProcess:
 
 
 class ZenityRenderer(FormRenderer):
-    """
-    Renders each field as a native GTK dialog using ``zenity``.
+    """Renders each field as a native GTK dialog using ``zenity``.
 
     Requires ``zenity`` to be installed on the system.
     If the user closes/cancels any non-optional dialog the process exits.
+
+    Warnings
+    --------
+    Cancelling a required text, number, multiselect, date or file dialog calls
+    ``sys.exit(0)``; a cancelled select returns the default instead.
     """
 
     def render(self, schema: FormSchema) -> dict[str, Any]:
+        """Show one zenity dialog per field, in order.
+
+        Parameters
+        ----------
+        schema : FormSchema
+            The form to show.
+
+        Returns
+        -------
+        dict
+            ``{field_name: value}``, without display-only fields.
+
+        Raises
+        ------
+        RuntimeError
+            If the ``zenity`` binary is not found.
+        """
         results: dict[str, Any] = {}
         for f in schema.fields:
             value = self._render_field(f)

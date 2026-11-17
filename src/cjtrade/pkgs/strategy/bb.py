@@ -31,6 +31,11 @@ class BollingerStrategy(BaseStrategy):
     Matches the behavior of arenax.py's calculate_bollinger_bands_mock().
     Buys when price touches lower band, sells when it touches upper band.
     Keeps at most one position (no pyramiding).
+
+    Warnings
+    --------
+    `bb__window_size` is counted in bars, so the same value means a different
+    time span on each bar interval.
     """
     name = "BB"
     long_name = "BollingerBands"
@@ -57,6 +62,12 @@ class BollingerStrategy(BaseStrategy):
     _last_reason = "not started"
 
     def on_start(self, ctx):
+        """Read parameters from `ctx.params` and reset monitor state.
+
+        Reads `bb__window_size` (default 20), `bb__min_width_pct` (0.01),
+        `bb__std_dev` (2.0) and `risk__max_position_pct` (0.05); the older
+        single-underscore names are accepted as fallbacks.
+        """
         p = ctx.params
         # Read from params (support both old and new param names for backward compatibility)
         self._window = int(p.get("bb__window_size", p.get("bb_window_size", 20)))
@@ -151,6 +162,21 @@ class BollingerStrategy(BaseStrategy):
         }
 
     def on_bar(self, bar, ctx):
+        """Buy on a lower-band touch, sell on an upper-band touch.
+
+        Parameters
+        ----------
+        bar : Kbar
+            The bar that just closed.
+        ctx : StrategyContext
+            Account and price history as of this bar.
+
+        Returns
+        -------
+        list
+            At most one signal; empty while warming up, in a squeeze, or when
+            no touch is actionable.
+        """
         self._n_bars += 1
         prices = ctx.prices(bar.symbol)
         # Need enough data for TA-Lib BB calculation

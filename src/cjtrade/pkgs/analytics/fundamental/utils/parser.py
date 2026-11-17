@@ -18,14 +18,18 @@ class TWSEDataParser:
 
     @staticmethod
     def parse_date(date_str: str, formats: List[str] = None) -> Optional[datetime]:
-        """
-        解析日期字串
+        """解析日期字串。
 
-        Args:
-            date_str: 日期字串
-            formats: 日期格式列表，預設為常見的台灣日期格式
+        Parameters
+        ----------
+        date_str : str
+            日期字串
+        formats : List[str], optional
+            日期格式列表，預設為常見的台灣日期格式
 
-        Returns:
+        Returns
+        -------
+        datetime or None
             datetime物件，解析失敗返回None
         """
         if not date_str:
@@ -51,14 +55,18 @@ class TWSEDataParser:
 
     @staticmethod
     def parse_float(value: Union[str, int, float], default: Optional[float] = None) -> Optional[float]:
-        """
-        安全解析數值
+        """安全解析數值。
 
-        Args:
-            value: 要解析的值
-            default: 解析失敗時的預設值
+        Parameters
+        ----------
+        value : str, int or float
+            要解析的值
+        default : float, optional
+            解析失敗時的預設值
 
-        Returns:
+        Returns
+        -------
+        float or None
             float值，解析失敗返回default
         """
         if value is None or value == '':
@@ -92,14 +100,18 @@ class TWSEDataParser:
 
     @staticmethod
     def parse_int(value: Union[str, int], default: Optional[int] = None) -> Optional[int]:
-        """
-        安全解析整數
+        """安全解析整數。
 
-        Args:
-            value: 要解析的值
-            default: 解析失敗時的預設值
+        Parameters
+        ----------
+        value : str or int
+            要解析的值
+        default : int, optional
+            解析失敗時的預設值
 
-        Returns:
+        Returns
+        -------
+        int or None
             int值，解析失敗返回default
         """
         if value is None or value == '':
@@ -121,15 +133,20 @@ class TWSEDataParser:
 
     @staticmethod
     def safe_get(data: Dict[str, Any], key: str, default: Any = None) -> Any:
-        """
-        安全獲取字典值，支援多種key格式
+        """安全獲取字典值，支援多種key格式。
 
-        Args:
-            data: 資料字典
-            key: 要獲取的key
-            default: 預設值
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            資料字典
+        key : str
+            要獲取的key
+        default : Any
+            預設值
 
-        Returns:
+        Returns
+        -------
+        Any
             字典中的值或預設值
         """
         if not isinstance(data, dict):
@@ -158,13 +175,16 @@ class TWSEDataParser:
 
     @staticmethod
     def normalize_symbol(symbol: str) -> str:
-        """
-        正規化股票代號
+        """正規化股票代號。
 
-        Args:
-            symbol: 原始股票代號
+        Parameters
+        ----------
+        symbol : str
+            原始股票代號
 
-        Returns:
+        Returns
+        -------
+        str
             正規化後的股票代號
         """
         if not symbol:
@@ -181,13 +201,16 @@ class TWSEDataParser:
 
     @staticmethod
     def validate_symbol(symbol: str) -> bool:
-        """
-        驗證股票代號格式
+        """驗證股票代號格式。
 
-        Args:
-            symbol: 股票代號
+        Parameters
+        ----------
+        symbol : str
+            股票代號
 
-        Returns:
+        Returns
+        -------
+        bool
             是否為有效的股票代號
         """
         if not symbol:
@@ -212,13 +235,16 @@ class TWSEDataParser:
 
     @staticmethod
     def clean_company_name(name: str) -> str:
-        """
-        清理公司名稱
+        """清理公司名稱。
 
-        Args:
-            name: 原始公司名稱
+        Parameters
+        ----------
+        name : str
+            原始公司名稱
 
-        Returns:
+        Returns
+        -------
+        str
             清理後的公司名稱
         """
         if not name:
@@ -237,14 +263,18 @@ class TWSEDataParser:
 
     @staticmethod
     def categorize_announcement(title: str, content: str = "") -> str:
-        """
-        根據公告標題和內容分類
+        """根據公告標題和內容分類。
 
-        Args:
-            title: 公告標題
-            content: 公告內容
+        Parameters
+        ----------
+        title : str
+            公告標題
+        content : str
+            公告內容
 
-        Returns:
+        Returns
+        -------
+        str
             公告分類
         """
         if not title:

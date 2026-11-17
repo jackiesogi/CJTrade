@@ -21,14 +21,22 @@ class RoundTrip:
 
     Attributes
     ----------
-    symbol      : stock ticker
-    entry_time  : ISO timestamp of the entry fill
-    entry_price : fill price of the entry
-    exit_time   : ISO timestamp of the exit fill
-    exit_price  : fill price of the exit
-    quantity    : number of shares matched in this pair
-    pnl         : (exit_price - entry_price) * quantity  (long only)
-    holding_days: calendar days between entry and exit
+    symbol : str
+        Stock ticker.
+    entry_time : str
+        ISO timestamp of the entry fill.
+    entry_price : float
+        Fill price of the entry.
+    exit_time : str
+        ISO timestamp of the exit fill.
+    exit_price : float
+        Fill price of the exit.
+    quantity : int
+        Number of shares matched in this pair.
+    pnl : float
+        ``(exit_price - entry_price) * quantity`` (long only).
+    holding_days : int
+        Calendar days between entry and exit.
     """
     symbol:       str
     entry_time:   str
@@ -110,10 +118,10 @@ class BacktestResult:
         return minute_eq.resample("1D").last().dropna()
 
     def to_returns(self) -> "pd.Series":
-        """Returns pd.Series suitable for quantstats.
+        """Return the returns as a pd.Series suitable for quantstats.
 
         Uses daily returns when the backtest spans multiple calendar days.
-        Falls back to minute-level returns (annualised at 270 trading days ×
+        Falls back to minute-level returns (annualised at 252 trading days ×
         270 minutes/day) for single-day or intraday backtests.
         """
         daily = self.to_daily_equity()
@@ -137,7 +145,15 @@ class BacktestResult:
     # quantstats helpers
     # ------------------------------------------------------------------
     def to_quantstats(self):
-        """Run quantstats full report.  Requires ``quantstats`` to be installed."""
+        """Run the quantstats full report.  Requires ``quantstats`` to be installed.
+
+        Raises
+        ------
+        ImportError
+            If quantstats is not installed.
+        ValueError
+            If ``equity_curve`` is empty.
+        """
         try:
             import quantstats as qs
         except ImportError:
@@ -148,16 +164,19 @@ class BacktestResult:
         qs.reports.full(returns, periods_per_year=self._returns_periods_per_year)
 
     def sharpe(self) -> float:
+        """Return the Sharpe ratio of `to_returns` via quantstats."""
         import quantstats as qs
         return qs.stats.sharpe(self.to_returns(), periods=self._returns_periods_per_year)
 
     def annual_return(self) -> float:
+        """Return the annual growth rate (CAGR) of `to_returns` via quantstats."""
         import quantstats as qs
         # quantstats.stats.cagr() accepts 'periods' for annualisation in some versions
         # prefer 'periods' to remain compatible across quantstats versions
         return qs.stats.cagr(self.to_returns(), periods=self._returns_periods_per_year)
 
     def max_drawdown(self) -> float:
+        """Return the maximum drawdown of `to_returns` via quantstats."""
         import quantstats as qs
         return qs.stats.max_drawdown(self.to_returns())
 
@@ -242,7 +261,10 @@ class BacktestResult:
     def daily_summary(self) -> "pd.DataFrame":
         """DataFrame with one row per calendar day.
 
-        Columns: date, equity, daily_return, n_trades, traded_value
+        Returns
+        -------
+        pandas.DataFrame
+            Columns: date, equity, daily_return, n_trades, traded_value.
         """
         daily_eq = self.to_daily_equity()
         daily_ret = daily_eq.pct_change()
@@ -273,14 +295,38 @@ class BacktestResult:
     # Persistence
     # ------------------------------------------------------------------
     def save(self, path: str) -> None:
-        """Serialise to a pickle file."""
+        """Serialise to a pickle file.
+
+        Parameters
+        ----------
+        path : str
+            Destination file.
+
+        Warnings
+        --------
+        Writes `path`, overwriting any existing file.
+        """
         import pickle
         with open(path, "wb") as f:
             pickle.dump(self, f)
 
     @staticmethod
     def load(path: str) -> "BacktestResult":
-        """Deserialise from a pickle file."""
+        """Deserialise from a pickle file.
+
+        Parameters
+        ----------
+        path : str
+            File written by `save`.
+
+        Returns
+        -------
+        BacktestResult
+
+        Warnings
+        --------
+        Unpickling can run arbitrary code; load only files you trust.
+        """
         import pickle
         with open(path, "rb") as f:
             return pickle.load(f)

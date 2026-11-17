@@ -114,17 +114,32 @@ class StrategyContext:
     # ------------------------------------------------------------------
 
     def has_position(self, symbol: str) -> bool:
+        """True if `positions` holds a positive quantity of `symbol`."""
         return any(p["symbol"] == symbol and p["quantity"] > 0
                    for p in self.positions)
 
     def position_qty(self, symbol: str) -> int:
+        """Quantity held of `symbol`, or 0 if there is no position."""
         for p in self.positions:
             if p["symbol"] == symbol:
                 return p["quantity"]
         return 0
 
     def calc_qty(self, price: float, max_pct: float = 0.05) -> int:
-        """Return lot count that keeps position ≤ max_pct of current equity."""
+        """Return lot count that keeps position ≤ max_pct of current equity.
+
+        Parameters
+        ----------
+        price : float
+            Price per unit.
+        max_pct : float, optional
+            Fraction of equity to allocate.
+
+        Returns
+        -------
+        int
+            At least 1 if cash covers one unit at `price`, otherwise 0.
+        """
         if price <= 0 or self.equity <= 0:
             return 0
         max_value = self.equity * max_pct
@@ -142,7 +157,25 @@ class StrategyContext:
 
 @dataclass
 class Fill:
-    """Represents an executed trade returned to on_fill()."""
+    """Represents an executed trade returned to on_fill().
+
+    Parameters
+    ----------
+    symbol : str
+        Stock ticker.
+    action : str
+        'BUY' or 'SELL'.
+    quantity : int
+        Quantity filled.
+    price : float
+        Fill price.
+    timestamp : datetime
+        Fill time.
+    commission, tax, slippage_cost : float, optional
+        Costs charged on the fill.
+    reason : str, optional
+        Reason carried from the signal.
+    """
     symbol: str
     action: str          # 'BUY' | 'SELL'
     quantity: int

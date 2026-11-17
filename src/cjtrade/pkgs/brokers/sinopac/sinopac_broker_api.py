@@ -29,6 +29,24 @@ from cjtrade.pkgs.models.rank_type import *
 from cjtrade.pkgs.models.trade import *
 
 class SinopacBrokerAPI(BrokerAPIBase):
+    """Broker API for Sinopac, built on shioaji.
+
+    Parameters
+    ----------
+    **config
+        Required: ``api_key``, ``secret_key``, ``ca_path``, ``ca_passwd``.
+        Optional: ``simulation`` (default True), ``username`` (default
+        ``'user999'``), ``mirror_db_path``.
+
+    Raises
+    ------
+    ValueError
+        A required config key is missing.
+
+    Warnings
+    --------
+    With ``simulation=False`` every order method acts on a REAL account.
+    """
     def __init__(self, **config: Any):
         super().__init__(**config)
 
@@ -69,6 +87,19 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def connect(self) -> bool:
+        """Log in, activate the CA certificate and open the local mirror database.
+
+        Returns True at once if already connected.
+
+        Returns
+        -------
+        bool
+            True on success; errors are printed and give False.
+
+        Warnings
+        --------
+        Makes network calls and opens (creating if needed) the mirror database file.
+        """
         if self._connected:  # Avoid reconnecting
             return True
         try:
@@ -96,6 +127,14 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def disconnect(self) -> None:
+        """Log out of shioaji and close the mirror database.
+
+        Errors from either step are printed, not raised.
+
+        Warnings
+        --------
+        Makes a network call to Sinopac.
+        """
         if self._connected:
             try:
                 # NOTE: shioaji's C++ layer may raise pybind11::error_already_set
@@ -117,10 +156,32 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def is_connected(self) -> bool:
+        """Return whether the broker session is open.
+
+        Returns
+        -------
+        bool
+        """
         return self._connected
 
 
     def get_positions(self) -> List[Position]:
+        """Return current stock positions, quantities in shares.
+
+        Returns
+        -------
+        List[Position]
+            Empty if the API call fails (the error is printed).
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call. An API failure looks the same as an empty account.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -148,7 +209,21 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def get_balance(self) -> float:
-        """Get account balance"""
+        """Get account balance.
+
+        Returns
+        -------
+        float
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call to Sinopac.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -157,6 +232,32 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
+        """Return the latest bid/ask quote for a product.
+
+        Subscribes to bid/ask quotes, waits up to 5 seconds for one, then
+        unsubscribes.
+
+        Parameters
+        ----------
+        product : Product
+        intraday_odd : bool, optional
+            Subscribe to the intraday odd-lot book.
+
+        Returns
+        -------
+        BidAsk or None
+            None if no quote arrived within 5 seconds.
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes network calls, blocks for up to 5 seconds, and replaces the
+        shioaji bid/ask quote callback.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -217,6 +318,33 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         Those two callers now hand this an already-short range and the loop
         below runs once, so they are redundant rather than wrong.
+
+        Parameters
+        ----------
+        product : Product
+        start : str
+            Start date, ``YYYY-MM-DD``.
+        end : str
+            End date, ``YYYY-MM-DD``, exclusive.
+        interval : str, optional
+            e.g. '1m', '5m', '1h', '1d'. Bars other than '1m' are aggregated
+            from 1-minute bars.
+
+        Returns
+        -------
+        List[Kbar]
+            Empty if end is not after start.
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+        ValueError
+            The interval is not supported.
+
+        Warnings
+        --------
+        Makes one network call per 28-day window; any window failure is re-raised.
         """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -276,6 +404,28 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
     # Return close prices for given products at any time
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
+        """Return snapshots for the given products.
+
+        While the market is closed, results are cached per tuple of symbols;
+        the cache is cleared when the market is open.
+
+        Parameters
+        ----------
+        products : List[Product]
+
+        Returns
+        -------
+        List[Snapshot]
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call. Caching depends on the local wall clock.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -313,9 +463,13 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def register_order_callback(self, callback: OrderCallback) -> None:
-        """
-        Register callback for order status changes (including fills).
+        """Register callback for order status changes (including fills).
+
         Callback receives unified OrderEvent from CJ abstraction layer.
+
+        Warnings
+        --------
+        The first call installs a shioaji order callback. Prints debug output.
         """
         self._order_callbacks.append(callback)
         print(f"[DEBUG] Order callback registered. Total callbacks: {len(self._order_callbacks)}")
@@ -332,6 +486,32 @@ class SinopacBrokerAPI(BrokerAPIBase):
     def get_market_movers(self, top_n: int = 10,
                           by: RankType = RankType.PRICE_PERCENTAGE_CHANGE,
                           ascending: bool = True) -> Dict[str, Snapshot]:
+        """Return the top movers from the Sinopac scanner, keyed by product name.
+
+        Parameters
+        ----------
+        top_n : int, optional
+            Number of products to return.
+        by : RankType, optional
+            Ranking criterion.
+        ascending : bool, optional
+            Sort order.
+
+        Returns
+        -------
+        Dict[str, Snapshot]
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+        ValueError
+            The scanner or snapshot call failed.
+
+        Warnings
+        --------
+        Makes a network call to Sinopac.
+        """
 
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -356,10 +536,32 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
     # TODO: Remove comments when it is stable
     def place_order(self, order: Order) -> OrderResult:
-        """Place order
+        """Place an order on Sinopac.
+
         1. Convert CJ Order -> Sinopac order + Sinopac contract (product)
         2. Store the mapping between CJ ID and Sinopac order obj through cj_sj_order_map (in-memory dict) and DB (permanent storage)
         3. Place order via Sinopac API
+
+        Parameters
+        ----------
+        order : Order
+
+        Returns
+        -------
+        OrderResult
+            REJECTED with the error message if any step fails.
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+        NotImplementedError
+            The order type is GTC.
+
+        Warnings
+        --------
+        Places a REAL order on a real account unless ``simulation`` is True.
+        Also writes to the local mirror database.
         """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -396,6 +598,26 @@ class SinopacBrokerAPI(BrokerAPIBase):
     # submits immediately.  This method just calls sj.update_status() to refresh the
     # local order map – hence the more accurate name sync_state().
     def sync_state(self) -> List[OrderResult]:
+        """Refresh order status from Sinopac and return the orders still open.
+
+        Only orders in the in-memory order map are checked; filled, cancelled
+        and failed ones are left out.
+
+        Returns
+        -------
+        List[OrderResult]
+            On error, a single REJECTED OrderResult instead of a list.
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call, writes order status to the mirror database and
+        prints the order map.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
         try:
@@ -430,6 +652,29 @@ class SinopacBrokerAPI(BrokerAPIBase):
     # TODO: Currently CJ ID is not permanently stored, so sometimes we cannot find the order to cancel.
     # We need to find a better way to store the mapping (e.g. store in DB permanently instead of in-memory dict)
     def cancel_order(self, order_id: str) -> OrderResult:
+        """Cancel an order.
+
+        Parameters
+        ----------
+        order_id : str
+            The CJTrade order id.
+
+        Returns
+        -------
+        OrderResult
+            REJECTED with the reason if the order is not found, already final,
+            or the cancel fails.
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Cancels a REAL order on a real account unless ``simulation`` is True.
+        Also writes to the local mirror database.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -462,6 +707,22 @@ class SinopacBrokerAPI(BrokerAPIBase):
     # This is quite important since other equivalent feature have been
     # abstracted in cjtrade-based dataclass. (Don't simply use List[Dict])
     def list_orders(self) -> List[Trade]:
+        """Return the account's orders as Trade objects.
+
+        Returns
+        -------
+        List[Trade]
+            Empty if the API call fails (the error is printed).
+
+        Raises
+        ------
+        ConnectionError
+            Not connected.
+
+        Warnings
+        --------
+        Makes a network call to Sinopac.
+        """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
 
@@ -504,6 +765,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def is_market_open(self) -> bool:
+        """Return whether the local time is on a weekday, 09:00-13:30.
+
+        Returns
+        -------
+        bool
+
+        Warnings
+        --------
+        Uses the local wall clock. Holidays are not considered.
+        """
         # Check within 9AM - 13:30PM on weekdays (Mon-Fri)
         now = datetime.now()
         if now.weekday() >= 5:  # Saturday=5, Sunday=6
@@ -521,6 +792,10 @@ class SinopacBrokerAPI(BrokerAPIBase):
         branching on the broker name. Reporting the live case as the 1x,
         never-paused instance of the same contract is what lets a caller scale
         its own sleeps uniformly.
+
+        Warnings
+        --------
+        Uses the local wall clock.
         """
         now = datetime.now()
         return {
@@ -534,12 +809,40 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def get_broker_name(self) -> str:
+        """Return ``'sinopac'``."""
         return "sinopac"
 
 
     ##### SIMPLE HIGH-LEVEL METHODS (START) #####
     # Simple API with default config
     def buy_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
+        """Place a limit buy order for a stock.
+
+        Builds a TSE stock order with LMT price type and ROD order type, places
+        it, then calls sync_state() to update the returned status.
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Accepted but not used.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        Places a REAL order on a real account unless ``simulation`` is True.
+        Also writes to the local mirror database.
+        """
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,  # Assuming TSE for simplicity
@@ -572,6 +875,33 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
 
     def sell_stock(self, symbol: str, quantity: int, price: float, intraday_odd: bool = True, opt_field: dict = None) -> OrderResult:
+        """Place a limit sell order for a stock.
+
+        Builds a TSE stock order with LMT price type and ROD order type, places
+        it, then calls sync_state() to update the returned status.
+
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol, e.g. ``'2330'``.
+        quantity : int
+            Order quantity.
+        price : float
+            Limit price.
+        intraday_odd : bool, optional
+            True for an intraday odd-lot order, False for a board-lot order.
+        opt_field : dict, optional
+            Accepted but not used.
+
+        Returns
+        -------
+        OrderResult
+
+        Warnings
+        --------
+        Places a REAL order on a real account unless ``simulation`` is True.
+        Also writes to the local mirror database.
+        """
         product = Product(
             type=ProductType.STOCK,
             exchange=Exchange.TSE,

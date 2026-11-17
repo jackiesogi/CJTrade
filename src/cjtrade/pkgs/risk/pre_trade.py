@@ -68,6 +68,13 @@ class RiskGate:
     """The one place an order can be refused before it reaches the broker.
 
     Not thread-safe: drive it from the single task that owns execution.
+
+    Parameters
+    ----------
+    limits : RiskLimits
+        Which controls are on.
+    initial_equity : float
+        Equity the ``max_loss_pct`` kill switch is measured against.
     """
 
     def __init__(self, limits: RiskLimits, initial_equity: float) -> None:
@@ -96,10 +103,12 @@ class RiskGate:
 
     @property
     def halted(self) -> bool:
+        """True once trading has been halted."""
         return self._halt_reason is not None
 
     @property
     def halt_reason(self) -> Optional[str]:
+        """Why trading was halted, or None."""
         return self._halt_reason
 
     def exposure(self, bot_id: str) -> float:

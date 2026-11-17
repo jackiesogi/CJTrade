@@ -150,6 +150,11 @@ def get_interval_presets(interval: str) -> dict:
     ------
     ValueError
         If interval is not supported
+
+    Warnings
+    --------
+    Window parameters are in bars, so each interval has its own values; do not
+    reuse one interval's preset on another.
     """
     if interval not in INTERVAL_PRESETS:
         raise ValueError(

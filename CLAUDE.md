@@ -86,7 +86,6 @@ src/cjtrade/
     paths.py        where user data lives (platformdirs)
     llm/            unified LLM client (gemini / azure / ollama / mock)
     chart/          plotly kbar charts
-    api/beginner.py Pine-Script-like facade for the strategy editor
   apps/
     ArenaX/         the simulated broker (server + 4 backends + market clock + price db)
     cjtrade_shell/  interactive shell, CommandBase subclass per command
@@ -306,7 +305,7 @@ client.disconnect()
 ```
 
 `BrokerType.MOCK` is **broken** (`cjtrade.pkgs.brokers.arenax.legacy` does not
-exist). It is still the default in `pkgs/api/beginner.py:create_client`.
+exist).
 
 ### Kbar
 

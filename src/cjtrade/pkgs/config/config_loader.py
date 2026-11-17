@@ -26,7 +26,7 @@ Differences from git, deliberately kept for now
 overwrite, so the most specific wins by being applied last. Here the most
 specific wins by being applied *first*. The resolved value usually agrees, but
 the mechanism is inverted, and flipping it would silently change what every
-existing deployment resolves to. Tracked in TODO.md under "Config provenance",
+existing deployment resolves to. Tracked in ref/TODO.md under "Config provenance",
 together with recording which file each key came from.
 
 Within a directory the order used to be whatever ``rglob`` returned, i.e. the
@@ -44,9 +44,15 @@ from dotenv import load_dotenv
 
 # TODO: Implement a hierarchical configuration structure
 # e.g. a setting called "simulation.playback_speed"
-# See TODO.md "Config provenance" — hierarchical keys and provenance are two
+# See ref/TODO.md "Config provenance" — hierarchical keys and provenance are two
 # sides of the same change.
 class CJTradeConfiguration:
+    """Placeholder for a hierarchical configuration object.
+
+    Warnings
+    --------
+    Not implemented; the class is empty.
+    """
     pass
 
 
@@ -63,6 +69,10 @@ def default_config_paths() -> List[Path]:
 
     Not a module-level constant: ``paths.config_dir()`` creates the directory,
     and evaluating this at import time would create it just by importing.
+
+    Warnings
+    --------
+    Calling this creates the user config directory if it does not exist.
     """
     from cjtrade.pkgs import paths
 
@@ -109,9 +119,25 @@ def config_sources(
     """The files that would be loaded, in precedence order. Loads nothing.
 
     Useful on its own for answering "which files is this process reading?", and
-    it is the ordering the provenance work in TODO.md will attach sources to.
+    it is the ordering the provenance work in ref/TODO.md will attach sources to.
 
     Pass None to mean "no sources at all"; omit the argument for the defaults.
+
+    Parameters
+    ----------
+    paths_ : iterable of str or Path, optional
+        Search roots: files, directories or glob patterns.
+    recursive_pattern : str
+        Glob applied when a root is a directory.
+
+    Returns
+    -------
+    list of Path
+        Each resolved file appears once, at its first position.
+
+    Warnings
+    --------
+    With the default roots, creates the user config directory if missing.
     """
     if paths_ is None:
         return []
@@ -134,15 +160,26 @@ def load_supported_config_files(
 ) -> List[str]:
     """Load every discovered config file into ``os.environ``.
 
-    Args:
-        paths: Search roots, most specific first. Omit for
-            ``default_config_paths()``; pass None to load nothing.
-        recursive_pattern: Glob applied when a root is a directory.
-        override: Leave at False to keep the first-wins rule. Passing True
-            inverts the precedence of every source at once, so do it knowingly.
+    Parameters
+    ----------
+    paths : iterable of str or Path, optional
+        Search roots, most specific first. Omit for
+        ``default_config_paths()``; pass None to load nothing.
+    recursive_pattern : str
+        Glob applied when a root is a directory.
+    override : bool
+        Leave at False to keep the first-wins rule. Passing True
+        inverts the precedence of every source at once, so do it knowingly.
 
-    Returns:
+    Returns
+    -------
+    list of str
         The loaded file paths as strings, in the order they were applied.
+
+    Warnings
+    --------
+    Mutates ``os.environ`` for the whole process. With the default roots,
+    also creates the user config directory if missing.
     """
     loaded: List[str] = []
     for f in config_sources(paths, recursive_pattern):
@@ -158,7 +195,12 @@ def describe_sources(
     paths=_UNSET,
     recursive_pattern: str = SUPPORTED_FILE_PATTERN,
 ) -> str:
-    """Human-readable listing of the search order, for diagnostics."""
+    """Human-readable listing of the search order, for diagnostics.
+
+    Warnings
+    --------
+    With the default roots, creates the user config directory if missing.
+    """
     files = config_sources(paths, recursive_pattern)
     if not files:
         return "No config files found."
