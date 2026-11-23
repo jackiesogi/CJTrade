@@ -12,8 +12,8 @@ same `AccountClient` code talks to both.
 ArenaX provides:
 
 - **Market data**
-  Prices come from either a real broker API or yfinance, and are cached locally
-  so a repeated run does not refetch them.
+  Prices come from any `MarketData` source (Sinopac, FinMind, yfinance, or one
+  you write), and are cached locally so a repeated run does not refetch them.
 
 - **Price data playback**
   Time in the virtual market is under your control. You set where the timeline
@@ -39,16 +39,30 @@ There are 3 modes in ArenaX, categorised by their price data source and use
 case. Each one ships its own `configs/<mode>.cjsys` and listens on its own port,
 so two modes can run side by side without fighting over one.
 
-| Mode | Price Data Source | Default port | Typical Use Case |
-| ---- | ----------------- | ------------ | ---------------- |
+| Mode | Default price sources | Default port | Typical Use Case |
+| ---- | --------------------- | ------------ | ---------------- |
 | `demo` (default) | `yfinance` | 8801 | Lightweight simulation **WITHOUT** needing a broker account |
-| `backtest` | Custom broker API | 8802 | Historical market replay for backtesting |
-| `paper` | Custom broker API | 8803 | Paper trading with real-time market data |
+| `backtest` | `sinopac,yfinance` | 8802 | Historical market replay for backtesting |
+| `paper` | `sinopac` | 8803 | Paper trading with real-time market data |
 
 <!-- cjcheck: static -->
 ```sh
 uv run arenaxd --backend=backtest        # or demo / paper / real
 ```
+
+`--data` (or `AX_DATA_SOURCES`) chooses the price sources, tried in order:
+`sinopac`, `finmind`, `yfinance`, `cache`. Sinopac is logged in to only when a
+source or the backend needs it, so a backtest can run with no broker account:
+
+<!-- cjcheck: static -->
+```sh
+uv run arenaxd --backend=backtest --data=finmind,yfinance
+```
+
+FinMind reads `FINMIND_TOKEN` from your `.cjconf` and serves daily bars on a
+free account; a 1m replay still needs a source of 1m bars for its window
+(yfinance keeps only the last 30 days). From Python, pass any `MarketData` as
+`ArenaX_BrokerSideServer(market_data=...)`.
 
 :warning: `arenaxd` reads `AX_*` environment variables before its config file,
 and `load_dotenv(override=False)` means whatever is already exported wins. A

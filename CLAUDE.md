@@ -76,7 +76,8 @@ convention. Only new `F401`/`F811`/`F821` are your fault.
 ```
 src/cjtrade/
   pkgs/
-    brokers/        AccountClient (the one API users see) + per-broker adapters
+    brokers/        AccountClient (accounts + orders) + per-broker adapters
+    marketdata/     MarketData sources (sinopac/finmind/yfinance/arenax/cache) + Fallback, Cached
     models/         Order, Position, Product, Quote, Snapshot, Kbar, Trade, events
     strategy/       BaseStrategy + built-ins (bb, adx, dca, donchian, snr, baseline_0050)
     analytics/      technical (ta.*), fundamental, informational (news+LLM), backtest engine
@@ -113,6 +114,15 @@ encoder turns `datetime` into an HTTP date (`"Mon, 01 Sep 2025 09:01:00 GMT"`)
 whose `GMT` is a fiction — endpoints that pass a dataclass to `jsonify` leak
 that format, so parse defensively (see `_parse_server_datetime` in
 `poc/trading_engine/main2.py`).
+
+**Prices come from a MarketData, not from a broker.** `pkgs/marketdata/base.py`
+fixes the conventions: half-open `[start, end)` windows, intraday bars stamped
+at their closing minute, daily bars at 09:00, raw prices, volume in lots. A
+source that cannot serve a request raises `UnsupportedRequest` (never returns
+`[]` for it), so `Fallback` moves on and `Cached` records nothing. ArenaX
+backends take `market_data=`; `real_account` is only the account. New code
+reads `client.market`; `AccountClient.get_kbars/get_snapshots/get_bid_ask`
+are shims kept for existing callers.
 
 **Engine code must be broker-agnostic.** Anything broker- or mode-specific
 belongs in an init/bootstrap step, not in the loop. No clock stepping, no

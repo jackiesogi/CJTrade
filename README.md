@@ -169,8 +169,9 @@ passed with `--roster=`. A read-only status page is served on
 `http://127.0.0.1:8898/status` while a run is in progress.
 
 > [!NOTE]
-> The `backtest` backend logs in to Sinopac to read price data, so it needs
-> the `sinopac` extra and credentials. The trading engine is a proof of
+> By default the `backtest` backend reads prices from Sinopac, so it needs
+> the `sinopac` extra and credentials; `arenaxd --data=finmind,yfinance`
+> runs it without a broker account. The trading engine is a proof of
 > concept under `poc/`.
 
 ### Reading the result

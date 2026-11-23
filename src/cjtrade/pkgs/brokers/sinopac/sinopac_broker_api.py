@@ -165,6 +165,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
         return self._connected
 
 
+    def market_data(self):
+        """Return a SinopacMarketData that shares this session.
+
+        Returns
+        -------
+        SinopacMarketData
+        """
+        from cjtrade.pkgs.marketdata.sinopac import SinopacMarketData
+        return SinopacMarketData(self)
+
     def get_positions(self) -> List[Position]:
         """Return current stock positions, quantities in shares.
 

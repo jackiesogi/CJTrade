@@ -123,6 +123,7 @@ nav:
           - BaseStrategy: reference/base-strategy.md
           - Built-in strategies: reference/strategies.md
           - Strategy parameters: reference/strategy-parameters.md
+      - Market data: reference/market-data.md
       - Models: reference/models.md
       - Analytics:
           - Backtest engine: reference/backtest-engine.md

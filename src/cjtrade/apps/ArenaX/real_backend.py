@@ -22,20 +22,21 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
     """ArenaX backend that proxies all operations to a live real broker.
 
     The ArenaX HTTP server uses this backend when launched in 'live' mode.
-    Every operation (snapshot, kbars, place/cancel order, balance, positions)
-    is delegated to the injected ``real_account`` (AccountClient).  The local
+    Orders, balance and positions are delegated to the injected
+    ``real_account`` (AccountClient); snapshots and kbars come from
+    ``market_data``, which defaults to that account's broker.  The local
     ``account_state`` is kept in sync so that the server's in-memory state
     matches the broker at all times.
 
     Data-format notes
     -----------------
     * ``real_account.get_positions()``  → ``List[Position]``          (direct use)
-    * ``real_account.get_snapshots()``  → ``List[Snapshot]``          (direct use)
+    * ``market_data.get_snapshots()``   → ``List[Snapshot]``          (direct use)
     * ``real_account.list_orders()``    → ``List[Trade]``             (direct use)
     * ``real_account.sync_state()``     → ``List[OrderResult]``       (used for fill polling)
     * ``real_account.place_order()``    → ``OrderResult``             (direct return)
     * ``real_account.cancel_order()``   → ``OrderResult``             (direct return)
-    * ``real_account.get_kbars()``      → ``List[Kbar]``              (direct return)
+    * ``market_data.get_kbars()``       → ``List[Kbar]``              (through the price cache)
     """
 
     def __init__(
@@ -51,6 +52,10 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             playback_speed=playback_speed,
             num_days_preload=0,
             skip_data_preload=True,
+            # Named rather than **kwargs: the server passes the whole config,
+            # whose preload keys would collide with the fixed values above.
+            cost_model=kwargs.get("cost_model"),
+            market_data=kwargs.get("market_data"),
         )
         if not real_account:
             raise ValueError("real_account is required for ArenaX_Backend_RealTrade")
@@ -166,7 +171,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
         try:
             if not self.real_account.is_connected():
                 self.real_account.connect()
-            snapshots = self.real_account.get_snapshots([Product(symbol=symbol)])
+            snapshots = self.market_data.get_snapshots([symbol])
             if snapshots:
                 return snapshots[0]
         except Exception as exc:
@@ -176,12 +181,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
     def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
         """Fetch kbars from real broker."""
         try:
-            return self.real_account.get_kbars(
-                product=Product(symbol=symbol),
-                start=start,
-                end=end,
-                interval=interval,
-            ) or []
+            return super().kbars(symbol, start, end, interval)
         except Exception as exc:
             print(f"[RealTrade] Error fetching kbars for {symbol} [{start}~{end}]: {exc}")
             return []

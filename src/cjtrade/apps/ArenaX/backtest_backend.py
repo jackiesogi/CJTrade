@@ -29,14 +29,16 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             **kwargs
         )
         self._backtest_start_date = backtest_start_date
-        self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)
+        self.market = ArenaX_Market(market_data=self.market_data, data=self.data)
         if hasattr(self.market, "set_playback_speed"):
             self.market.set_playback_speed(playback_speed)
         self._initialize_market_time()
 
     def _initialize_market_time(self) -> None:
-        if not self.real_account:
-            raise ValueError("Historical backend requires a real account to fetch historical data.")
+        if not self.market_data.supports("1m"):
+            raise ValueError(
+                f"the historical backend replays 1m bars, and {self.market_data.name} "
+                f"does not serve them; choose a source that does (e.g. sinopac, yfinance)")
 
         # ── Fixed start_date path ─────────────────────────────────────
         if self._backtest_start_date is not None:

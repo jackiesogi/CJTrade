@@ -150,6 +150,16 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         return summary
 
 
+    def market_data(self):
+        """Return an ArenaXMarketData that shares this session.
+
+        Returns
+        -------
+        ArenaXMarketData
+        """
+        from cjtrade.pkgs.marketdata.arenax import ArenaXMarketData
+        return ArenaXMarketData(self)
+
     def get_positions(self) -> List[Position]:
         """Return current positions from the server.
 

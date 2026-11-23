@@ -55,7 +55,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if real_account:
 			self.market = ArenaX_RealMarket(real_account=real_account)
 		else:
-			self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)
+			self.market = ArenaX_Market(market_data=self.market_data, data=self.data)
 			if hasattr(self.market, "set_playback_speed"):
 				self.market.set_playback_speed(playback_speed)
 		if self.real_account and not self.real_account.is_connected():
@@ -103,7 +103,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if self.real_account:
 			if not self.real_account.is_connected():
 				self.real_account.connect()
-			snapshots = self.real_account.get_snapshots([Product(symbol=symbol)])
+			snapshots = self.market_data.get_snapshots([symbol])
 			if not snapshots:
 				# This used to be a bare [0], so a broker that answered with
 				# nothing surfaced as `IndexError: list index out of range` --
@@ -127,23 +127,11 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		if not self.real_account:
 			return
 
-		today = datetime.now().strftime("%Y-%m-%d")
-		tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+		today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+		tomorrow = today + timedelta(days=1)
 		try:
-			try:
-				kbars = self.real_account.get_kbars(
-					Product(symbol=symbol),
-					start=today,
-					end=tomorrow,
-					interval="1m",
-				)
-			except TypeError:
-				kbars = self.real_account.get_kbars(
-					Product(symbol=symbol),
-					today,
-					tomorrow,
-					"1m",
-				)
+			# Uncached: today's bars are still being written.
+			kbars = self.market_data.get_kbars(symbol, today, tomorrow, "1m")
 			self._kbar_buffer[symbol] = kbars if kbars else []
 		except Exception as exc:
 			print(f"[PaperTrade] Failed to refresh kbar buffer for {symbol}: {exc}")

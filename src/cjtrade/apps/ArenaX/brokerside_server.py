@@ -28,6 +28,9 @@ from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
+from cjtrade.pkgs.marketdata import MarketData
+from cjtrade.pkgs.marketdata import from_names
+from cjtrade.pkgs.marketdata.factory import parse_names
 from apiflask import APIFlask
 from dotenv import load_dotenv
 from flask import g
@@ -103,6 +106,17 @@ _FINISHED_ORDER_STATUSES = frozenset((
     OrderStatus.REJECTED.value,
 ))
 
+# Where each backend reads prices from unless told otherwise (--data or
+# AX_DATA_SOURCES). Tried in order. backtest keeps Sinopac first, which is
+# what it always did; naming only sources that need no account (finmind,
+# yfinance) lets it run without logging in to Sinopac at all.
+DEFAULT_DATA_SOURCES = {
+    "demo": "yfinance",
+    "backtest": "sinopac,yfinance",
+    "paper": "sinopac",
+    "real": "sinopac",
+}
+
 BROKER_KBAR_DATA_AVAILABILITY = {
     "sinopac": { "start": "2020-03-20", "end": "3000-12-31" },
     "yuanta":  { "start": "2000-01-01", "end": "3000-12-31" },  # need verification
@@ -138,7 +152,8 @@ def load_cjsys(backend_str: str = "demo"):
     keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
             'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND',
-            'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT']
+            'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT',
+            'AX_DATA_SOURCES']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -186,9 +201,22 @@ class ArenaX_BrokerSideServer:
         host: str = "127.0.0.1",
         port: int = 8801,
         match_interval: float = 1.0,   # real seconds between matching sweeps
+        market_data: Optional[MarketData] = None,
+        data_sources: Optional[str] = None,
     ):
+        """
+        Parameters
+        ----------
+        market_data : MarketData, optional
+            Where the simulated exchange reads prices from. Takes precedence
+            over `data_sources`.
+        data_sources : str, optional
+            Source names in order, e.g. ``"finmind,yfinance"``. Defaults to
+            the ``AX_DATA_SOURCES`` setting, then DEFAULT_DATA_SOURCES.
+        """
         if backend is not None:
             self.backend = backend
+            self.real = getattr(backend, "real_account", None)
         else:
             # Redacted, and through the logger rather than print(). This used
             # to print external_config verbatim, so every start wrote the live
@@ -202,29 +230,34 @@ class ArenaX_BrokerSideServer:
                 slippage_model=internal_config.get('slippage_model', 'none'),
                 slippage_pct=float(internal_config.get('slippage_pct', 0.0005)),
             )
-            if backend_str == "backtest":
-                # Current default, ArenaX use sinopac backend for price feed.
-                # print(f"internal_config: {internal_config}")
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.real.connect()   # must connect before creating backend so that
-                                      # _initialize_market_time() / _fetch_and_cache_range()
-                                      # can use the real broker instead of falling back to yfinance
-                self.backend = ArenaX_Backend_Historical(real_account=self.real, cost_model=cost_model, **internal_config)
-            elif backend_str == "paper":
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, cost_model=cost_model, **internal_config)
-            elif backend_str == "demo":
-                self.real = None
-                self.backend = ArenaX_Backend_None(cost_model=cost_model, **internal_config)
-            elif backend_str == "real":
-                # TODO: Add this environment variable also into the external config
-                if not os.environ.get("I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
-                    raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, cost_model=cost_model, **internal_config)
-            else:
+            if backend_str not in DEFAULT_DATA_SOURCES:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
-
+            sources = parse_names(data_sources or internal_config.get('data_sources')
+                                  or DEFAULT_DATA_SOURCES[backend_str])
+            # Sinopac is logged in to only when something needs it: the
+            # account itself (paper and real trade on it) or its prices.
+            needs_account = backend_str in ("paper", "real")
+            needs_sinopac_data = market_data is None and "sinopac" in sources
+            if backend_str == "real" and not os.environ.get(
+                    "I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
+                raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
+            self.real = (AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                         if needs_account or needs_sinopac_data else None)
+            if needs_sinopac_data:
+                self.real.connect()
+            if market_data is None:
+                # No cache here: the backend puts its own in front.
+                market_data = from_names(sources, sinopac=self.real, cache=False)
+            log.info("market data: %s", market_data.name)
+            common = dict(cost_model=cost_model, market_data=market_data, **internal_config)
+            if backend_str == "backtest":
+                self.backend = ArenaX_Backend_Historical(real_account=self.real, **common)
+            elif backend_str == "paper":
+                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **common)
+            elif backend_str == "demo":
+                self.backend = ArenaX_Backend_None(**common)
+            else:
+                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, **common)
         self.host = host
         self.port = port
         self._match_interval = match_interval
@@ -723,20 +756,24 @@ class ArenaX_BrokerSideServer:
             whether to call the kbars route – that endpoint handles all source
             selection internally (price_db → real broker → yfinance).
             """
-            if self.backend.real_account is None:
-                return jsonify({"ok": True, "has_real_broker": False}), 200
-            try:
-                broker = self.backend.real_account.get_broker_name()
-                availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker, {})
-                return jsonify({
-                    "ok": True,
-                    "has_real_broker": True,
-                    "broker": broker,
-                    "available_start": availability.get("start"),
-                    "available_end":   availability.get("end"),
-                }), 200
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
+            source = getattr(self.backend, "market_data", None)
+            caps = source.capabilities if source is not None else None
+            info = {
+                "ok": True,
+                "source": source.name if source is not None else None,
+                "intervals": sorted(caps.intervals) if caps else [],
+                "has_real_broker": self.backend.real_account is not None,
+            }
+            if self.backend.real_account is not None:
+                try:
+                    broker = self.backend.real_account.get_broker_name()
+                    availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker, {})
+                    info.update(broker=broker,
+                                available_start=availability.get("start"),
+                                available_end=availability.get("end"))
+                except Exception as e:
+                    return jsonify({"ok": False, "error": str(e)}), 500
+            return jsonify(info), 200
 
 
         @app.get("/api/v1/market/<string:symbol>/kbars")
@@ -944,7 +981,8 @@ class ArenaX_BrokerSideServer:
             print("Warning: Calling _preload_data() when backend is not connected!")
             print("         The symbols to preload may be outdated (only when backend.login() will sync account state)")
         # NOTE: Weird data flow occurs here!
-        symbols = [s.symbol for s in self.backend.real_account.get_positions()] if not symbols else symbols
+        if not symbols:
+            symbols = [s.symbol for s in self.backend.real_account.get_positions()]
         days = preload_days or getattr(self.backend, "num_days_preload", 3)
 
         print(f"Preloading data for symbols: {symbols} for {preload_days} days...")
@@ -1038,6 +1076,10 @@ def main():
     parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")
     parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo", "real"], default="demo", help="Backend type to use.")
+    parser.add_argument("--data", type=str, default=None,
+                        help="Price sources in order, e.g. 'finmind,yfinance' "
+                             "(sinopac, finmind, yfinance, cache). CLI > AX_DATA_SOURCES > "
+                             "the backend's default.")
     args = parser.parse_args()
 
     load_cjconf()
@@ -1047,7 +1089,8 @@ def main():
     host = args.host or internal_config.get('host_address', '127.0.0.1')
     port = args.port or int(internal_config.get('host_port', 8801))
 
-    server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend)
+    server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend,
+                                     data_sources=args.data)
     print(f"Starting server on {host}:{port} with backend '{args.backend}'...")
     try:
         server.serve_forever()

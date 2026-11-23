@@ -52,12 +52,19 @@ class AccountState:
 #   3. Return the cached balance from AccountState
 # TODO: support the context manager protocol (with AccountClient() as account:)
 class AccountClient:
-    """An unified API to interact with different brokers.
+    """One account at one broker: balance, positions and orders.
+
+    Prices are a separate concern. ``client.market`` is the MarketData to
+    read them from: the one passed as `market`, or else the broker's own
+    (Sinopac and ArenaX serve prices; a broker that only takes orders does
+    not, and then `market` is required for anything price-related).
 
     Parameters
     ----------
     broker_type : BrokerType
         Which broker implementation to use.
+    market : MarketData, optional
+        Where prices come from. Defaults to the broker's own market data.
     **config
         Passed unchanged to the broker API constructor.
 
@@ -71,9 +78,10 @@ class AccountClient:
         The broker type is not supported.
     """
 
-    def __init__(self, broker_type: BrokerType, **config):
+    def __init__(self, broker_type: BrokerType, market=None, **config):
         self.broker_type = broker_type
         self.broker_api = self._set_broker_api(broker_type, **config)
+        self._market = market
         self.account_state = AccountState()
         self.broker_api_conn_keepalive = True  # For future use
 
@@ -108,6 +116,27 @@ class AccountClient:
         self.account_state.last_sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # self.account_state.pending_orders = self.broker_api.list_orders()
         # self.account_state.order_history = []
+
+    @property
+    def market(self):
+        """The MarketData prices come from, or None if there is none.
+
+        Returns
+        -------
+        MarketData or None
+            The one given to the constructor, else the broker's own.
+        """
+        if self._market is None:
+            self._market = self.broker_api.market_data()
+        return self._market
+
+    def _explicit_market(self):
+        """The MarketData passed in, if any. Data shims route through it."""
+        return self._market if self._market is not None and \
+            not self._market_is_brokers() else None
+
+    def _market_is_brokers(self) -> bool:
+        return getattr(self._market, "broker", None) is self.broker_api
 
     # User need to call `connect()` before calling any other method
     def connect(self) -> bool:
@@ -192,6 +221,10 @@ class AccountClient:
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> Dict[str, float]:
         """Return the current bid/ask quote for a product.
 
+        Prefer ``client.market``; this stays for existing callers. With a
+        `market` passed to the constructor it reads from that, otherwise from
+        the broker as before.
+
         Parameters
         ----------
         product : Product
@@ -209,10 +242,17 @@ class AccountClient:
         Makes a network call. On ArenaX the levels are simulated around the
         last close with random volumes, not real quotes.
         """
+        market = self._explicit_market()
+        if market is not None:
+            return market.get_bid_ask(product.symbol, intraday_odd)
         return self.broker_api.get_bid_ask(product, intraday_odd)
 
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         """Return market snapshots for the given products.
+
+        Prefer ``client.market``; this stays for existing callers. With a
+        `market` passed to the constructor it reads from that, otherwise from
+        the broker as before.
 
         Parameters
         ----------
@@ -226,6 +266,9 @@ class AccountClient:
         --------
         Makes a network call to the broker.
         """
+        market = self._explicit_market()
+        if market is not None:
+            return market.get_snapshots([p.symbol for p in products])
         return self.broker_api.get_snapshots(products)
 
     def register_order_callback(self, callback: OrderCallback) -> None:
@@ -255,6 +298,10 @@ class AccountClient:
     def get_kbars(self, product: Product, start: str, end: str, interval: str):
         """Return kbars for a product over [start, end); end is exclusive.
 
+        Prefer ``client.market``; this stays for existing callers. With a
+        `market` passed to the constructor it reads from that, otherwise from
+        the broker as before.
+
         Parameters
         ----------
         product : Product
@@ -279,6 +326,9 @@ class AccountClient:
         # TODO: test each interval aggregation stability (especially edge cases)
         # interval: '1m', '3m', '5m', '10m', '15m', '20m', '30m', '45m',
         #           '1h', '90m', '2h', '1d', '1w', '1M'
+        market = self._explicit_market()
+        if market is not None:
+            return market.get_kbars(product.symbol, start, end, interval)
         return self.broker_api.get_kbars(product, start, end, interval)
 
     def get_market_movers(self, top_n: int = 10, by: RankType = RankType.PRICE_PERCENTAGE_CHANGE, ascending: bool = True) -> Dict[str, float]:
