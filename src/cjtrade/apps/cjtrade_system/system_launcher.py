@@ -19,16 +19,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from dotenv import dotenv_values
 
-log = logging.getLogger("cjtrade.runner")
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s",
-)
-logging.getLogger("werkzeug").setLevel(logging.WARNING)
-logging.getLogger("cjtrade.arenax_server").setLevel(logging.DEBUG)
-logging.getLogger("cjtrade.system_arenax").setLevel(logging.DEBUG)
+log = get_logger("cjtrade_system.launcher")
 
 _SYSTEM_CONF_DIR = Path(__file__).parent / "configs"
 SERVER_STARTUP_TIMEOUT = 60  # seconds
@@ -55,13 +50,13 @@ def _kill_on_port(port: int) -> None:
         for pid in pids:
             try:
                 os.kill(int(pid), signal.SIGKILL)
-                log.info(f"Killed existing server process PID={pid} on port {port}")
+                log.info("killed stale server pid=%s on port %d", pid, port)
             except ProcessLookupError:
                 pass
         if pids:
             time.sleep(0.6)
     except FileNotFoundError:
-        log.warning("'lsof' not found – cannot auto-kill existing server; continuing anyway")
+        log.warning("lsof not found, cannot kill stale server; continuing")
 
 
 def _wait_for_server(host: str, port: int, timeout: int = SERVER_STARTUP_TIMEOUT) -> bool:
@@ -104,7 +99,7 @@ def _load_user_cjsys(broker: str, mode: str) -> tuple[dict, Path]:
     """Return (dotenv dict, config Path) for ``{broker}_{mode}.cjsys``."""
     cfg_file = _SYSTEM_CONF_DIR / f"{broker}_{mode}.cjsys"
     if not cfg_file.exists():
-        log.error(f"Config file not found: {cfg_file}")
+        log.error("cfg file not found: %s", cfg_file)
         sys.exit(1)
     return dotenv_values(cfg_file), cfg_file
 
@@ -194,12 +189,12 @@ class _ArenaXServerManager:
         ).start()
 
         if not _wait_for_server(self.host, self.port):
-            log.error(
-                f"ArenaX server did not become ready within {SERVER_STARTUP_TIMEOUT}s"
-            )
+            log.error("ArenaX server not ready within %ds",
+                      SERVER_STARTUP_TIMEOUT)
             sys.exit(1)
 
-        log.info(f"✅ ArenaX server ready at http://{self.host}:{self.port}  (mode={self.mode})")
+        log.info("ArenaX server ready at http://%s:%d (mode=%s)",
+                 self.host, self.port, self.mode)
 
     def stop(self) -> None:
         """Gracefully stop the server."""
@@ -246,23 +241,23 @@ class SystemLauncher:
         self.host = self.host or srv_overrides.get("host") or "127.0.0.1"
         self.port = self.port or int(srv_overrides.get("port", 8801))
 
-        log.info(f"Loaded config: {cfg_file.name}")
-        log.info(f"  mode={self.mode}  broker={self.broker}")
-        log.info(f"  server.host={self.host}  server.port={self.port}")
+        log.info("loaded cfg %s", cfg_file.name)
+        log.info("mode=%s broker=%s", self.mode, self.broker)
+        log.info("server.host=%s server.port=%s", self.host, self.port)
         for k, v in srv_overrides.items():
             if k not in ("host", "port"):
-                log.info(f"  server.{k} = {v}")
+                log.info("server.%s=%s", k, v)
 
         # 3. Start ArenaX server (ArenaX broker only)
         mgr: Optional[_ArenaXServerManager] = None
         if self.broker == "arenax":
             if _is_port_in_use(self.host, self.port):
-                log.info(f"Port {self.port} in use – killing existing server…")
+                log.info("port %d in use, killing stale server", self.port)
                 _kill_on_port(self.port)
             mgr = _ArenaXServerManager(self.host, self.port, self.mode)
             mgr.start(srv_overrides)
         else:
-            log.info(f"Broker '{self.broker}': skipping ArenaX server startup")
+            log.info("broker %s: skipping ArenaX server startup", self.broker)
 
         # 4. Hand off to the trading system
         from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import (
@@ -283,6 +278,13 @@ class SystemLauncher:
 
 def main() -> None:
     import argparse
+
+    from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import attach_log_file
+
+    setup_logging(logging.INFO)
+    attach_log_file()
+    get_logger("ArenaX.server").setLevel(logging.DEBUG)
+    get_logger("cjtrade_system").setLevel(logging.DEBUG)
 
     parser = argparse.ArgumentParser(
         prog="system",
@@ -315,15 +317,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.dry_run:
-        import logging as _logging
         from cjtrade.apps.cjtrade_system.cjtrade_system_arenax import build_system_config
-        prev = _logging.root.manager.disable
-        _logging.disable(_logging.CRITICAL)
+        prev = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
         try:
             cfg = build_system_config(args.broker, args.mode)
         finally:
-            _logging.disable(prev)
-        print(cfg.dump_json())
+            logging.disable(prev)
+        sys.stdout.write(cfg.dump_json() + "\n")
         sys.exit(0)
 
     SystemLauncher(

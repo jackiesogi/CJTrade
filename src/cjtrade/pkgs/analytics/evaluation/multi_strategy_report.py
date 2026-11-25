@@ -21,7 +21,6 @@ Usage
 """
 from __future__ import annotations
 
-import logging
 import os
 import webbrowser
 from typing import Dict
@@ -30,12 +29,15 @@ from typing import Optional
 from typing import TYPE_CHECKING
 
 import pandas as pd
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
 
 if TYPE_CHECKING:
     from cjtrade.pkgs.models.backtest import BacktestResult
     from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 
-log = logging.getLogger(__name__)
+log = get_logger("analytics.evaluation")
+out = get_console("analytics.evaluation")
 
 
 class MultiStrategyBacktestReport:
@@ -77,7 +79,7 @@ class MultiStrategyBacktestReport:
             Strategy instance to run.
         """
         self._strategies[name] = strategy
-        log.info(f"[MultiStrategyBacktestReport] Added strategy: {name}")
+        log.info("added strategy %s", name)
 
     def run(self) -> None:
         """Run all registered strategies on the same kbars.
@@ -95,9 +97,9 @@ class MultiStrategyBacktestReport:
         if not self._strategies:
             raise ValueError("No strategies registered. Use add_strategy() first.")
 
-        log.info(f"[MultiStrategyBacktestReport] Running {len(self._strategies)} strategies...")
+        log.info("running %d strategies", len(self._strategies))
         for name, strategy in self._strategies.items():
-            log.info(f"  → Running {name}...")
+            log.info("running %s", name)
             session_id = str(uuid.uuid4())
             engine = BacktestEngine(
                 kbars=self.kbars,
@@ -112,7 +114,7 @@ class MultiStrategyBacktestReport:
             final_equity = result.final_equity if result.final_equity is not None else result.final_balance
             pnl = final_equity - result.initial_balance
             log.info(
-                f"  ✓ {name} completed – {len(result.fill_history)} fills, "
+                f"{name} done: {len(result.fill_history)} fills, "
                 f"PnL={pnl:+.2f}"
             )
 
@@ -131,9 +133,9 @@ class MultiStrategyBacktestReport:
 
         qs = self._require_qs()
 
-        print("\n" + "=" * 130)
-        print("  MULTI-STRATEGY COMPARISON")
-        print("=" * 130)
+        out.info("\n" + "=" * 130)
+        out.info("  MULTI-STRATEGY COMPARISON")
+        out.info("=" * 130)
 
         # Header
         header = (
@@ -146,8 +148,8 @@ class MultiStrategyBacktestReport:
             f"{'Fills':>8} | "
             f"{'Equity Pts':>12}"
         )
-        print(header)
-        print("-" * 130)
+        out.info(header)
+        out.info("-" * 130)
 
         for name, result in self._results.items():
             final_equity = result.final_equity if result.final_equity is not None else result.final_balance
@@ -164,7 +166,7 @@ class MultiStrategyBacktestReport:
                     cagr = float(qs.stats.cagr(returns, periods=p))
                     mdd = float(qs.stats.max_drawdown(returns))
                 except Exception as e:
-                    log.warning(f"Error computing metrics for {name}: {e}")
+                    log.warning("metrics for %s failed: %s", name, e)
                     sharpe, cagr, mdd = float('nan'), float('nan'), float('nan')
 
             row = (
@@ -177,8 +179,8 @@ class MultiStrategyBacktestReport:
                 f"{len(result.fill_history):>8} | "
                 f"{len(result.equity_curve):>12}"
             )
-            print(row)
-        print("=" * 130 + "\n")
+            out.info(row)
+        out.info("=" * 130 + "\n")
 
     def save_comparison_html(self, path: str = "comparison.html",
                              open_browser: bool = True) -> str:
@@ -283,7 +285,7 @@ class MultiStrategyBacktestReport:
                     cagr = float(qs.stats.cagr(returns, periods=p))
                     mdd = float(qs.stats.max_drawdown(returns))
                 except Exception as e:
-                    log.warning(f"Error computing metrics for {name}: {e}")
+                    log.warning("metrics for %s failed: %s", name, e)
                     sharpe, cagr, mdd = float('nan'), float('nan'), float('nan')
 
             pnl_class = "positive" if pnl >= 0 else "negative"
@@ -327,7 +329,7 @@ class MultiStrategyBacktestReport:
             f.write(html_content)
 
         abs_path = os.path.abspath(path)
-        print(f"[MultiStrategyBacktestReport] HTML saved → {abs_path}")
+        out.info(f"HTML saved -> {abs_path}")
         if open_browser:
             webbrowser.open(f"file://{abs_path}")
         return abs_path
@@ -398,7 +400,7 @@ class MultiStrategyBacktestReport:
 
         fig.write_html(path)
         abs_path = os.path.abspath(path)
-        print(f"[MultiStrategyBacktestReport] Returns overlay chart saved → {abs_path}")
+        out.info(f"Returns overlay chart saved -> {abs_path}")
 
         if open_browser:
             webbrowser.open(f"file://{abs_path}")
@@ -472,7 +474,7 @@ class MultiStrategyBacktestReport:
 
         fig.write_html(path)
         abs_path = os.path.abspath(path)
-        print(f"[MultiStrategyBacktestReport] Equity overlay chart saved → {abs_path}")
+        out.info(f"Equity overlay chart saved -> {abs_path}")
 
         if open_browser:
             webbrowser.open(f"file://{abs_path}")

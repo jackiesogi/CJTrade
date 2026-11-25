@@ -65,6 +65,8 @@ from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models.backtest import BacktestResult
 from cjtrade.pkgs.models.event import OrderEvent
 from cjtrade.pkgs.models.kbar import Kbar
@@ -86,29 +88,27 @@ from protocol import PriceUpdate
 LOG_LEVEL = logging.DEBUG        # the engine's own chatter
 FEED_LOG_LEVEL = logging.DEBUG   # one line per symbol per bar; raise to INFO to mute
 
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-
-# urllib3 emits two DEBUG lines per HTTP call ("Starting new HTTP connection"
-# plus the request line). Replay mode makes 5 calls per bar, so at DEBUG these
-# outnumber our own output roughly 10:1 and hide the drift warnings entirely.
-# Silence the transport, not ourselves.
-#
-# matplotlib and PIL are here for the same reason at the other end of the run:
-# rendering the end-of-run tearsheet emits a dozen DEBUG lines about font
-# caches and axis titles immediately before the summary we actually want read.
-for _noisy in ("urllib3", "asyncio", "matplotlib", "PIL"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
-
-log = logging.getLogger("poc.trading_engine")
+# setup_logging(LOG_LEVEL) is called at the start of main(). It also holds
+# urllib3 (two DEBUG lines per HTTP call, ~10:1 against our own output in
+# replay) and matplotlib/PIL (font-cache chatter right before the end-of-run
+# summary) at WARNING.
+log = get_logger("engine")
+log_clock = get_logger("engine.clock")
+log_risk = get_logger("engine.risk")
+log_report = get_logger("engine.report")
+log_bots = get_logger("engine.bots")
 
 # Separate logger for the per-bar feed so it can be muted on its own: at high
 # playback speed this is thousands of lines a second, which is useful when
 # eyeballing one bar and useless when watching a two-month replay.
-log_feed = logging.getLogger("poc.trading_engine.feed")
+log_feed = get_logger("engine.feed")
 log_feed.setLevel(FEED_LOG_LEVEL)
+
+
+def _at(ts: datetime | None) -> str:
+    """``"@YYYY-MM-DD HH:MM "`` for a simulated moment, to open a log message;
+    empty when the moment is unknown."""
+    return f"@{ts:%Y-%m-%d %H:%M} " if ts else ""
 
 # Which bots this run spawns, and what each one trades.
 #
@@ -282,7 +282,7 @@ class ScaledClock:
         if not t:
             raise RuntimeError("ArenaX GET /api/v1/clock returned nothing — is the server up?")
         speed = float(t["playback_speed"])
-        log.info(f"[Clock] scaled: server playback_speed={speed}x")
+        log_clock.info("scaled: server playback_speed=%sx", speed)
         return cls(speed)
 
     async def sleep(self, market_seconds: float) -> None:
@@ -297,11 +297,10 @@ class ScaledClock:
             await asyncio.sleep(slack)
         else:
             skipped = -slack * self.speed / market_seconds
-            log.warning(
-                f"[Clock] behind by {-slack*1000:.0f}ms (~{skipped:.1f} bars skipped) — "
-                f"work per cycle exceeds the {wall*1000:.1f}ms budget at "
-                f"playback_speed={self.speed}x"
-            )
+            log_clock.warning(
+                "behind by %.0fms (~%.1f bars skipped): cycle exceeds %.1fms "
+                "budget at playback_speed=%sx",
+                -slack * 1000, skipped, wall * 1000, self.speed)
             self._deadline = time.monotonic()      # re-baseline, don't accrue debt
 
 
@@ -389,13 +388,11 @@ class ReplayClock:
         # late, which is thousands of identical lines.
         if now - self._last_behind_log >= 5.0:
             self._last_behind_log = now
-            log.warning(
-                f"[Clock] cannot keep up with {self.speed:g}x — "
-                f"{self._behind_bars} bar(s) late, worst by "
-                f"{self._behind_worst_ms:.0f}ms against a "
-                f"{wall*1000:.1f}ms budget. The replay is running as fast as it "
-                f"can, which is slower than requested."
-            )
+            log_clock.warning(
+                "@%s cannot keep up with %gx: %d bar(s) late, worst %.0fms vs "
+                "%.1fms budget; running flat out, slower than requested",
+                f"{self.now:%Y-%m-%d %H:%M}", self.speed, self._behind_bars,
+                self._behind_worst_ms, wall * 1000)
             self._behind_bars = 0
             self._behind_worst_ms = 0.0
         self._deadline = time.monotonic()      # re-baseline, don't accrue debt
@@ -423,9 +420,9 @@ class ReplayClock:
         # server's start_date, and its price window is measured from it.
         _assert_server_data_covers(mw, timestamps)
 
-        log.info(f"[Clock] replay: {len(timestamps)} bars, "
-                 f"{timestamps[0]} .. {timestamps[-1]}, "
-                 f"{_pace_summary(timestamps, speed)}")
+        log_clock.info("replay: %d bars, %s .. %s, %s", len(timestamps),
+                       timestamps[0], timestamps[-1],
+                       _pace_summary(timestamps, speed))
         return cls(mw, timestamps, speed)
 
 
@@ -503,8 +500,8 @@ def _assert_server_data_covers(mw, timestamps: list[datetime]) -> None:
     if not isinstance(days, int):
         # Not evidence of a mismatch, so not fatal -- but say the check was
         # skipped rather than pass silently.
-        log.warning("[Clock] the server did not report backtest_duration_days "
-                    "— cannot verify it holds data for the whole replay")
+        log_clock.warning("server did not report backtest_duration_days; "
+                          "cannot verify it covers the replay")
         return
 
     # Mirrors the server: set_historical_time_abs snaps start_date to 09:00,
@@ -512,9 +509,9 @@ def _assert_server_data_covers(mw, timestamps: list[datetime]) -> None:
     server_end = timestamps[0].replace(hour=9, minute=0, second=0,
                                        microsecond=0) + timedelta(days=days)
     if timestamps[-1] <= server_end:
-        log.info(f"[Clock] server holds {days} day(s) of prices from "
-                 f"{timestamps[0]:%Y-%m-%d} (through {server_end:%Y-%m-%d}) — "
-                 f"covers this replay")
+        log_clock.info("server holds %d day(s) of prices %s..%s, covers replay",
+                       days, f"{timestamps[0]:%Y-%m-%d}",
+                       f"{server_end:%Y-%m-%d}")
         return
 
     needed = (timestamps[-1] - timestamps[0]).days + 1
@@ -582,9 +579,9 @@ class EventHub:
         await self.pub_socket.send_multipart(
             [bar.symbol.encode('utf-8'), protocol.encode(update)]
         )
-        log_feed.debug(f"[Master] Broadcasting {bar.symbol} {bar.timestamp:%Y-%m-%d %H:%M} "
-                       f"O={bar.open} H={bar.high} L={bar.low} C={bar.close} "
-                       f"V={bar.volume} (seq={update.seq})...")
+        log_feed.debug("@%s %s O=%s H=%s L=%s C=%s V=%s seq=%d",
+                       f"{bar.timestamp:%Y-%m-%d %H:%M}", bar.symbol, bar.open,
+                       bar.high, bar.low, bar.close, bar.volume, update.seq)
 
     def _market_now(self) -> datetime:
         """Market time this round. The replay clock's own when it has one.
@@ -677,8 +674,7 @@ class EventHub:
             try:
                 now = await asyncio.to_thread(self._market_now)
             except Exception as e:
-                log.warning(f"[Master] could not read the market time ({e}) — "
-                            f"skipping this bar")
+                log.warning("market time read failed (%s), skipping bar", e)
                 await self.clock.sleep(BAR_INTERVAL_SEC)
                 continue
             self.market_time = now
@@ -693,7 +689,8 @@ class EventHub:
                 except Exception as e:
                     # Nothing is lost: the next round asks again from the last
                     # bar that was published.
-                    log.warning(f"[Master] kbar fetch failed for {symbol}: {e}")
+                    log.warning("@%s kbars %s failed: %s",
+                                f"{now:%Y-%m-%d %H:%M}", symbol, e)
                     continue
                 if not bars:
                     quiet.append(symbol)
@@ -714,7 +711,8 @@ class EventHub:
 
             self.bars += 1
             if self.bars % 500 == 0:
-                log.info(f"[Master] {self.bars} bars served")
+                log.info("@%s %d bars served",
+                         f"{self.market_time:%Y-%m-%d %H:%M}", self.bars)
 
             # Check resting orders here rather than in a task of its own: a
             # separate task would run on wall-clock time and could land
@@ -726,8 +724,8 @@ class EventHub:
 
         # Only reachable with ReplayClock; the live clocks never finish.
         elapsed = time.monotonic() - started
-        log.info(f"[Master] Replay complete — {self.bars} bars in {elapsed:.1f}s "
-                 f"({self.bars/max(elapsed, 1e-9):.0f} bars/s)")
+        log.info("replay done: %d bars in %.1fs (%.0f bars/s)", self.bars,
+                 elapsed, self.bars / max(elapsed, 1e-9))
 
     async def _publish_feed_status(self, market_open: bool, reason: str) -> None:
         """Tell every bot why the feed looks the way it does.
@@ -759,19 +757,17 @@ class EventHub:
         try:
             is_open = await asyncio.to_thread(self.session_check)
         except Exception as e:
-            log.warning(f"[Master] could not tell whether the market is open "
-                        f"({e}) — assuming it is")
+            log.warning("market-open check failed (%s), assuming open", e)
             return True
         if is_open:
             if self._market_closed:
-                log.info("[Master] market open — resuming the feed")
+                log.info("market open, resuming feed")
                 self._market_closed = False
             return True
         if not self._market_closed:
             # Logged on the transition, not every minute: a closed market is
             # the normal state for two thirds of every weekday.
-            log.info(f"[Master] market closed — holding the feed "
-                     f"({self.bars} bars served so far)")
+            log.info("market closed, holding feed (%d bars served)", self.bars)
             self._market_closed = True
         return False
 
@@ -857,9 +853,10 @@ class ExecutionEngine:
                                  order.action.value, order.quantity, order.price)
         if reason is None:
             return None
-        log.warning(f"[Risk] refused {order.action.value} "
-                    f"{order.product.symbol} x{order.quantity} @ {order.price} "
-                    f"for {intent.bot_id}: {reason}")
+        log_risk.warning("%srefused %s %s x%d px=%s for %s: %s",
+                         _at(order.created_at), order.action.value,
+                         order.product.symbol, order.quantity, order.price,
+                         intent.bot_id, reason)
         if self.client is not None:
             return self._broker_report(intent, OrderStatus.REJECTED, 0, reason)
         return self._paper_report(intent, self._account_for(intent.bot_id),
@@ -916,7 +913,7 @@ class ExecutionEngine:
         try:
             trades = await asyncio.to_thread(self.client.list_orders)
         except Exception as e:
-            log.warning(f"[Master] Could not refresh order status: {e}")
+            log.warning("%sorder status refresh failed: %s", _at(as_of), e)
             return []
 
         reports = []
@@ -945,8 +942,8 @@ class ExecutionEngine:
             listed = {t.id for t in trades}
             for order_id in [oid for oid in self._open if oid not in listed]:
                 bot_id, order = self._open.pop(order_id)
-                log.warning(f"[Master] order {order_id[:8]} is no longer listed "
-                            f"by the broker — reporting it as UNKNOWN")
+                log.warning("%sorder %s no longer listed by broker, "
+                            "reporting UNKNOWN", _at(as_of), order_id[:8])
                 reports.append(self._broker_report(
                     OrderIntent(bot_id=bot_id, order=order),
                     OrderStatus.UNKNOWN, 0,
@@ -983,7 +980,8 @@ class ExecutionEngine:
             try:
                 result = await asyncio.to_thread(self.client.cancel_order, order_id)
             except Exception as e:
-                log.warning(f"[Master] Could not cancel {order_id[:8]}: {e}")
+                log.warning("%scancel %s failed: %s", _at(as_of),
+                            order_id[:8], e)
                 continue
             # Report whatever the broker said rather than assuming CANCELLED:
             # a cancel races the matcher, and "already filled" comes back as a
@@ -997,8 +995,8 @@ class ExecutionEngine:
             if status in (OrderStatus.CANCELLED, OrderStatus.FILLED):
                 self._note_outcome(order_id, status)
             else:
-                log.warning(f"[Master] cancel of {order_id[:8]} answered "
-                            f"{status.value}; keeping its capital reserved")
+                log.warning("%scancel %s answered %s; capital stays reserved",
+                            _at(as_of), order_id[:8], status.value)
             reports.append(self._broker_report(
                 OrderIntent(bot_id=bot_id, order=order), status, 0, message,
                 timestamp=as_of,
@@ -1009,9 +1007,9 @@ class ExecutionEngine:
         leftover = [oid for oid, (bid, _) in self._open.items()
                     if only_bot is None or bid == only_bot]
         if leftover:
-            log.error(f"[Master] {len(leftover)} order(s) still live at the "
-                      f"broker and could not be cancelled: "
-                      f"{', '.join(i[:8] for i in leftover)}")
+            log.error("%s%d order(s) still live at broker, cancel failed: %s",
+                      _at(as_of), len(leftover),
+                      ", ".join(i[:8] for i in leftover))
         return reports
 
     def _filled_qty(self, order: Order, status: OrderStatus) -> int:
@@ -1026,9 +1024,9 @@ class ExecutionEngine:
         if status == OrderStatus.FILLED:
             return order.quantity
         if status == OrderStatus.PARTIAL:
-            log.warning(f"[Master] order {order.id[:8]} is PARTIAL — this engine "
-                        f"cannot read a partial fill quantity, so the bot will "
-                        f"be told 0 filled until the order completes")
+            log.warning("%sorder %s PARTIAL: fill qty unreadable, bot told 0 "
+                        "filled until it completes", _at(order.created_at),
+                        order.id[:8])
         return 0
 
     def _broker_report(self, intent: OrderIntent, status: OrderStatus,
@@ -1173,11 +1171,11 @@ class RunRecorder:
         if journal_path is not None:
             try:
                 self._journal = open(journal_path, "a", buffering=1)
-                log.info(f"[Report] equity journal → {journal_path}")
+                log_report.info("equity journal: %s", journal_path)
             except OSError as e:
                 # A run that cannot write its journal is still a run worth
                 # having; say so and carry on.
-                log.warning(f"[Report] no equity journal ({e})")
+                log_report.warning("no equity journal: %s", e)
 
     def observe(self, as_of: datetime | None, equity: float) -> None:
         """Record one equity sample, at most one per minute of market time.
@@ -1200,7 +1198,8 @@ class RunRecorder:
                 # line_buffering=1 above, so this reaches the OS on the newline.
                 self._journal.write(json.dumps(sample) + "\n")
             except OSError as e:
-                log.warning(f"[Report] equity journal write failed, dropping it: {e}")
+                log_report.warning("%sequity journal write failed, dropping "
+                                   "it: %s", _at(stamp), e)
                 self._journal = None
 
     def close(self) -> None:
@@ -1228,8 +1227,8 @@ class RunRecorder:
                 try:
                     curve.append(json.loads(line))
                 except ValueError:
-                    log.warning(f"[Report] ignoring an incomplete journal line "
-                                f"at the end of {path}")
+                    log_report.warning("ignoring incomplete last journal line "
+                                       "in %s", path)
         return curve
 
     def build_result(self, client: AccountClient) -> BacktestResult | None:
@@ -1240,11 +1239,11 @@ class RunRecorder:
         """
         ctrl = client.control_plane
         if ctrl is None:
-            log.warning("[Report] broker has no control plane — no fills to report")
+            log_report.warning("broker has no control plane, no fills to report")
             return None
         raw = ctrl.get_backtest_state(session_id=self.session_id)
         if raw is None:
-            log.warning("[Report] the server returned no fill history — no report")
+            log_report.warning("server returned no fill history, no report")
             return None
 
         # One sync for both numbers, same reason as _broker_report: a balance
@@ -1286,9 +1285,9 @@ def print_run_report(result: BacktestResult, open_browser: bool = True) -> None:
     # report later without re-running the session.
     try:
         result.save(f"{stem}.pkl")
-        log.info(f"[Report] result saved → {stem}.pkl")
+        log_report.info("result saved: %s.pkl", stem)
     except Exception as e:
-        log.warning(f"[Report] could not save the result: {e}")
+        log_report.warning("result save failed: %s", e)
 
     try:
         # Needs at least two equity samples to have a return series at all;
@@ -1296,7 +1295,7 @@ def print_run_report(result: BacktestResult, open_browser: bool = True) -> None:
         report.full_report(path=f"{stem}.html", open_browser=open_browser,
                            title=f"Trading engine — {sid}")
     except Exception as e:
-        log.warning(f"[Report] no HTML tearsheet ({e})")
+        log_report.warning("no HTML tearsheet: %s", e)
 
 
 ctx = zmq.asyncio.Context()
@@ -1304,11 +1303,11 @@ ctx = zmq.asyncio.Context()
 
 async def publish_report(pub_socket, report: OrderReport) -> None:
     """Send an OrderReport to its bot. Topic is the bot id."""
-    log.info(f"[Master] {report.event.new_status.value} "
-             f"{report.event.action.value} {report.event.symbol} "
-             f"x{report.event.filled_quantity}/{report.event.quantity} "
-             f"@ {report.event.price} for {report.bot_id} "
-             f"({report.event.message}) balance={report.balance:.0f}")
+    ev = report.event
+    log.info("%s%s %s %s x%d/%d px=%s for %s (%s) balance=%.0f",
+             _at(ev.timestamp), ev.new_status.value, ev.action.value,
+             ev.symbol, ev.filled_quantity, ev.quantity, ev.price,
+             report.bot_id, ev.message, report.balance)
     await pub_socket.send_multipart(
         [report.bot_id.encode('utf-8'), protocol.encode(report)]
     )
@@ -1485,10 +1484,10 @@ async def await_bots(pub_socket, pull_socket, registry: "BotRegistry",
                 registry.record(msg, 0)
                 waiting.discard(msg.bot_id)
             else:
-                log.warning(f"[Master] ignoring {type(msg).__name__} from a "
-                            f"bot before the first bar")
+                log.warning("ignoring %s from a bot before the first bar",
+                            type(msg).__name__)
     if not waiting:
-        log.info(f"[Master] all {len(bot_ids)} bot(s) are listening")
+        log.info("all %d bot(s) listening", len(bot_ids))
     return sorted(waiting)
 
 
@@ -1500,7 +1499,7 @@ async def handle_bot_messages(pull_socket, pub_socket, engine: ExecutionEngine,
     the same socket because the alternative -- a listener per bot -- is N ports
     to secure for data master needs anyway.
     """
-    log.info("[Master] Started bot message loop...")
+    log.info("bot msg loop started")
     while True:
         try:
             msg = protocol.decode(await pull_socket.recv())
@@ -1510,10 +1509,10 @@ async def handle_bot_messages(pull_socket, pub_socket, engine: ExecutionEngine,
             if isinstance(msg, OrderIntent):
                 await publish_report(pub_socket, await engine.execute(msg))
                 continue
-            log.warning(f"[Master] ignoring unexpected message "
-                        f"{type(msg).__name__} on the intent socket")
+            log.warning("%signoring unexpected msg %s on intent socket",
+                        _at(hub.market_time), type(msg).__name__)
         except Exception as e:
-            log.info(f"[Master] Got exception while handling a bot message: {e}")
+            log.info("%sbot msg handling failed: %s", _at(hub.market_time), e)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1625,18 +1624,19 @@ def build_clock(client: AccountClient, clock: str, cfg: EngineConfig):
 
 
 async def main():
+    setup_logging(LOG_LEVEL)
     # Ask before binding anything: the form blocks on stdin, and there is no
     # point holding sockets or a broker session open while it waits.
     cfg = await asyncio.to_thread(load_config)
     if not cfg.symbols:
-        log.error("[Master] No symbols — set a watch list in the form or pass "
+        log.error("no symbols: set a watch list in the form or pass "
                   "--watch-list=0050,2317")
         return
 
     clock_name = "realtime" if cfg.is_live else CLOCK
-    log.info(f"[Master] broker={cfg.broker} backend={cfg.backend_mode} "
-             f"clock={clock_name} symbols={','.join(cfg.symbols)} "
-             f"fund={cfg.initial_balance:.0f} days={cfg.duration_days}")
+    log.info("broker=%s backend=%s clock=%s symbols=%s fund=%.0f days=%d",
+             cfg.broker, cfg.backend_mode, clock_name, ",".join(cfg.symbols),
+             cfg.initial_balance, cfg.duration_days)
 
     pub_socket = ctx.socket(zmq.PUB)
     pub_socket.bind(protocol.price_feed_address())
@@ -1646,7 +1646,7 @@ async def main():
     account_client = AccountClient(broker_type=BrokerType.ARENAX,
                                    arenax_port=ARENAX_PORT, api_key="testkey123")
     if not await asyncio.to_thread(account_client.connect):
-        log.error(f"[Master] Failed to connect to ArenaX broker (port {ARENAX_PORT}) — aborting.")
+        log.error("ArenaX broker conn failed (port %s), aborting", ARENAX_PORT)
         return
 
     # Before spawning bots: ReplayClock does its kbar fetch and clock alignment
@@ -1654,7 +1654,7 @@ async def main():
     try:
         clock = await asyncio.to_thread(build_clock, account_client, clock_name, cfg)
     except Exception as e:
-        log.error(f"[Master] Could not build {clock_name!r} clock: {e}")
+        log.error("build %r clock failed: %s", clock_name, e)
         account_client.disconnect()
         return
 
@@ -1669,9 +1669,8 @@ async def main():
     # 100,000.
     bot_balance = await asyncio.to_thread(account_client.get_balance)
     if abs(bot_balance - cfg.initial_balance) > 1e-6:
-        log.warning(f"[Master] broker balance is {bot_balance:.0f}, not the "
-                    f"requested fund={cfg.initial_balance:.0f} — bots will size "
-                    f"against the broker's number")
+        log.warning("broker balance %.0f != requested fund=%.0f; bots size "
+                    "against the broker's", bot_balance, cfg.initial_balance)
 
     # Stamped on every order the bots place, so the server tags this run's
     # fills with it and the end-of-run report can ask for exactly them. Without
@@ -1686,7 +1685,7 @@ async def main():
     # top of main() so it does not count the time the form spent waiting on
     # someone to answer it.
     run_started_at = datetime.now()
-    log.info(f"[Master] session {session_id}")
+    log.info("session %s", session_id)
 
     # A bot whose symbol is not in the watch list would subscribe to a topic
     # master never publishes, sit there until SILENCE_LIMIT_S and exit -- which
@@ -1698,42 +1697,41 @@ async def main():
         # Aborted rather than falling back: a caller that asked for a specific
         # set of bots and silently got the built-in default would be a
         # successful run of the wrong thing.
-        log.error(f"[Master] --roster could not be read: {exc}")
+        log.error("--roster unreadable: %s", exc)
         account_client.disconnect()
         return
     if roster is not BOT_ROSTER:
-        log.info("[Master] roster from --roster: "
-                 + ", ".join(f"{b}({s})" for b, _, s, _ in roster))
+        log.info("roster from --roster: %s",
+                 ", ".join(f"{b}({s})" for b, _, s, _ in roster))
 
     procs: list[asyncio.subprocess.Process] = []
     bots: list[str] = []
     bot_symbols: dict[str, str] = {}
     for bot_id, script, symbol, extra in roster:
         if symbol not in cfg.symbols:
-            log.error(f"[Master] {bot_id} is assigned {symbol}, which is not "
-                      f"in the watch list ({','.join(cfg.symbols)}) — it would "
-                      f"never receive a bar. Not starting it.")
+            log.error("%s not started: its sym %s is not in the watch list "
+                      "(%s), it would never get a bar", bot_id, symbol,
+                      ",".join(cfg.symbols))
             continue
         procs.append(await asyncio.create_subprocess_exec(
             sys.executable, '-u', str(BOT_DIR / script),
             bot_id, str(bot_balance), session_id, symbol, *extra))
         bots.append(bot_id)
         bot_symbols[bot_id] = symbol
-        log.info(f"[Master] spawned {bot_id} ({script}, {symbol}"
-                 + (f", {' '.join(extra)}" if extra else "") + ")")
+        log.info("spawned %s (%s, %s%s)", bot_id, script, symbol,
+                 f", {' '.join(extra)}" if extra else "")
     if not bots:
         wanted = sorted({sym for _b, _s, sym, _e in roster})
-        log.error(f"[Master] no bots started — nothing would trade. The "
-                  f"roster's bots trade {','.join(wanted)}, and none of that "
-                  f"is in the watch list ({','.join(cfg.symbols)}). Aborting.")
+        log.error("no bots started, aborting: roster trades %s, none in the "
+                  "watch list (%s)", ",".join(wanted), ",".join(cfg.symbols))
         account_client.disconnect()
         return
     missing = await await_bots(pub_socket, pull_socket, bot_registry, bots,
                                BOT_HANDSHAKE_TIMEOUT_S)
     if missing:
-        log.error(f"[Master] {','.join(missing)} never answered within "
-                  f"{BOT_HANDSHAKE_TIMEOUT_S:.0f}s; they may miss the first "
-                  f"bars, and a replay is not reproducible.")
+        log.error("%s no answer within %.0fs: may miss the first bars, "
+                  "replay not reproducible", ",".join(missing),
+                  BOT_HANDSHAKE_TIMEOUT_S)
 
     # Each bot's allocation is the account divided by the bots that started.
     # With one bot that is the whole account and the budget never bites; with
@@ -1754,10 +1752,10 @@ async def main():
         ),
         initial_equity=bot_balance,
     )
-    log.info(f"[Risk] per-bot allocation {bot_balance / len(bots):,.0f}, "
-             f"max {RISK_MAX_ORDERS_PER_BAR} order(s)/bar, "
-             f"halt at -{RISK_MAX_LOSS_PCT:.0%}, "
-             f"duplicate window {RISK_DUPLICATE_WINDOW_BARS} bar(s)")
+    log_risk.info("per-bot allocation %s, max %d order(s)/bar, halt at -%s, "
+                  "duplicate window %d bar(s)", f"{bot_balance / len(bots):,.0f}",
+                  RISK_MAX_ORDERS_PER_BAR, f"{RISK_MAX_LOSS_PCT:.0%}",
+                  RISK_DUPLICATE_WINDOW_BARS)
 
     engine = ExecutionEngine(account_client=account_client,
                              initial_balance=cfg.initial_balance,
@@ -1819,14 +1817,13 @@ async def main():
             # Said loudly and not raised: the bot is already stopping, and the
             # worst outcome here is a resting order nobody is watching, which
             # the operator needs to know about rather than see as a 500.
-            log.error(f"[Master] {bot_id} stopped but its resting orders could "
-                      f"not be cancelled — they are still live at the broker: "
-                      f"{e}")
+            log.error("%s%s stopped, but cancel of its resting orders failed; "
+                      "still live at broker: %s", _at(hub.market_time), bot_id, e)
 
         asyncio.create_task(_reap_bot(bot_id))
-        log.warning(f"[Master] {bot_id} stopped on request: {reason} "
-                    f"({len(cancelled)} resting order(s) cancelled, "
-                    f"position left alone)")
+        log.warning("%s%s stopped on req: %s (%d resting order(s) cancelled, "
+                    "position kept)", _at(hub.market_time), bot_id, reason,
+                    len(cancelled))
         return {"ok": True, "bot_id": bot_id, "reason": reason,
                 "orders_cancelled": cancelled, "position_flattened": False}
 
@@ -1847,13 +1844,13 @@ async def main():
             return
         except asyncio.TimeoutError:
             pass
-        log.warning(f"[Master] {bot_id} has not exited {grace_s:.0f}s after "
-                    f"being told to stop — signalling it")
+        log.warning("%s not exited %.0fs after stop, sending SIGTERM",
+                    bot_id, grace_s)
         try:
             proc.terminate()
             await asyncio.wait_for(proc.wait(), timeout=grace_s)
         except asyncio.TimeoutError:
-            log.error(f"[Master] {bot_id} ignored SIGTERM — killing it")
+            log.error("%s ignored SIGTERM, killing it", bot_id)
             try:
                 proc.kill()
             except Exception:
@@ -1884,12 +1881,13 @@ async def main():
         bot_registry.excuse_caught_up(
             {b: hub.seq_of(sym) for b, sym in bot_symbols.items()}, hub.bars)
         for bot_id in bot_registry.newly_silent(hub.bars, BOT_SILENT_BARS):
-            log.error(f"[Master] {bot_id} has not reported for "
-                      f"{BOT_SILENT_BARS} bars — it has exited, stalled, or is "
-                      f"listening to another master. Its orders are stale.")
+            log.error("%s%s silent for %d bars (exited, stalled or on another "
+                      "engine); its orders are stale", _at(as_of), bot_id,
+                      BOT_SILENT_BARS)
         if hub.bars % BOT_STATUS_EVERY == 0:
             for bot_id in bots:
-                log.info(f"[Bots] {bot_registry.summary_line(bot_id)}")
+                log_bots.info("%s%s", _at(as_of),
+                              bot_registry.summary_line(bot_id))
 
         # Guarded, because this used to be the most fragile line in the engine:
         # a single unanswered read ended the run. The broker going away for one
@@ -1905,8 +1903,8 @@ async def main():
             state = await asyncio.to_thread(account_client.get_account_state)
         except Exception as e:
             account_read_failures += 1
-            log.warning(f"[Master] could not read the account on bar {hub.bars} "
-                        f"({account_read_failures} in a row): {e}")
+            log.warning("%saccount read failed on bar %d (%d in a row): %s",
+                        _at(as_of), hub.bars, account_read_failures, e)
             # Counted in bars, not seconds, because what the number measures is
             # how many bars the bots have traded with nobody watching the
             # account -- and bars are what they trade on.
@@ -1919,13 +1917,13 @@ async def main():
                 gate.halt(f"the account has been unreadable for "
                           f"{account_read_failures} bars — refusing new orders "
                           f"until it can be seen again")
-                log.error(f"[Risk] KILL SWITCH — {gate.halt_reason}")
+                log_risk.error("%sKILL SWITCH: %s", _at(as_of), gate.halt_reason)
                 for report in await engine.cancel_open_orders(as_of, "account unreadable"):
                     await publish_report(pub_socket, report)
             return
         if account_read_failures:
-            log.info(f"[Master] account readable again after "
-                     f"{account_read_failures} bar(s)")
+            log.info("%saccount readable again after %d bar(s)", _at(as_of),
+                     account_read_failures)
             account_read_failures = 0
 
         equity = state.balance + sum(p.market_value for p in state.positions)
@@ -1936,7 +1934,7 @@ async def main():
         if tripped:
             # A halt that leaves working orders out there is not a halt, so pull
             # them before refusing anything new.
-            log.error(f"[Risk] KILL SWITCH — {tripped}")
+            log_risk.error("%sKILL SWITCH: %s", _at(as_of), tripped)
             for report in await engine.cancel_open_orders(as_of, "risk halt"):
                 await publish_report(pub_socket, report)
 
@@ -1959,9 +1957,9 @@ async def main():
             return
         late = bot_registry.behind(wanted)
         unresponsive.update(late)
-        log.error(f"[Master] {','.join(late)} did not answer bar {hub.bars} "
-                  f"within {BAR_BARRIER_TIMEOUT_S:.0f}s; no longer waiting "
-                  f"for it, so this replay is not reproducible.")
+        log.error("%s%s no answer to bar %d within %.0fs; no longer waited "
+                  "for, replay not reproducible", _at(hub.market_time),
+                  ",".join(late), hub.bars, BAR_BARRIER_TIMEOUT_S)
 
     # Only the live path consults the trading session. Under replay the bars
     # themselves came from real sessions, so there is nothing to gate and the
@@ -2006,10 +2004,10 @@ async def main():
             for report in await engine.cancel_open_orders(hub.market_time):
                 await publish_report(pub_socket, report)
         except Exception as e:
-            log.error(f"[Master] Shutdown cancel failed, orders may still be "
-                      f"live at the broker: {e}")
+            log.error("%sshutdown cancel failed, orders may be live at "
+                      "broker: %s", _at(hub.market_time), e)
 
-        log.info("[Master] Terminating all bots...")
+        log.info("terminating all bots")
         for proc in procs:
             # Each in its own try: one bot that is already gone must not stop
             # the others being reaped, or they outlive master and go on
@@ -2024,8 +2022,8 @@ async def main():
         # whose last word was 400 bars ago stopped reporting while master kept
         # going, and the fill count alone would not show that.
         for bot_id in bots:
-            log.info(f"[Bots] {bot_registry.summary_line(bot_id)}")
-        log.info("[Master] Trading engine terminated.")
+            log_bots.info("%s", bot_registry.summary_line(bot_id))
+        log.info("engine terminated")
 
         # After the bots are gone so the report is not interleaved with their
         # output, and before disconnect() because the fills are a server read.
@@ -2034,7 +2032,7 @@ async def main():
             if result is not None:
                 print_run_report(result)
         except Exception as e:
-            log.error(f"[Report] could not build the run report: {e}")
+            log_report.error("run report build failed: %s", e)
 
         # After the report, so a failure above still leaves the journal intact
         # on disk rather than half-flushed.

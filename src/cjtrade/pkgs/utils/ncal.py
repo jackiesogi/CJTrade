@@ -8,6 +8,13 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+
+log = get_logger("utils")
+out = get_console()
+
 
 def display_calendar(target_date: Optional[datetime] = None, monday_first: bool = True,
                      highlight: bool = True) -> None:
@@ -42,7 +49,7 @@ def display_calendar(target_date: Optional[datetime] = None, monday_first: bool 
     # Month and year header
     month_name = calendar.month_name[month]
     header = f"{month_name} {year}"
-    print(header.center(20))
+    out.info(header.center(20))
 
     # Day names header
     if monday_first:
@@ -50,7 +57,7 @@ def display_calendar(target_date: Optional[datetime] = None, monday_first: bool 
     else:
         day_names = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
-    print(' '.join(day_names))
+    out.info(' '.join(day_names))
 
     # Print each week
     for week in cal:
@@ -64,13 +71,14 @@ def display_calendar(target_date: Optional[datetime] = None, monday_first: bool 
                 week_str.append(f'\033[7m{d:2d}\033[0m')
             else:
                 week_str.append(f'{d:2d}')
-        print(' '.join(week_str))
+        out.info(' '.join(week_str))
 
-    print()  # Blank line at the end
+    out.info("")  # Blank line at the end
 
 
 def main():
     """Main entry point for command-line usage."""
+    setup_logging()
     import argparse
 
     parser = argparse.ArgumentParser(description='Display a calendar')
@@ -103,10 +111,10 @@ def main():
                     from dateutil import parser as date_parser
                     target_date = date_parser.parse(args.date)
                 except (ImportError, ValueError):
-                    print(f"Error: Unable to parse date '{args.date}'", file=sys.stderr)
+                    log.error("unable to parse date %r", args.date)
                     sys.exit(1)
         except Exception as e:
-            print(f"Error parsing date: {e}", file=sys.stderr)
+            log.error("parse date failed: %s", e)
             sys.exit(1)
 
     # Determine first day of week

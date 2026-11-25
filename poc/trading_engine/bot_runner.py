@@ -37,7 +37,6 @@ The Kbar is the broker's closed 1m bar, passed to on_bar as it arrives. It is
 the same type, with the same meaning, that BacktestEngine feeds a strategy, so
 a strategy cannot tell the two runners apart.
 """
-import logging
 import signal
 import sys
 import time
@@ -46,6 +45,8 @@ from datetime import datetime
 
 import protocol
 import zmq
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
@@ -64,11 +65,13 @@ from protocol import OrderIntent
 from protocol import OrderReport
 from protocol import PriceUpdate
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-log = logging.getLogger("poc.bot")
+# Before bot_id is known. run_bot replaces it with "bot.<bot_id>".
+log = get_logger("bot")
+
+
+def _at(ts: datetime | None) -> str:
+    """``"@YYYY-MM-DD HH:MM "`` for a market moment, to open a log message."""
+    return f"@{ts:%Y-%m-%d %H:%M} " if ts else ""
 
 # Fallback only -- master normally passes the broker's starting balance as
 # argv[2] (main.py). Used when a bot script is run standalone. The mirror only
@@ -239,12 +242,15 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
     bot_id, initial_balance, session_id, target_symbol = bot_argv(
         default_symbol, argv)
     params = dict(params or {})
+    # This function is the body of a bot process (bot_a.py etc. only call it).
+    setup_logging()
+    log = get_logger(f"bot.{bot_id}")
 
     ledger = LocalLedgerMirror(initial_balance)
     price_map: dict[str, float] = {}
     price_history: dict[str, list] = {}
 
-    log.info(f"[{bot_id}] started! ({target_symbol}) strategy={strategy.name}")
+    log.info("started (%s) strategy=%s", target_symbol, strategy.name)
 
     started_at = datetime.now()
 
@@ -300,9 +306,9 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                 if silent_since is None:
                     silent_since = now
                 elif now - silent_since >= SILENCE_LIMIT_S:
-                    log.error(f"[{bot_id}] nothing from master for "
-                              f"{now - silent_since:.0f}s — assuming it is gone "
-                              f"and exiting rather than trading on a stale mirror")
+                    log.error("nothing from master for %.0fs, assuming it is "
+                              "gone; exiting, not trading on a stale mirror",
+                              now - silent_since)
                     break
                 continue
             silent_since = None
@@ -313,15 +319,13 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                 # anyway, because a wrong id here would mean one bot stopping
                 # on another's behalf and that should be loud, not silent.
                 if msg.bot_id != bot_id:
-                    log.warning(f"[{bot_id}] ignoring a {msg.action} meant for "
-                                f"{msg.bot_id}")
+                    log.warning("ignoring %s meant for %s", msg.action,
+                                msg.bot_id)
                     continue
                 if msg.action != protocol.BOT_STOP:
-                    log.warning(f"[{bot_id}] unknown command "
-                                f"{msg.action!r} — ignoring")
+                    log.warning("ignoring unknown command %r", msg.action)
                     continue
-                log.warning(f"[{bot_id}] stopping on master's instruction: "
-                            f"{msg.reason}")
+                log.warning("stopping on master's instruction: %s", msg.reason)
                 stopped_by = msg.reason
                 break
             if isinstance(msg, FeedStatus):
@@ -332,12 +336,12 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                 # night.
                 if msg.market_open:
                     if feed_held:
-                        log.info(f"[{bot_id}] feed resumed ({msg.reason}) — "
-                                 f"master has served {msg.bars_served} bar(s)")
+                        log.info("feed resumed (%s), master served %d bar(s)",
+                                 msg.reason, msg.bars_served)
                         feed_held = False
                 elif not feed_held:
-                    log.info(f"[{bot_id}] master is holding the feed "
-                             f"({msg.reason}) — waiting, not exiting")
+                    log.info("master holding the feed (%s); waiting, not "
+                             "exiting", msg.reason)
                     feed_held = True
                 if msg.reason == protocol.FEED_SYNC_REASON:
                     # Master is asking who is listening before bar 0. Hearing
@@ -384,18 +388,18 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                     # Accepted and resting at the broker. NOT a rejection: the
                     # cash is already committed, and a fill will be reported on
                     # a later bar once the price crosses.
-                    log.info(f"[{bot_id}] order {event.order_id[:8]} resting "
-                             f"({event.new_status.value}) — "
-                             f"{event.action.value} {event.symbol} "
-                             f"x{event.quantity} @ {event.price}")
+                    log.info("%sorder %s resting (%s): %s %s x%d px=%s",
+                             _at(event.timestamp), event.order_id[:8],
+                             event.new_status.value, event.action.value,
+                             event.symbol, event.quantity, event.price)
                 else:
-                    log.info(f"[{bot_id}] order {event.order_id[:8]} "
-                             f"{event.new_status.value}: {event.message}")
+                    log.info("%sorder %s %s: %s", _at(event.timestamp),
+                             event.order_id[:8], event.new_status.value,
+                             event.message)
                 continue
 
             if not isinstance(msg, PriceUpdate):
-                log.warning(f"[{bot_id}] ignoring unexpected message "
-                            f"{type(msg).__name__}")
+                log.warning("ignoring unexpected msg %s", type(msg).__name__)
                 continue
 
             # PUB/SUB has no retransmit, so a gap in the per-symbol sequence is
@@ -408,13 +412,14 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                     # bars are from a different master than the last ones, i.e.
                     # this bot outlived its own. SILENCE_LIMIT_S should have
                     # caught that first, so say so loudly and stop.
-                    log.error(f"[{bot_id}] sequence went backwards "
-                              f"({last_seq} -> {msg.seq}) — these bars belong to "
-                              f"another master. Exiting.")
+                    log.error("%sseq went backwards (%d -> %d): bars from "
+                              "another master, exiting", _at(msg.bar.timestamp),
+                              last_seq, msg.seq)
                     break
                 bars_dropped += missed
-                log.warning(f"[{bot_id}] dropped {missed} bar(s) "
-                            f"of {target_symbol} (seq {last_seq} -> {msg.seq})")
+                log.warning("%sdropped %d bar(s) of %s (seq %d -> %d)",
+                            _at(msg.bar.timestamp), missed, target_symbol,
+                            last_seq, msg.seq)
             last_seq = msg.seq
 
             # One broadcast = one closed 1m bar, built by the broker. A finer
@@ -443,13 +448,14 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                 if held is not None:
                     waited = bar_index - held.bar_sent
                     if held.acknowledged or waited < UNACKED_MAX_BARS:
-                        log.debug(f"[{bot_id}] skipping {sig.action} {sig.symbol}: "
-                                  f"order {held.order_id[:8]} still in flight")
+                        log.debug("%sskipping %s %s: order %s in flight",
+                                  _at(bar.timestamp), sig.action, sig.symbol,
+                                  held.order_id[:8])
                         continue
-                    log.warning(f"[{bot_id}] no word on order "
-                                f"{held.order_id[:8]} after {waited} bars — "
-                                f"assuming it never reached master, trading "
-                                f"{sig.symbol} again")
+                    log.warning("%sno word on order %s after %d bars, assuming "
+                                "it never reached master; trading %s again",
+                                _at(bar.timestamp), held.order_id[:8], waited,
+                                sig.symbol)
 
                 # Just the intent — master's ExecutionEngine decides if/how it fills.
                 order = build_order(bot_id, session_id, sig, bar)
@@ -490,10 +496,10 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
         price_history=price_history, bar_index=bar_index, params=params,
     ))
     mon = strategy.monitors()
-    log.info(f"[{bot_id}] exiting after {bar_index} bar(s), "
-             f"balance={ledger.balance:.0f}, dropped={bars_dropped}"
-             + (f", {mon.get('signals_emitted', '?')} signal(s)" if mon else "")
-             + (f" — stopped: {stopped_by}" if stopped_by else ""))
+    log.info("exiting after %d bar(s), balance=%.0f, dropped=%d%s%s",
+             bar_index, ledger.balance, bars_dropped,
+             f", {mon.get('signals_emitted', '?')} signal(s)" if mon else "",
+             f"; stopped: {stopped_by}" if stopped_by else "")
     if mon:
-        log.info(f"[{bot_id}] final monitors: "
-                 + "  ".join(f"{k}={v}" for k, v in mon.items()))
+        log.info("final monitors: %s",
+                 "  ".join(f"{k}={v}" for k, v in mon.items()))

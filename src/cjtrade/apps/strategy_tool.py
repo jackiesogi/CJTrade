@@ -25,6 +25,7 @@ import argparse
 import json
 import sys
 
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.strategy.user_strategy import api_reference
 from cjtrade.pkgs.strategy.user_strategy import check
 from cjtrade.pkgs.strategy.user_strategy import collect_params
@@ -40,6 +41,7 @@ def _read_source(path: str | None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="strategy-tool",
         description="Validate, describe and scaffold CJTrade strategies.")

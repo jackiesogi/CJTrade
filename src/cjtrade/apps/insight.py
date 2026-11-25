@@ -70,6 +70,8 @@ from typing import List
 from typing import Optional
 
 from cjtrade.pkgs import paths
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models.backtest import BacktestResult
 
 # Taipei is UTC+8 with no DST, and every datetime in this codebase is a naive
@@ -1515,6 +1517,8 @@ def resolve(target: Optional[str]) -> Path:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    setup_logging()
+    out = get_console("insight")
     parser = argparse.ArgumentParser(
         prog="insight",
         description="Distil a finished run into a report an expert can "
@@ -1535,9 +1539,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.list:
         runs = available_runs()
         if not runs:
-            print(f"No runs in {paths.reports_dir()}.")
+            out.info(f"No runs in {paths.reports_dir()}.")
             return 0
-        print(f"{len(runs)} run(s) in {paths.reports_dir()}:")
+        out.info(f"{len(runs)} run(s) in {paths.reports_dir()}:")
         for path in runs:
             when = datetime.fromtimestamp(path.stat().st_mtime)
             # The prefix is how a run names its path without opening the
@@ -1545,7 +1549,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             kind = ("oneshot" if path.name.startswith("oneshot_")
                     else "engine" if path.name.startswith("engine_")
                     else "?")
-            print(f"  {_strip_prefix(path.stem):<40} {kind:<8} "
+            out.info(f"  {_strip_prefix(path.stem):<40} {kind:<8} "
                   f"{when:%Y-%m-%d %H:%M}  {path.stat().st_size:>9,} bytes")
         return 0
 
@@ -1569,8 +1573,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                          encoding="utf-8")
 
     if args.stdout:
-        print(markdown)
-        print()
+        out.info(markdown)
+        out.info("")
 
     # The whole point of the command: say where the two files are, plainly,
     # as the last thing on screen.
@@ -1579,29 +1583,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     where = (f" [{prov['path']}"
              + (f", {prov['interval']}" if prov.get("interval") else "")
              + "]") if prov.get("path") else ""
-    print(f"Run {doc['run']['session_id'][:8]}{where} — "
+    out.info(f"Run {doc['run']['session_id'][:8]}{where} — "
           f"{doc['activity']['fills']} fill(s), "
           f"{doc['round_trips']['count']} round trip(s), "
           f"net {doc['run']['net_pnl']:+,.2f}")
     perf = doc.get("performance") or {}
     if perf.get("available"):
-        print(f"  Sharpe {_num(perf['sharpe'])} · Sortino "
+        out.info(f"  Sharpe {_num(perf['sharpe'])} · Sortino "
               f"{_num(perf['sortino'])} · CAGR {_pct(perf['cagr'])} · "
               f"max drawdown {_pct(perf['max_drawdown'])}")
     if not prov:
-        print("  ⚠ no provenance recorded — which execution path produced "
+        out.info("  ⚠ no provenance recorded — which execution path produced "
               "this is unknown")
     if not doc["market"]["available"]:
-        print("  ⚠ no price database, so the market sections are empty")
+        out.info("  ⚠ no price database, so the market sections are empty")
     elif not doc["market"]["symbols"]:
-        print("  ⚠ no price history for this window, so the market sections "
+        out.info("  ⚠ no price history for this window, so the market sections "
               "are empty")
     if flagged:
-        print(f"  {len(flagged)} thing(s) worth a look: "
+        out.info(f"  {len(flagged)} thing(s) worth a look: "
               + "; ".join(f["what"] for f in flagged))
-    print()
-    print(f"  report  {md_path}")
-    print(f"  json    {json_path}")
+    out.info("")
+    out.info(f"  report  {md_path}")
+    out.info(f"  json    {json_path}")
     return 0
 
 

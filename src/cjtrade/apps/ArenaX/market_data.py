@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 from datetime import datetime
@@ -10,11 +9,10 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
-
-log = logging.getLogger("cjtrade.arenax_market")
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.marketdata import Cached
 from cjtrade.pkgs.marketdata import Fallback
 from cjtrade.pkgs.marketdata import MarketData
@@ -29,6 +27,8 @@ from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
+
+log = get_logger("ArenaX.market")
 
 def default_market_data(real_account: Optional[AccountClient] = None) -> MarketData:
     """What ArenaX read prices from before sources were pluggable.
@@ -197,8 +197,8 @@ class ArenaX_Market:
             hours: Number of hours to shift (can be negative)
         """
         self.manual_time_offset += timedelta(hours=hours)
-        # print(f"Mock time adjusted by {hours:+.1f} hours")
-        # print(f"Total manual offset: {self.manual_time_offset.total_seconds() / 3600:+.1f} hours")
+        # log.debug("mock time %+.1fh, total offset %+.1fh", hours,
+        #           self.manual_time_offset.total_seconds() / 3600)
 
     def get_market_time(self):
         real_current_time = datetime.now()
@@ -359,7 +359,8 @@ class ArenaX_Market:
         try:
             bars = self.data.get_kbars(symbol, self.start_date, end_date, "1m")
         except Exception as exc:                          # noqa: BLE001
-            print(f"[{symbol}] Could not load bars: {exc}")
+            log.warning("@%s %s load bars failed: %s",
+                        f"{self.start_date:%Y-%m-%d %H:%M}", symbol, exc)
             bars = []
         if not bars:
             self._store_empty_data(symbol, "no bars in the requested window")
@@ -369,12 +370,13 @@ class ArenaX_Market:
             'Close': k.close, 'Volume': k.volume,
         } for k in bars], index=[k.timestamp for k in bars])
         self.historical_data[symbol] = {'data': df, 'timestamps': df.index.to_numpy()}
-        print(f"[{symbol}] Loaded {len(df)} bar(s) "
-              f"({self.start_date.date()} – {end_date.date()}, source={self.source.name})")
+        log.info("@%s %s loaded n=%d bars through %s (source=%s)",
+                 f"{self.start_date:%Y-%m-%d %H:%M}", symbol, len(df),
+                 end_date.date(), self.source.name)
 
     def _store_empty_data(self, symbol: str, reason: str):
         """Store empty data placeholder with consistent structure."""
-        print(f"Using empty data for {symbol}: {reason}")
+        log.warning("using empty data for %s: %s", symbol, reason)
         self.historical_data[symbol] = {
             'data': pd.DataFrame(),
             'timestamps': None

@@ -5,7 +5,6 @@ Provides async access to TWSE open data APIs for company information,
 financial ratios, EPS data, balance sheets, and announcements.
 """
 import asyncio
-import logging
 from datetime import datetime
 from typing import Any
 from typing import Dict
@@ -19,9 +18,12 @@ from cjtrade.pkgs.analytics.fundamental.models.financial_data import BalanceShee
 from cjtrade.pkgs.analytics.fundamental.models.financial_data import EPSInfo
 from cjtrade.pkgs.analytics.fundamental.models.financial_data import FinancialRatios
 from cjtrade.pkgs.analytics.fundamental.models.financial_data import IncomeStatementInfo
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger("analytics.fundamental")
 
 
 class TWSEProvider:
@@ -669,18 +671,20 @@ async def main():
     --------
     Demo only; makes network calls to TWSE.
     """
+    out = get_console("analytics.fundamental")
     async with TWSEProvider() as provider:
         # 獲取台積電的所有資訊
         tsmc_info = await provider.get_company_all_info("2330")
-        print("台積電基本資訊:", tsmc_info['basic_info'])
-        print("台積電財務比率:", tsmc_info['financial_ratios'])
+        out.info("台積電基本資訊: %s", tsmc_info['basic_info'])
+        out.info("台積電財務比率: %s", tsmc_info['financial_ratios'])
 
         # 獲取今日重大訊息
         announcements = await provider.get_daily_announcements()
-        print(f"今日重大訊息共 {len(announcements)} 筆")
+        out.info(f"今日重大訊息共 {len(announcements)} 筆")
         for announcement in announcements[:5]:  # 顯示前5筆
-            print(f"  {announcement}")
+            out.info(f"  {announcement}")
 
 
 if __name__ == "__main__":
+    setup_logging()
     asyncio.run(main())

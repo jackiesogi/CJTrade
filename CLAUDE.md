@@ -133,6 +133,16 @@ sources and the simulated clock for ArenaX's kbars route. Do not add a
 `arenaxd --data=offline --price-db=FILE` serves only a file filled by
 `preload-prices`.
 
+**No print(); log through `cjtrade.pkgs.logger`.** `log = get_logger("brokers.sinopac")`,
+named for the path below `pkgs/` (or below `apps/`; the trading engine is
+`engine.*`, bots `bot.<id>`). Lines read
+`[INFO][2026-11-25 15:41:29] brokers.sinopac: message`. A tag such as `[Clock]`
+is a logger name (`engine.clock`), never repeated in the message. Simulated
+time goes in the message as `@2025-09-01 09:05`. A command's result (a shell
+reply, a report, a table) is program output: `get_console(...)`, bare on
+stdout. Only entry points call `setup_logging()`; `CJTRADE_LOG_LEVEL=DEBUG`
+overrides the level.
+
 **Engine code must be broker-agnostic.** Anything broker- or mode-specific
 belongs in an init/bootstrap step, not in the loop. No clock stepping, no
 `set_market_time`, no `if broker == "arenax"` inside engine logic. The one

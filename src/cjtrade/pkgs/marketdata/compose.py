@@ -1,13 +1,13 @@
 """Combine MarketData sources: try several in turn, or put a cache in front."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from datetime import timedelta
 from functools import reduce
 from typing import List
 from typing import Sequence
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.marketdata.base import Capabilities
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import is_offline
@@ -22,7 +22,7 @@ from cjtrade.pkgs.models.quote import BidAsk
 from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.tick import Tick
 
-log = logging.getLogger("cjtrade.marketdata")
+log = get_logger("marketdata")
 
 
 class Fallback(MarketData):

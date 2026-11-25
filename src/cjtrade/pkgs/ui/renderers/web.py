@@ -20,6 +20,7 @@ from typing import Any
 from ..base_renderer import FormRenderer
 from ..schema import FormField
 from ..schema import FormSchema
+from .cli import form_console
 
 # ---------------------------------------------------------------------------
 # HTML helpers — styled after FinHub (Tailwind CSS, slate palette)
@@ -330,7 +331,7 @@ class WebRenderer(FormRenderer):
 
         server = HTTPServer(("127.0.0.1", self.port), Handler)
         url = f"http://127.0.0.1:{self.port}"
-        print(f"  Form available at {url}", file=sys.stderr)
+        form_console().info(f"  Form available at {url}")
 
         # Run server in background thread; stop after first POST
         def _serve():

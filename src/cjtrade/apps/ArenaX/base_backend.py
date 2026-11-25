@@ -28,6 +28,7 @@ from cjtrade.apps.ArenaX.time_in_force import TIFContext
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.marketdata import Cached
 from cjtrade.pkgs.marketdata import MarketData
 from cjtrade.pkgs.marketdata import PriceCache
@@ -47,6 +48,10 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
 from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.trade import Trade
+
+log = get_logger("ArenaX.backend")
+log_state = log.getChild("state")
+log_tif = log.getChild("tif")
 
 NOT_AVAILABLE_FOR_THIS_BACKEND = None
 PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
@@ -155,16 +160,15 @@ class ArenaX_BackendBase:
             self._connected = True
 
             if self.state_in:
-                print(f"[state] resuming from snapshot: {self.state_in}")
+                log_state.info("resume from snapshot %s", self.state_in)
                 self._load_state_from(self.state_in)
             elif self.seed_from_live and self.real_account:
-                print("[state] seeding from live account — this run is NOT reproducible")
+                log_state.warning("seeding from live account, run is NOT reproducible")
                 self._sync_with_real_account()
             else:
-                print("[state] fresh account")
+                log_state.info("fresh account")
                 self._init_fresh_state()
-            print(f"[state] session {self.session_id} — "
-                  f"snapshot will be written to {self.state_out}")
+            log_state.info("session %s, snapshot -> %s", self.session_id, self.state_out)
 
             # Stamp initial_balance once per session (after state is loaded so we
             # can fall back to the loaded balance when no explicit override is given).
@@ -174,10 +178,10 @@ class ArenaX_BackendBase:
                 # First run: treat the starting cash as initial_balance
                 self.account_state.initial_balance = self.account_state.balance
 
-            print("Simulation environment started")
+            log.info("sim env started")
             return True
         except Exception as e:
-            print(f"Failed to start simulation environment: {e}")
+            log.error("sim env start failed: %s", e)
             self._connected = False
             return False
 
@@ -186,7 +190,7 @@ class ArenaX_BackendBase:
             self.real_account.disconnect()
         self._write_state_snapshot()
         self._connected = False
-        print("Simulation environment stopped")
+        log.info("sim env stopped")
 
     def _write_state_snapshot(self) -> None:
         """Persist the final state to this session's own file.
@@ -209,9 +213,9 @@ class ArenaX_BackendBase:
             }
             with open(self.state_out, "w") as f:
                 json.dump(data, f, indent=4)
-            print(f"[state] snapshot written: {self.state_out}")
+            log_state.info("snapshot written: %s", self.state_out)
         except Exception as exc:
-            print(f"[state] failed to write snapshot {self.state_out}: {exc}")
+            log_state.error("write snapshot %s failed: %s", self.state_out, exc)
 
     def _init_fresh_state(self) -> None:
         """Start from an empty account. Touches no disk.
@@ -265,14 +269,15 @@ class ArenaX_BackendBase:
             start_dt = datetime.fromisoformat(start)
             end_dt = datetime.fromisoformat(end)
         except (TypeError, ValueError) as e:
-            print(f"Error parsing date range: {e}")
+            log.warning("bad date range: %s", e)
             return []
         if len(end) == 10:                  # a whole date: through its end
             end_dt += timedelta(days=1)
         bars = self.data.get_kbars(symbol, start_dt, end_dt, interval)
-        bars = closed(bars, interval, self._clock())
-        print(f"[kbars] Returning {len(bars)} kbars for {symbol} "
-              f"(source={self.market_data.name})")
+        now = self._clock()
+        bars = closed(bars, interval, now)
+        log.debug("@%s kbars %s n=%d (source=%s)", f"{now:%Y-%m-%d %H:%M}",
+                  symbol, len(bars), self.market_data.name)
         return bars
 
     def _clock(self) -> datetime:
@@ -566,18 +571,17 @@ class ArenaX_BackendBase:
         try:
             if not self.real_account.is_connected():
                 self.real_account.connect()
-            print("Syncing with real account...")
+            log.info("syncing with real account")
 
             self.account_state.balance = self.real_account.get_balance()
             real_positions = self.real_account.get_positions()
 
             if not real_positions:
-                print("No positions in real account")
+                log.info("no positions in real account")
                 self.account_state.positions = []
                 return
 
             day_preload = self.num_days_preload if self.real_account else 5
-            # print(f"preload: {day_preload}")
             for pos in real_positions:
                 if (
                     not self.skip_data_preload
@@ -600,7 +604,7 @@ class ArenaX_BackendBase:
             if not self.skip_data_preload:
                 self._update_position_prices()
         except Exception as exc:
-            print(f"Error syncing with real account: {exc}")
+            log.error("sync with real account failed: %s", exc)
 
     def _load_state_from(self, path: str) -> None:
         """Resume from an existing snapshot. Read-only: never writes `path`.
@@ -798,10 +802,10 @@ class ArenaX_BackendBase:
                 # reservation in the same step.
                 self.cancel_order(order.id)
                 cancelled.append(order.id)
-                print(f"[TIF] {order.order_type.value} {order.id} cancelled: "
-                      f"{decision.reason}")
+                log_tif.info("@%s %s %s cancelled: %s", f"{now:%Y-%m-%d %H:%M}",
+                             order.order_type.value, order.id, decision.reason)
             except Exception as exc:
-                print(f"[TIF] Could not cancel {order.id}: {exc}")
+                log_tif.error("@%s cancel %s failed: %s", f"{now:%Y-%m-%d %H:%M}", order.id, exc)
         return cancelled
 
     # ── Reservation ───────────────────────────────────────────────────────────
@@ -909,7 +913,6 @@ class ArenaX_BackendBase:
     def _check_if_any_order_filled(self) -> bool:
         if not hasattr(self, "market"):
             return False
-        # print("Checking for order fills...")
 
         calendar = getattr(self.market, "calendar", None) or TradingCalendar()
 
@@ -933,8 +936,6 @@ class ArenaX_BackendBase:
             deadline = policy_for(order.order_type).expires_at(order, calendar)
             if deadline is not None and deadline < cmp_time_range_end:
                 cmp_time_range_end = deadline
-
-            # print(f"Checking order {order.id} from {cmp_time_range_start} to {cmp_time_range_end} against target price {target_price} !!!")
 
             if cmp_time_range_end <= cmp_time_range_start:
                 continue
@@ -994,12 +995,12 @@ class ArenaX_BackendBase:
                 # filter fill_history by session after the backtest ends.
                 "session_id": order.opt_field.get("session_id") if order.opt_field else None,
             })
-            print("Order filled:", order.id)
+            log.info("@%s order filled: %s", f"{fill_time:%Y-%m-%d %H:%M}", order.id)
 
             self._reconstruct_positions_from_history()
             return True
         except Exception as exc:
-            print(f"Error moving order {order.id} to filled: {exc}")
+            log.error("move order %s to filled failed: %s", order.id, exc)
             return False
 
     def _find_fill_time(
@@ -1049,8 +1050,8 @@ class ArenaX_BackendBase:
                 "close" if "close" in data.columns else None
             )
             if column is None:
-                print(f"_find_fill_time: no close column for {symbol} "
-                      f"(have {list(data.columns)})")
+                log.warning("_find_fill_time: no close column for %s (have %s)",
+                            symbol, list(data.columns))
                 return None
             # Not cached: to_numpy() on a contiguous float column is ~5us even
             # for four years of 1m bars, so a cache would add an invalidation
@@ -1069,7 +1070,7 @@ class ArenaX_BackendBase:
             # Report the type too: a bare message turned a NameError in here
             # into a silent "nothing filled", which looks exactly like a
             # correct no-match and cost an afternoon to spot.
-            print(f"_find_fill_time error: {type(exc).__name__}: {exc}")
+            log.error("_find_fill_time: %s: %s", type(exc).__name__, exc)
             return None
 
     def _reconstruct_positions_from_history(self) -> None:
@@ -1139,8 +1140,8 @@ class ArenaX_BackendBase:
                 # negative share count in a cash equity account is a bug
                 # upstream, and silently dropping the position would erase the
                 # only evidence.
-                print(f"Warning: {sym} fill history oversells by {oversold} "
-                      f"share(s) — position reported as {held_qty}")
+                log.warning("%s fill history oversells by %s share(s), position reported as %s",
+                            sym, oversold, held_qty)
 
             held_cost = sum(p * q for p, q in lots)
             avg_cost = held_cost / held_qty if held_qty > 0 else 0.0
@@ -1177,7 +1178,7 @@ class ArenaX_BackendBase:
                     unrealized_pnl=round((simulated_price - pos.avg_cost) * pos.quantity, 1),
                 ))
             except Exception as exc:
-                print(f"Warning: Failed to update price for {pos.symbol}: {exc}")
+                log.warning("update px for %s failed: %s", pos.symbol, exc)
                 updated_positions.append(pos)
 
         self.account_state.positions = updated_positions

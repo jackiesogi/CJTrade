@@ -7,7 +7,6 @@ and the source stops advertising them, so a Fallback moves on.
 """
 from __future__ import annotations
 
-import logging
 import os
 from datetime import datetime
 from datetime import timedelta
@@ -15,6 +14,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.marketdata.aggregate import aggregate
 from cjtrade.pkgs.marketdata.base import Capabilities
 from cjtrade.pkgs.marketdata.base import closed
@@ -32,7 +32,7 @@ from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.tick import Tick
 from cjtrade.pkgs.models.tick import TickSide
 
-log = logging.getLogger("cjtrade.marketdata.finmind")
+log = get_logger("marketdata.finmind")
 
 API = "https://api.finmindtrade.com/api/v4/data"
 _PLAN_HINT = "update your user level"     # FinMind's message for a plan gate

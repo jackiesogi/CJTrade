@@ -95,7 +95,6 @@ class NewsAPIProvider(NewsInterface):
                                                  language='en')
                                                 #  language='en',
                                                 #  country='us')
-        # print(all_articles)
         return self._response_to_news_list(all_articles)[:n]
 
     def search_by_keyword(self, keyword: str, n: int = 10) -> List[News]:

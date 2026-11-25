@@ -6,6 +6,7 @@ from typing import Dict
 from typing import List
 
 from cjtrade.pkgs.brokers.base_broker_api import *
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.event import *
 from cjtrade.pkgs.models.order import *
 from cjtrade.pkgs.models.position import *
@@ -14,6 +15,8 @@ from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import *
 from cjtrade.pkgs.models.trade import Trade
 from cjtrade.pkgs.utils.extras import missing_extra
+
+log = get_logger("brokers")
 
 
 class BrokerType(Enum):
@@ -109,7 +112,7 @@ class AccountClient:
 
     def _sync_all(self) -> bool:
         if not self.broker_api.is_connected():
-            print("Broker API not connected")
+            log.warning("broker API not connected")
             return False
         self.account_state.balance = self.broker_api.get_balance()
         self.account_state.positions = self.broker_api.get_positions()

@@ -26,6 +26,8 @@ from typing import List
 from typing import Optional
 
 from cjtrade.pkgs import paths
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.marketdata import Cached
 from cjtrade.pkgs.marketdata import PriceCache
 from cjtrade.pkgs.marketdata.base import INTERVALS
@@ -33,6 +35,8 @@ from cjtrade.pkgs.marketdata.base import MarketDataError
 from cjtrade.pkgs.marketdata.base import to_window
 from cjtrade.pkgs.marketdata.factory import from_names
 from cjtrade.pkgs.marketdata.factory import parse_names
+
+out = get_console("preload_prices")
 
 
 def _sinopac_broker():
@@ -65,13 +69,13 @@ def preload(price_db: str, data: str, symbols: List[str], start: str, end: str,
                 try:
                     bars = cached.get_kbars(symbol, start_dt, end_dt, interval)
                 except MarketDataError as e:
-                    print(f"{symbol} {interval}: skipped ({e})")
+                    out.info(f"{symbol} {interval}: skipped ({e})")
                     continue
                 total += len(bars)
                 days = len({b.timestamp.date() for b in bars})
                 span = (f"{bars[0].timestamp:%Y-%m-%d %H:%M} .. {bars[-1].timestamp:%Y-%m-%d %H:%M}"
                         if bars else "none")
-                print(f"{symbol} {interval}: {len(bars)} bars over {days} days ({span})")
+                out.info(f"{symbol} {interval}: {len(bars)} bars over {days} days ({span})")
     finally:
         store.close()
         if sinopac is not None:
@@ -80,6 +84,7 @@ def preload(price_db: str, data: str, symbols: List[str], start: str, end: str,
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    setup_logging()
     parser = argparse.ArgumentParser(
         prog="preload-prices",
         description="Download bars into a price cache file for offline ArenaX runs.")
@@ -111,7 +116,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         total = preload(price_db, args.data, symbols, args.start, end, intervals)
     except ValueError as e:
         parser.error(str(e))
-    print(f"{total} bars in {price_db}")
+    out.info(f"{total} bars in {price_db}")
     return 0
 
 

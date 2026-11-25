@@ -22,11 +22,17 @@ from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models import *
 from dotenv import load_dotenv
 # from cjtrade.apps.ArenaX.arenax_account_client import *
 # from cjtrade.pkgs.brokers.account_client import *
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
+
+log = get_logger("cjtrade_shell")
+out = get_console("cjtrade_shell")  # command replies
 
 exit_flag = False
 interactive_mode = False  # Track if running in interactive mode
@@ -58,23 +64,23 @@ class CommandBase(ABC):
         if self.variadic:
             if provided_count < required_count:
                 min_args = f"at least {required_count}" if required_count > 0 else "any number of"
-                print(f"Error: '{self.name}' requires {min_args} arguments")
+                out.info(f"Error: '{self.name}' requires {min_args} arguments")
                 return False
             return True
 
         # For fixed-arg commands, check exact requirements
         if provided_count < required_count:
-            print(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
+            out.info(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
             if self.optional_params:
-                print(f"Optional: {', '.join(self.optional_params)}")
+                out.info(f"Optional: {', '.join(self.optional_params)}")
             if self.example:
-                print(f"Example: {self.example}")
+                out.info(f"Example: {self.example}")
             return False
 
         if provided_count > total_count:
-            print(f"Error: '{self.name}' accepts at most {total_count} arguments")
+            out.info(f"Error: '{self.name}' accepts at most {total_count} arguments")
             if self.example:
-                print(f"Example: {self.example}")
+                out.info(f"Example: {self.example}")
             return False
 
         return True
@@ -119,9 +125,9 @@ class BuyCommand(CommandBase):
         quantity = int(args[2])
         intraday_odd = bool(int(args[3])) if len(args) > 3 else True
 
-        print(f"Buying {quantity} shares of {symbol} at {price} (intraday_odd={intraday_odd})")
+        out.info(f"Buying {quantity} shares of {symbol} at {price} (intraday_odd={intraday_odd})")
         order_result = client.buy_stock(symbol, quantity=quantity, price=price, intraday_odd=intraday_odd)
-        print(f"Order result: {order_result}")
+        out.info(f"Order result: {order_result}")
 
 
 class SellCommand(CommandBase):
@@ -139,9 +145,9 @@ class SellCommand(CommandBase):
         quantity = int(args[2])
         intraday_odd = bool(int(args[3])) if len(args) > 3 else True
 
-        print(f"Selling {quantity} shares of {symbol} at {price} (intraday_odd={intraday_odd})")
+        out.info(f"Selling {quantity} shares of {symbol} at {price} (intraday_odd={intraday_odd})")
         order_result = client.sell_stock(symbol, quantity=quantity, price=price, intraday_odd=intraday_odd)
-        print(f"Order result: {order_result}")
+        out.info(f"Order result: {order_result}")
 
 
 class SnapshotCommand(CommandBase):
@@ -168,7 +174,7 @@ class SnapshotCommand(CommandBase):
             other_cols = [c for c in df.columns if c not in cols]
             df = df[[c for c in cols if c in df.columns] + other_cols]
 
-        print(df)
+        out.info(df)
 
 
 class BidAskCommand(CommandBase):
@@ -190,7 +196,7 @@ class BidAskCommand(CommandBase):
             symbol=symbol
         )
         bid_ask = client.get_bid_ask(product, intraday_odd=intraday_odd)
-        print(f"Bid/Ask for {symbol}: {bid_ask}")
+        out.info(f"Bid/Ask for {symbol}: {bid_ask}")
 
 
 class ListOrdersCommand(CommandBase):
@@ -203,27 +209,27 @@ class ListOrdersCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         num_result = int(args[0]) if len(args) > 0 else 5
-        print("=== Order List ===")
+        out.info("=== Order List ===")
         try:
             orders = client.list_orders()
             orders.sort(key=lambda o: o.order_datetime, reverse=True)  # Sort by creation time
-            print(f"Found {len(orders)} orders")
+            out.info(f"Found {len(orders)} orders")
 
             if orders:
-                print(f"\nRecent {num_result} orders:")
+                out.info(f"\nRecent {num_result} orders:")
                 for i, order in enumerate(orders[:num_result]):
-                    print(f"\nOrder {i+1}:")
-                    print(f"  Order ID: {order.id[:7]}")
-                    print(f"  Created At: {order.order_datetime}")
-                    print(f"  Symbol: {order.symbol}")
-                    print(f"  Action: {order.action}")
-                    print(f"  Quantity: {order.quantity}")
-                    print(f"  Price: {order.price}")
-                    print(f"  Status: {order.status}")
+                    out.info(f"\nOrder {i+1}:")
+                    out.info(f"  Order ID: {order.id[:7]}")
+                    out.info(f"  Created At: {order.order_datetime}")
+                    out.info(f"  Symbol: {order.symbol}")
+                    out.info(f"  Action: {order.action}")
+                    out.info(f"  Quantity: {order.quantity}")
+                    out.info(f"  Price: {order.price}")
+                    out.info(f"  Status: {order.status}")
             else:
-                print("No orders found")
+                out.info("No orders found")
         except Exception as e:
-            print(f"Error: {e}")
+            log.error("list orders failed: %s", e)
 
 
 class ListPositionsCommand(CommandBase):
@@ -246,7 +252,7 @@ class ListPositionsCommand(CommandBase):
                 lines = table_str.split('\n')
 
                 # Print header (first line)
-                print(lines[0])
+                out.info(lines[0])
 
                 # Print data rows with colored unrealized_pnl
                 for i, line in enumerate(lines[1:], start=0):
@@ -275,11 +281,11 @@ class ListPositionsCommand(CommandBase):
                                     colored_line = line.replace(pnl_str, f"\033[92m{pnl_str}\033[0m", 1)
                                 break
 
-                        print(colored_line)
+                        out.info(colored_line)
                     else:
-                        print(line)
+                        out.info(line)
             else:
-                print(df)
+                out.info(df)
 
             # Print summary statistics
             if 'unrealized_pnl' in df.columns:
@@ -287,19 +293,19 @@ class ListPositionsCommand(CommandBase):
                 total_val = df['market_value'].sum()
                 total_pnl = df['unrealized_pnl'].sum()
                 pnl_pct = (total_pnl / total_cost * 100) if total_cost != 0 else 0.0
-                print(f"\nTotal Cost: {total_cost:,.3f}")
-                print(f"Market Value: {total_val:,.3f}")
+                out.info(f"\nTotal Cost: {total_cost:,.3f}")
+                out.info(f"Market Value: {total_val:,.3f}")
                 if pnl_pct >= 0:
-                    print(f"Total Unrealized PnL: \033[91m{total_pnl:,.3f} (+{pnl_pct:.2f}%)\033[0m")
+                    out.info(f"Total Unrealized PnL: \033[91m{total_pnl:,.3f} (+{pnl_pct:.2f}%)\033[0m")
                 else:
-                    print(f"Total Unrealized PnL: \033[92m{total_pnl:,.3f} ({pnl_pct:.2f}%)\033[0m")
+                    out.info(f"Total Unrealized PnL: \033[92m{total_pnl:,.3f} ({pnl_pct:.2f}%)\033[0m")
         else:
             # No positions - display empty table with header
             columns = ['symbol', 'quantity', 'avg_cost', 'current_price', 'market_value', 'unrealized_pnl']
             header = " | ".join(columns)
-            print(header)
-            print("-" * len(header))
-            print("  (You have no position, purchase stock using 'buy' command)")
+            out.info(header)
+            out.info("-" * len(header))
+            out.info("  (You have no position, purchase stock using 'buy' command)")
 
 class RunAanalyticsCommand(CommandBase):
     def __init__(self):
@@ -322,7 +328,7 @@ class RunAanalyticsCommand(CommandBase):
 
             snapshots = client.get_snapshots([Product(symbol=symbol)])
             snapshot = snapshots[0]
-            print(f"market state = TS:{snapshot.timestamp} O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
+            out.info(f"market state = TS:{snapshot.timestamp} O:{snapshot.open} H:{snapshot.high} L:{snapshot.low} C:{snapshot.close} V:{snapshot.volume}")
 
             # TODO: To be more accurate, caller may need to construct
             # their kbar of time unit they want, rather than using
@@ -335,14 +341,14 @@ class RunAanalyticsCommand(CommandBase):
             intention = strategy.evaluate(state)
 
             if intention.action == SignalAction.BUY:
-                print(f"\nAccept buy signal at price: {snapshot.close}, reason: {intention.reason}\n")
+                out.info(f"\nAccept buy signal at price: {snapshot.close}, reason: {intention.reason}\n")
                 order_result = client.buy_stock(symbol, quantity=100, price=snapshot.close + 0.1, intraday_odd=True)
-                print(f"Order result: {order_result}")
+                out.info(f"Order result: {order_result}")
                 FILL_FLAG = True
             elif intention.action == SignalAction.SELL:
-                print(f"\nAccept sell signal at price: {snapshot.close}, reason: {intention.reason}\n")
+                out.info(f"\nAccept sell signal at price: {snapshot.close}, reason: {intention.reason}\n")
                 order_result = client.sell_stock(symbol, quantity=100, price=snapshot.close - 0.1, intraday_odd=False)
-                print(f"Order result: {order_result}")
+                out.info(f"Order result: {order_result}")
                 FILL_FLAG = True
 
             if not FILL_FLAG:
@@ -358,7 +364,7 @@ class BalanceCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         balance = client.get_balance()
-        print(f"Account Balance: {balance}")
+        out.info(f"Account Balance: {balance}")
 
 
 class AnnouncementCommand(CommandBase):
@@ -374,15 +380,15 @@ class AnnouncementCommand(CommandBase):
         async def _async_get_announcement():
             async with CompanyInfoProvider() as provider:
                 announcements = await provider.get_recent_announcements(days=days)
-                print(f"Found {len(announcements)} announcements")
+                out.info(f"Found {len(announcements)} announcements")
                 for ann in announcements[:10]:
                     title = ann.title[:50] + "..." if len(ann.title) > 50 else ann.title
-                    print(f"- {ann.symbol} {ann.company_name} {ann.event_date.strftime('%Y-%m-%d')} {title}")
+                    out.info(f"- {ann.symbol} {ann.company_name} {ann.event_date.strftime('%Y-%m-%d')} {title}")
 
         try:
             asyncio.run(_async_get_announcement())
         except Exception as e:
-            print(f"Failed to get announcements: {e}")
+            log.error("get announcements failed: %s", e)
 
 
 class SearchOnlineNewsCommand(CommandBase):
@@ -401,10 +407,10 @@ class SearchOnlineNewsCommand(CommandBase):
         # rather than user code need to find env var by their own.
         news_client = NewsClient(provider_type=selection, api_key=os.getenv("NEWSAPI_API_KEY", ""))
 
-        print(f"source: {news_client.get_provider_name()}")
+        out.info(f"source: {news_client.get_provider_name()}")
         if len(args) == 0:
             query = ""
-            print("No search query provided, fetching latest news...")
+            out.info("No search query provided, fetching latest news...")
         else:
             query = args[0]
 
@@ -416,12 +422,12 @@ class SearchOnlineNewsCommand(CommandBase):
             else:
                 articles = news_client.search_by_keyword(query)
 
-            print(f"Found {len(articles)} articles.")
+            out.info(f"Found {len(articles)} articles.")
             for article in articles[:10]:
                 title = article.title[:100] + "..." if len(article.title) > 100 else article.title
-                print(f"- {title}")
+                out.info(f"- {title}")
         except Exception as e:
-            print(f"Error searching news: {e}")
+            log.error("news search failed: %s", e)
 
 
 # TODO: Support start/end/interval parameters
@@ -437,7 +443,7 @@ class KbarsCommand(CommandBase):
         symbol = args[0]
         # TODO: Mock only have one kbar in List, Sinopac should have all kbars in the query range
         kbars = client.get_kbars(Product(symbol=symbol), start="2026-01-07", end="2026-01-08", interval="1m")
-        print(kbars)
+        out.info(kbars)
 
 
 class LLMCommand(CommandBase):
@@ -488,7 +494,7 @@ class LLMCommand(CommandBase):
             search_news = False
         formatted_state_str = self.format_account_state(client, search_news=search_news)
         full_prompt = f"{formatted_state_str}\n\nUser Question: {prompt}:"
-        print(self.llm.generate_response(full_prompt))
+        out.info(self.llm.generate_response(full_prompt))
 
 
 class MoversCommand(CommandBase):
@@ -501,10 +507,10 @@ class MoversCommand(CommandBase):
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         movers = client.get_market_movers()
         if not movers:
-            print("No market movers data available.")
+            out.info("No market movers data available.")
             return
         df = pd.DataFrame(list(movers.items()), columns=['Symbol', 'Change'])
-        print(df)
+        out.info(df)
 
 
 class CancelAllCommand(CommandBase):
@@ -519,44 +525,43 @@ class CancelAllCommand(CommandBase):
             # Use unified broker API interface
             orders = client.list_orders()
 
-            print(f"{len(orders)} entries found.")
+            out.info(f"{len(orders)} entries found.")
 
             cancelled_count = 0
             for i, order in enumerate(orders):
                 try:
-                    # print(order)
                     order_id = order.id
                     status = order.status
                     symbol = order.symbol
 
-                    print(f"\nProcessing {i+1}/{len(orders)}")
-                    print(f"  ID: {order_id}")
-                    print(f"  Symbol: {symbol}")
-                    print(f"  Status: {status}")
+                    out.info(f"\nProcessing {i+1}/{len(orders)}")
+                    out.info(f"  ID: {order_id}")
+                    out.info(f"  Symbol: {symbol}")
+                    out.info(f"  Status: {status}")
 
                     # Cancel orders that are not yet filled or already cancelled
                     # OrderStatus: PLACED, COMMITTED_WAIT_MARKET_OPEN, COMMITTED_WAIT_MATCHING, PARTIAL can be cancelled
                     # OrderStatus: FILLED, CANCELLED, REJECTED cannot be cancelled
                     if status in ['PLACED', 'COMMITTED_WAIT_MARKET_OPEN', 'COMMITTED_WAIT_MATCHING', 'PARTIAL',
                                  'PreSubmitted', 'Submitted', 'PartFilled']:
-                        print(f"  → Trying to cancel...")
+                        out.info(f"  → Trying to cancel...")
                         result = client.cancel_order(order_id)
                         if result.status == OrderStatus.CANCELLED:
-                            print(f"  → Cancelled successfully")
+                            out.info(f"  → Cancelled successfully")
                             cancelled_count += 1
                         else:
-                            print(f"  → Cancel failed: {result.message}")
+                            out.info(f"  → Cancel failed: {result.message}")
                     else:
-                        print(f"  → Skipping (Status: {status})")
+                        out.info(f"  → Skipping (Status: {status})")
 
                 except Exception as e:
-                    print(f"  → Cancel failed: {e}")
+                    log.warning("cancel order %d/%d failed: %s", i + 1, len(orders), e)
 
-            print(f"\n=== Processing complete ===")
-            print(f"Attempted to cancel {cancelled_count} orders")
+            out.info(f"\n=== Processing complete ===")
+            out.info(f"Attempted to cancel {cancelled_count} orders")
 
         except Exception as e:
-            print(f"Error occurred while canceling orders: {e}")
+            log.error("cancel orders failed: %s", e)
 
 
 class HelpCommand(CommandBase):
@@ -572,12 +577,12 @@ class HelpCommand(CommandBase):
             cmd_name = args[0]
             cmd = command_registry.get(cmd_name)
             if cmd:
-                print(cmd.get_detailed_help())
+                out.info(cmd.get_detailed_help())
             else:
-                print(f"Unknown command: '{cmd_name}'")
+                out.info(f"Unknown command: '{cmd_name}'")
         else:
             for cmd in command_registry.values():
-                print(f"  {cmd.get_help()}")
+                out.info(f"  {cmd.get_help()}")
 
 
 class CalendarCommand(CommandBase):
@@ -605,13 +610,13 @@ class CalendarCommand(CommandBase):
             if arg.startswith(('+', '-')):
                 # startswith, not ==: get_broker_name() returns "arenax (8802)".
                 if not client.get_broker_name().startswith('arenax'):
-                    print("Error: Time adjustment only available in ArenaX environment")
+                    out.info("Error: Time adjustment only available in ArenaX environment")
                     return
 
                 try:
                     hours = float(arg)
                 except ValueError:
-                    print(f"Error: Unable to parse time adjustment '{arg}'")
+                    out.info(f"Error: Unable to parse time adjustment '{arg}'")
                     return
 
                 # ArenaX_Market.adjust_time() exists server-side but is not
@@ -620,10 +625,10 @@ class CalendarCommand(CommandBase):
                 # which only the retired MockBroker ever had — ArenaXBrokerAPI_v2
                 # has .middleware, not .api — so this branch could only raise.
                 # Say so plainly until a /control/adjust-time endpoint exists.
-                print(f"Error: time adjustment ({hours:+.1f}h) is not supported "
-                      f"by the ArenaX server yet — it needs a /control/adjust-time "
-                      f"endpoint. Restart the server with a different start date "
-                      f"instead.")
+                out.info(f"Error: time adjustment ({hours:+.1f}h) is not supported "
+                         f"by the ArenaX server yet — it needs a /control/adjust-time "
+                         f"endpoint. Restart the server with a different start date "
+                         f"instead.")
                 return
             else:
                 # Direct call with date argument
@@ -640,13 +645,12 @@ class CalendarCommand(CommandBase):
             ts = datetime.now()
 
         # Display current date/time
-        print("Current datetime" + suffix, end="")
-        print("\033[93m")  # yellow
+        out.info("Current datetime" + suffix + "\033[93m")  # yellow
 
         # Use Python date script for cross-platform compatibility
         subprocess.run([sys.executable, str(self.date_script), '-d', f'@{int(ts.timestamp())}'], shell=False)
 
-        print("\033[0m")
+        out.info("\033[0m")
 
         # Display calendar
         subprocess.run([sys.executable, str(self.ncal_script), '--sunday', ts.strftime('%Y-%m-%d')], shell=False)
@@ -673,9 +677,9 @@ class InfoCommand(CommandBase):
                 ["git", "rev-parse", "--short", "HEAD"],
                 stderr=subprocess.DEVNULL
             ).decode().strip()
-            print(f"Interactive shell version: {commit}")
-        print(f"Connected broker: {client.get_broker_name()}")
-        print(f"News source: {os.getenv('NEWS_SOURCE', 'cnyes')}")
+            out.info(f"Interactive shell version: {commit}")
+        out.info(f"Connected broker: {client.get_broker_name()}")
+        out.info(f"News source: {os.getenv('NEWS_SOURCE', 'cnyes')}")
 
 
 class ClearCommand(CommandBase):
@@ -711,19 +715,19 @@ class SystemCommand(CommandBase):
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         if len(args) == 0:
             import platform
-            print("OS:", platform.system())
-            print("OS version:", platform.version())
-            print("Release:", platform.release())
-            print("Machine:", platform.machine())
-            print("Processor:", platform.processor())
-            print("Architecture:", platform.architecture())
-            print("Full platform:", platform.platform())
+            out.info("OS: %s", platform.system())
+            out.info("OS version: %s", platform.version())
+            out.info("Release: %s", platform.release())
+            out.info("Machine: %s", platform.machine())
+            out.info("Processor: %s", platform.processor())
+            out.info("Architecture: %s", platform.architecture())
+            out.info("Full platform: %s", platform.platform())
         else:
             import subprocess
             # Join args into a single command string to support shell builtins (export, source, etc.)
             cmd_str = ' '.join(args)
             ret = subprocess.run(cmd_str, shell=True)
-            print(ret.returncode)
+            out.info(ret.returncode)
 
 
 class ExitCommand(CommandBase):
@@ -776,11 +780,11 @@ class KbarAggregationCommand(CommandBase):
         start_date = start_date_obj.strftime('%Y-%m-%d')
         end_date = (latest_market_date + timedelta(days=1)).strftime('%Y-%m-%d')
 
-        print(f"Replay range: {start_date} -> {end_date} (Latest market date: {latest_market_date.strftime('%Y-%m-%d')})")
+        out.info(f"Replay range: {start_date} -> {end_date} (Latest market date: {latest_market_date.strftime('%Y-%m-%d')})")
 
         def on_ready(filename):
             if filename:
-                print(f"Opening chart: {filename}")
+                out.info(f"Opening chart: {filename}")
                 webbrowser.open(f"file://{os.path.abspath(filename)}")
 
         get_historical_kbars_helper(client, on_ready=on_ready, symbol=symbol,
@@ -805,7 +809,7 @@ def get_historical_kbars_helper(client: AccountClient, on_ready=None, symbol="23
     # Get only 2026-01-07 data using [start, end) exclusive range
     # end='2026-01-08' will exclude 2026-01-08, getting only 2026-01-07
     kbars = client.get_kbars(product, start=start, end=end, interval=interval)
-    print(f"Total kbars: {len(kbars)}")
+    out.info(f"Total kbars: {len(kbars)}")
 
     first_run = True
     for kbar in kbars:
@@ -871,8 +875,8 @@ def process_command(cmd_line: str, client: AccountClient, **config: Any):
     # Look up command
     cmd = command_registry.get(cmd_name)
     if cmd is None:
-        print(f"Unknown command: '{cmd_name}'")
-        print("Type 'help' to see available commands")
+        out.info(f"Unknown command: '{cmd_name}'")
+        out.info("Type 'help' to see available commands")
         return False
 
     # Validate arguments
@@ -884,20 +888,20 @@ def process_command(cmd_line: str, client: AccountClient, **config: Any):
         cmd.execute(client, *args, **config)
         return True
     except ValueError as e:
-        print(f"Invalid argument: {e}")
+        out.info(f"Invalid argument: {e}")
         return False
     except Exception as e:
-        print(f"Command failed: {e}")
+        log.error("cmd '%s' failed: %s", cmd_name, e)
         return False
 
 def print_supported_brokers():
-    print("Currently supported:")
-    print("  - sinopac (永豐金證券)")
-    print("  - arenax (模擬環境)")
-    print("Coming soon:")
-    print("  - ibkr (盈透證券)")
-    print("  - cathay (國泰證券)")
-    print("  - mega (兆豐證券)")
+    out.info("Currently supported:")
+    out.info("  - sinopac (永豐金證券)")
+    out.info("  - arenax (模擬環境)")
+    out.info("Coming soon:")
+    out.info("  - ibkr (盈透證券)")
+    out.info("  - cathay (國泰證券)")
+    out.info("  - mega (兆豐證券)")
 
 
 # ========== Interactive Shell ==========
@@ -926,9 +930,9 @@ def interactive_shell(client: AccountClient, config: dict = None):
     sleep(1)
     process_command("clear", client, **config)
     init_readline()
-    print("\033[93m--------------------------------------------------------------------------\033[0m")
-    print("\033[93mCJTrade Interactive Shell. Type 'help' for commands... (b^-^)b\033[0m")
-    print("\033[93m--------------------------------------------------------------------------\033[0m")
+    out.info("\033[93m--------------------------------------------------------------------------\033[0m")
+    out.info("\033[93mCJTrade Interactive Shell. Type 'help' for commands... (b^-^)b\033[0m")
+    out.info("\033[93m--------------------------------------------------------------------------\033[0m")
 
     while not exit_flag:
         try:
@@ -942,12 +946,14 @@ def interactive_shell(client: AccountClient, config: dict = None):
 
         except (EOFError, KeyboardInterrupt):
             break
-    print("Bye!")
+    out.info("Bye!")
 
 
 def main():
     import sys
     import argparse
+
+    setup_logging()
 
     # Force line buffering for stdout and stderr to keep output in order
     # This prevents stderr (errors/warnings from yfinance) and stdout (our logs)
@@ -958,7 +964,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-B", "--broker", type=str, required=True)
     args, shell_argv = parser.parse_known_args()
-    # print(args)
 
     exit_code = 0  # Default success
     # Load supported config files (recursive search for *.cjconf under directories)
@@ -1011,11 +1016,11 @@ def main():
         config['api_key'] = 'testkey123'
         client = AccountClient(BrokerType.ARENAX, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
-        print(f"Broker '{args.broker}' is currently not supported (coming soon)")
+        out.info(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()
         exit(0)
     else:
-        print(f"Broker '{args.broker}' will not be supported anytime soon")
+        out.info(f"Broker '{args.broker}' will not be supported anytime soon")
         print_supported_brokers()
         exit(0)
 
@@ -1036,7 +1041,7 @@ def main():
             args = shell_argv[1:]
 
             cmd_line = f"{command} {' '.join(args)}".strip()
-            print(f"Executing: {cmd_line}")
+            out.info(f"Executing: {cmd_line}")
             success = process_command(cmd_line, client, config=config)
             if not success:
                 exit_code = 1
@@ -1046,7 +1051,7 @@ def main():
             interactive_shell(client, config=config)
 
     except Exception as e:
-        print(f"Fatal error: {e}")
+        log.error("fatal: %s", e)
         exit_code = 1
     finally:
         client.disconnect()

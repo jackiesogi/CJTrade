@@ -13,17 +13,17 @@ Run it:
 """
 from __future__ import annotations
 
-import logging
 from typing import List
 
 import numpy as np
 from cjtrade.pkgs.analytics.technical import *
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.bb")
 
 class BollingerStrategy(BaseStrategy):
     """Bollinger Band mean-reversion strategy using TA-Lib.
@@ -84,7 +84,7 @@ class BollingerStrategy(BaseStrategy):
         self._bw_sum, self._bw_n = 0.0, 0
         self._prev_above_mid = None
         self._last_reason = "no bars yet"
-        log.info(f"[{self.name}] window={self._window} std_dev={self._std} "
+        log.info(f"window={self._window} std_dev={self._std} "
                  f"min_bw={self._min_bw*100:.2f}%")
 
     # ── monitoring ────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ class BollingerStrategy(BaseStrategy):
                 self._n_signals += 1
                 self._last_reason = (f"BUY {qty} @ {price:.2f} on lower-band "
                                      f"touch (lower={lower:.2f})")
-                log.info(f"ts: {ts_str} | BUY {bar.symbol} @ {price:.2f} * {qty} shares (BB lower={lower:.2f})")
+                log.info(f"@{ts_str} BUY {bar.symbol} qty={qty} px={price:.2f} (BB lower={lower:.2f})")
                 return [type("Signal", (), {
                     "action": "BUY", "symbol": bar.symbol,
                     "quantity": qty, "price": price,
@@ -239,7 +239,7 @@ class BollingerStrategy(BaseStrategy):
             self._n_signals += 1
             self._last_reason = (f"SELL {qty} @ {price:.2f} on upper-band "
                                  f"touch (upper={upper:.2f})")
-            log.info(f"ts: {ts_str} | SELL {bar.symbol} @ {price:.2f} * {qty} shares (BB upper={upper:.2f})")
+            log.info(f"@{ts_str} SELL {bar.symbol} qty={qty} px={price:.2f} (BB upper={upper:.2f})")
             return [type("Signal", (), {
                 "action": "SELL", "symbol": bar.symbol,
                 "quantity": qty, "price": price,

@@ -43,18 +43,18 @@ run_oneshot(symbol="2330", start="2023-01-01", strategy=strategy)
 """
 from __future__ import annotations
 
-import logging
 import math
 from typing import Any
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.adx")
 
 
 class ADXAdaptiveStrategy(BaseStrategy):
@@ -176,7 +176,7 @@ class ADXAdaptiveStrategy(BaseStrategy):
         self._last_reason = "no bars yet"
 
         log.info(
-            f"[{self.name}] ADX_period={self._adx_period} "
+            f"ADX_period={self._adx_period} "
             f"strong_threshold={self._adx_strong_threshold} "
             f"weak_threshold={self._adx_weak_threshold} "
             f"donchian_period={self._donchian_period} "
@@ -473,8 +473,8 @@ class ADXAdaptiveStrategy(BaseStrategy):
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
         """Called after a fill is executed."""
-        log.info(f"[{self.name}] {fill.action} {fill.quantity} @ {fill.price} ({fill.symbol})")
+        log.info(f"@{fill.timestamp:%Y-%m-%d %H:%M} {fill.action} filled {fill.symbol} qty={fill.quantity} px={fill.price}")
 
     def on_end(self, ctx: StrategyContext) -> None:
         """Called at end of backtest."""
-        log.info(f"[{self.name}] Backtest completed")
+        log.info("backtest done")

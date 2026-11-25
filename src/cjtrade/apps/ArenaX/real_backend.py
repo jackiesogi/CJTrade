@@ -8,6 +8,7 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NEGATIVE_PRICE
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NEGATIVE_QUANTITY
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderResult
@@ -16,6 +17,8 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.trade import Trade
+
+log = get_logger("ArenaX.backend.real")
 
 
 class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
@@ -92,7 +95,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
                     "time": "initial_sync",
                 })
         except Exception as exc:
-            print(f"[RealTrade] Error syncing with real account: {exc}")
+            log.error("sync with real account failed: %s", exc)
 
     def _check_if_any_order_filled(self) -> bool:
         """Poll real broker for fills and update local order/balance state."""
@@ -107,7 +110,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             # Returns List[OrderResult]; each result carries linked_order = order_id
             broker_results: List[OrderResult] = self.real_account.sync_state()
         except Exception as exc:
-            print(f"[RealTrade] Error polling broker for fills: {exc}")
+            log.error("poll broker for fills failed: %s", exc)
             return False
 
         result_by_id = {
@@ -132,13 +135,13 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
                 # no commission or tax, so the mirrored balance drifted from
                 # the broker's on every fill.
                 self._apply_fill(order, fill_price, datetime.now())
-                print(f"[RealTrade] Order filled: {order.id} @ {fill_price}")
+                log.info("order filled: %s px=%s", order.id, fill_price)
 
             elif broker_result.status == OrderStatus.CANCELLED:
                 self.account_state.orders_committed.remove(order)
                 self.account_state.orders_cancelled.append(order)
                 self.account_state.all_order_status[order.id] = OrderStatus.CANCELLED
-                print(f"[RealTrade] Order cancelled by broker: {order.id}")
+                log.info("order cancelled by broker: %s", order.id)
 
         return True
 
@@ -151,7 +154,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             self.account_state.balance = balance
             return balance
         except Exception as exc:
-            print(f"[RealTrade] Error fetching balance: {exc}")
+            log.warning("fetch balance failed, using cached: %s", exc)
             return self.account_state.balance
 
     def list_positions(self) -> List[Position]:
@@ -161,7 +164,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             self.account_state.positions = positions or []
             return self.account_state.positions
         except Exception as exc:
-            print(f"[RealTrade] Error fetching positions: {exc}")
+            log.warning("fetch positions failed, using cached: %s", exc)
             return self.account_state.positions
 
     # ─── Market data ───────────────────────────────────────────────────────────
@@ -175,7 +178,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             if snapshots:
                 return snapshots[0]
         except Exception as exc:
-            print(f"[RealTrade] Error fetching snapshot for {symbol}: {exc}")
+            log.warning("snapshot %s failed, using fallback: %s", symbol, exc)
         return self._create_fallback_snapshot(symbol, datetime.now())
 
     def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
@@ -183,7 +186,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
         try:
             return super().kbars(symbol, start, end, interval)
         except Exception as exc:
-            print(f"[RealTrade] Error fetching kbars for {symbol} [{start}~{end}]: {exc}")
+            log.error("kbars %s [%s, %s] failed: %s", symbol, start, end, exc)
             return []
 
     # ─── Trade operations ──────────────────────────────────────────────────────
@@ -195,7 +198,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
             if broker_trades is not None:
                 return broker_trades
         except Exception as exc:
-            print(f"[RealTrade] Error listing broker trades: {exc}")
+            log.warning("list broker trades failed, using local: %s", exc)
         # Fallback: build Trade objects from locally tracked orders (same as base class)
         return super().list_trades()
 
@@ -211,7 +214,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
                 self.real_account.connect()
             result = self.real_account.place_order(order)
         except Exception as exc:
-            print(f"[RealTrade] Error placing order: {exc}")
+            log.error("place order failed: %s", exc)
             return OrderResult(
                 status=OrderStatus.REJECTED,
                 message=f"Broker error: {exc}",
@@ -235,7 +238,7 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
                 self.real_account.connect()
             result = self.real_account.cancel_order(order_id)
         except Exception as exc:
-            print(f"[RealTrade] Error cancelling order {order_id}: {exc}")
+            log.error("cancel order %s failed: %s", order_id, exc)
             return OrderResult(
                 status=OrderStatus.REJECTED,
                 message=f"Broker error: {exc}",

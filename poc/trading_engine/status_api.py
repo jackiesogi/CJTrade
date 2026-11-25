@@ -66,7 +66,6 @@ local port-forward, not a wider bind.
 """
 import asyncio
 import hmac
-import logging
 import os
 import time
 from dataclasses import asdict
@@ -77,9 +76,10 @@ from typing import Any
 from typing import Optional
 
 from aiohttp import web
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.backtest import BacktestResult
 
-log = logging.getLogger("CJTrade.Engine")
+log = get_logger("engine.status")
 
 # Not configurable. See the module docstring.
 STATUS_HOST = "127.0.0.1"
@@ -561,14 +561,14 @@ async def start(view: EngineView, port: int = DEFAULT_STATUS_PORT):
         await web.TCPSite(runner, STATUS_HOST, port).start()
     except OSError as e:
         await runner.cleanup()
-        log.warning(f"[Status] no status API on {STATUS_HOST}:{port} ({e}) — "
-                    f"another engine may already have it")
+        log.warning("no status API on %s:%s (%s); another engine may hold it",
+                    STATUS_HOST, port, e)
         return None
     # Says which posture this run actually has, because "loopback only" meant
     # two different things before and after the control plane. Never logs the
     # token itself -- a credential in a log file is a credential leaked.
     gated = "token-gated" if os.environ.get(CONTROL_TOKEN_ENV, "").strip() \
         else "open reads, no control plane"
-    log.info(f"[Status] http://{STATUS_HOST}:{port}/status  "
-             f"(loopback only, {gated})")
+    log.info("http://%s:%s/status (loopback only, %s)", STATUS_HOST, port,
+             gated)
     return runner

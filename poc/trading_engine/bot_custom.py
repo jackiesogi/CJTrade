@@ -21,40 +21,42 @@ bar it first runs on. The engine reports a bot that exited at startup; a
 strategy that raises later is caught per bar by UserStrategy and reported in
 its monitors instead.
 """
-import logging
 import sys
 from pathlib import Path
 
 from bot_runner import bot_argv
 from bot_runner import run_bot
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.strategy.user_strategy import load
 from cjtrade.pkgs.strategy.user_strategy import StrategyError
 
-log = logging.getLogger("poc.bot_custom")
+log = get_logger("bot.custom")
 
 SYMBOL = "2317"          # only used when master names no symbol
 
 
 def main() -> int:
+    setup_logging()
     bot_id, _balance, _session, symbol = bot_argv(SYMBOL)
     if len(sys.argv) <= 5 or not sys.argv[5]:
-        log.error(f"[{bot_id}] no strategy file given — "
-                  f"usage: bot_custom.py <bot_id> <balance> <session> "
-                  f"<symbol> <path.py>")
+        log.error("%s: no strategy file; usage: bot_custom.py <bot_id> "
+                  "<balance> <session> <symbol> <path.py>", bot_id)
         return 2
 
     path = Path(sys.argv[5])
     try:
         source = path.read_text(encoding="utf-8")
     except OSError as exc:
-        log.error(f"[{bot_id}] cannot read {path}: {exc}")
+        log.error("%s: cannot read %s: %s", bot_id, path, exc)
         return 2
 
     try:
         strategy = load(source)
     except StrategyError as exc:
         where = f" (line {exc.line})" if exc.line else ""
-        log.error(f"[{bot_id}] {path.name} cannot run{where}: {exc.message}")
+        log.error("%s: %s cannot run%s: %s", bot_id, path.name, where,
+                  exc.message)
         return 2
 
     strategy.name = path.stem

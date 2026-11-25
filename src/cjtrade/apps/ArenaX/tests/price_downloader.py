@@ -10,12 +10,18 @@ from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.db.db_api import *
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models import *
+
+log = get_logger("ArenaX.tests")
+out = get_console("ArenaX.tests")
 
 
 def download_price(account, conn, symbols, start, end):
     for symbol in symbols:
-        print(f"Fetched price for {symbol}:")
+        out.info(f"Fetched price for {symbol}:")
         prices = account.get_kbars(Product(symbol=symbol), start=start, end=end, interval="1m")
         for price in prices:
             insert_price_to_arenax_local_price_db(conn=conn,
@@ -24,7 +30,7 @@ def download_price(account, conn, symbols, start, end):
                                                   timeframe="1m",
                                                   source="sinopac",
                                                   overwrite=True)
-        print(f"Wrote {len(prices)} price entries for {symbol} to local database.")
+        out.info(f"Wrote {len(prices)} price entries for {symbol} to local database.")
 
 import os
 import argparse
@@ -55,10 +61,11 @@ def parse_args():
 
 
 def main():
+    setup_logging()
     args = parse_args()
 
     if not args.symbols:
-        print("No symbols specified. Use --symbols or set WATCH_LIST.")
+        log.error("no symbols given; use --symbols or set WATCH_LIST")
         exit(1)
 
     load_supported_config_files()
@@ -72,8 +79,8 @@ def main():
 
     broker_type = BrokerType[args.broker]
 
-    print(f"Starting download for {args.symbols} using {args.broker}...")
-    print(f"Period: {args.start_date} to {args.end_date}")
+    log.info("download %s via %s, period %s to %s",
+             args.symbols, args.broker, args.start_date, args.end_date)
 
     try:
         a = AccountClient(broker_type=broker_type, **config)
@@ -83,7 +90,7 @@ def main():
         download_price(a, c, symbols=args.symbols,
                        start=args.start_date, end=args.end_date)
     except Exception as e:
-        print(f"Error: {e}")
+        log.error("download failed: %s", e)
     finally:
         c.close()
         a.disconnect()

@@ -10,18 +10,18 @@ Workflow:
     4. Merge base preset + validated overrides
     5. Return ParameterConfig with metadata
 """
-import logging
 from typing import Any
 from typing import Dict
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.parameters.config import ParameterConfig
 from cjtrade.pkgs.strategy.parameters.presets import get_interval_presets
 from cjtrade.pkgs.strategy.parameters.presets import get_supported_intervals
 from cjtrade.pkgs.strategy.parameters.schema import PARAM_SCHEMA
 from cjtrade.pkgs.strategy.parameters.schema import validate_param
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.parameters")
 
 # Known strategy names (for reference and validation)
 KNOWN_STRATEGIES = {
@@ -90,7 +90,7 @@ class ParameterManager:
 
         # 2. Load preset
         preset = get_interval_presets(interval)
-        log.info(f"[ParamManager] Loaded preset for interval={interval}")
+        log.info(f"loaded preset interval={interval}")
 
         # 3. Parse user overrides
         if isinstance(user_overrides, str):
@@ -109,20 +109,20 @@ class ParameterManager:
             # Check if parameter is marked as "fixed" (auto-set, no override)
             if key in PARAM_SCHEMA and PARAM_SCHEMA[key].get("fixed"):
                 log.warning(
-                    f"[ParamManager] Param {key} is fixed for this interval, "
-                    f"ignoring override (using preset value: {preset.get(key)})"
+                    f"param {key} is fixed for this interval, ignoring override "
+                    f"(preset value: {preset.get(key)})"
                 )
                 continue
 
             final_params[key] = value
-            log.info(f"[ParamManager] Override: {key} = {value}")
+            log.info(f"override {key}={value}")
 
         # 5. Check strategy_name (informational)
         if strategy_name not in KNOWN_STRATEGIES:
             log.warning(
-                f"[ParamManager] Strategy '{strategy_name}' not in known list. "
-                f"Known: {sorted(KNOWN_STRATEGIES)}. "
-                f"This is OK for custom/experiment names (e.g., grid_search_trial_42)."
+                f"strategy '{strategy_name}' not in known list "
+                f"{sorted(KNOWN_STRATEGIES)}; OK for custom/experiment names "
+                f"(e.g. grid_search_trial_42)"
             )
 
         # 6. Build config
@@ -135,7 +135,7 @@ class ParameterManager:
         )
 
         log.info(
-            f"[ParamManager] Final params hash: {config.params_hash} "
+            f"params hash {config.params_hash} "
             f"(strategy={strategy_name}, interval={interval})"
         )
         return config

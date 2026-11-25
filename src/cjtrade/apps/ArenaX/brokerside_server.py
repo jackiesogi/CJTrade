@@ -28,6 +28,9 @@ from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import kv
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.marketdata import MarketData
 from cjtrade.pkgs.marketdata import from_names
 from cjtrade.pkgs.marketdata.base import to_window
@@ -64,30 +67,24 @@ def _redact_secrets(cfg: dict) -> dict:
         for k, v in cfg.items()
     }
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-log = logging.getLogger("cjtrade.arenax_server")
+log = get_logger("ArenaX.server")
 
-# Strip the "IP - - [timestamp] " prefix that werkzeug embeds directly into
-# the access-log message string, so the outer logging formatter's timestamp
-# is the only one shown.
+# werkzeug embeds "IP - - [timestamp] " in every access-log message. The log
+# prefix already carries a timestamp, so drop werkzeug's (and the IP with it,
+# as the old formatter did) to keep one timestamp per line.
 import re as _re
-class _WerkzeugAccessFormatter(logging.Formatter):
+class _WerkzeugAccessFilter(logging.Filter):
     _PREFIX = _re.compile(r'^\S+ - - \[[^\]]+\] ')
-    def format(self, record: logging.LogRecord) -> str:
+    def filter(self, record: logging.LogRecord) -> bool:
         record.msg = self._PREFIX.sub('', record.getMessage())
         record.args = None
-        return super().format(record)
+        return True
 
-_wz_logger = logging.getLogger("werkzeug")
-_wz_logger.propagate = False
-_wz_handler = logging.StreamHandler()
-_wz_handler.setFormatter(_WerkzeugAccessFormatter(
-    fmt="[%(asctime)s] %(levelname)-8s: %(message)s"
-))
-_wz_logger.addHandler(_wz_handler)
+def _mask_key(api_key) -> str:
+    """Last 4 chars of an API key, enough to tell keys apart in a log."""
+    if not api_key:
+        return repr(api_key)
+    return "***" + str(api_key)[-4:]
 
 def prepare_price_db(price_db_path: Optional[str]):
     if not price_db_path:
@@ -229,8 +226,8 @@ class ArenaX_BrokerSideServer:
             # Sinopac api_key, secret_key and CA password into the server log
             # in plaintext. GET /api/v1/config was fixed to redact; the log was
             # still handing the same values out.
-            log.info("internal_config: %s", _redact_secrets(internal_config))
-            log.info("external_config: %s", _redact_secrets(external_config))
+            log.info("internal_config: %s", kv(_redact_secrets(internal_config)))
+            log.info("external_config: %s", kv(_redact_secrets(external_config)))
             cost_model = CostModel(
                 commission_discount=float(internal_config.get('commission_discount', 1.0)),
                 slippage_model=internal_config.get('slippage_model', 'none'),
@@ -589,10 +586,10 @@ class ArenaX_BrokerSideServer:
             payload = request.get_json(silent=True) or {}
             api_key = payload.get("api_key")
             if api_key in self._valid_api_keys:
-                print(f"API key {api_key} is valid. Login successful.")
+                log.info("login ok, api key %s", _mask_key(api_key))
                 return jsonify({"ok": True, "message": "Login successful"})
             else:
-                print(f"API key {api_key} is invalid. Login failed.")
+                log.warning("login failed, invalid api key %s", _mask_key(api_key))
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
         @app.delete("/api/v1/session")
@@ -734,8 +731,18 @@ class ArenaX_BrokerSideServer:
                     opt_field=opt_field,
                 )
                 result = self.backend.place_order(order)
-                print(f"Placing order {order.__dict__}")
-                print(f"Order result: {result.__dict__ if result else None}")
+                log.info("@%s order %s %s %s.%s x%d px=%s %s/%s/%s opt={%s} -> %s",
+                         f"{order.created_at:%Y-%m-%d %H:%M}", order.id,
+                         order.action.value, product.symbol, product.exchange,
+                         order.quantity, order.price, order.price_type.value,
+                         order.order_type.value, order.order_lot.value,
+                         kv(order.opt_field),
+                         (f"{result.status.value} ({result.message})"
+                          # linked_order is usually the order's own id; only a
+                          # different one says something.
+                          + (f" linked={result.linked_order}"
+                             if result.linked_order and result.linked_order != order.id else "")
+                          if result else None))
                 return jsonify({"ok":True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -746,8 +753,7 @@ class ArenaX_BrokerSideServer:
             """Cancel a resting order."""
             try:
                 result = self.backend.cancel_order(order_id)
-                print(f"Cancelling order {order_id}")
-                print(f"Order result: {result.__dict__ if result else None}")
+                log.info("cancel order %s -> %s", order_id, result.__dict__ if result else None)
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -836,8 +842,8 @@ class ArenaX_BrokerSideServer:
                 }), 400
             try:
                 kbars = self.backend.kbars(symbol, start, end, interval)
-                print(f"length of kbars: {len(kbars)}")
-                print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
+                log.debug("kbars %s n=%d first=%s", symbol, len(kbars),
+                          kbars[0].__dict__ if kbars else None)
                 resp = {"ok": True, "result": [kb.__dict__ for kb in kbars]}
                 if self._data_readiness != DataReadiness.ALL_SET:
                     resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"
@@ -980,7 +986,7 @@ class ArenaX_BrokerSideServer:
                 self._data_readiness = DataReadiness.ALL_SET
             return True
         except Exception as e:
-            print(f"Error in set_timeline_origin: {e}")
+            log.error("set_timeline_origin failed: %s", e)
             return False
 
     # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
@@ -1014,18 +1020,18 @@ class ArenaX_BrokerSideServer:
         symbols = [symbol for symbol in (preload_symbols or []) if symbol]
 
         if not symbols and not self.backend.real_account:
-            print("Warning: No symbols specified and cannot fetch positions from real account. Abort!")
+            log.warning("preload aborted: no symbols given and no real account to read positions from")
             return []
 
         if not self.backend.is_connected():
-            print("Warning: Calling _preload_data() when backend is not connected!")
-            print("         The symbols to preload may be outdated (only when backend.login() will sync account state)")
+            log.warning("_preload_data() called while backend not connected; "
+                        "symbols may be outdated (only backend.login() syncs account state)")
         # NOTE: Weird data flow occurs here!
         if not symbols:
             symbols = [s.symbol for s in self.backend.real_account.get_positions()]
         days = preload_days or getattr(self.backend, "num_days_preload", 3)
 
-        print(f"Preloading data for symbols: {symbols} for {preload_days} days...")
+        log.info("preload %s, days=%s", symbols, preload_days)
         for symbol in symbols:
             self.backend.market.create_historical_market(symbol, days)
         return sorted(symbols)
@@ -1063,7 +1069,7 @@ class ArenaX_BrokerSideServer:
             # a whole interval.
             with self._backend_lock:
                 if hasattr(self.backend, "_check_if_any_order_filled"):
-                    self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
+                    self.backend._check_if_any_order_filled()  # NOTE: logs each fill
 
                 # Expiry is the backend's business, keyed on each order's own
                 # time-in-force. The server used to run a date-latched EOD sweep
@@ -1105,6 +1111,13 @@ class ArenaX_BrokerSideServer:
 def main():
     import argparse
 
+    setup_logging()
+    # setup_logging() holds werkzeug at WARNING; the server shows its HTTP
+    # access lines, minus werkzeug's own "IP - - [time]" prefix.
+    _wz = logging.getLogger("werkzeug")
+    _wz.setLevel(logging.INFO)
+    _wz.addFilter(_WerkzeugAccessFilter())
+
     # Where this instance keeps its data, so a bug report can say so instead of
     # guessing, and so CJTRADE_HOME being set (or not) is visible immediately.
     log.info("Storage locations:\n%s", paths.describe())
@@ -1134,11 +1147,11 @@ def main():
 
     server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend,
                                      data_sources=args.data, price_db_path=args.price_db)
-    print(f"Starting server on {host}:{port} with backend '{args.backend}'...")
+    log.info("starting on %s:%s, backend=%s", host, port, args.backend)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down server...")
+        log.info("shutting down")
         server.stop_http()
         server.stop_backend()
 

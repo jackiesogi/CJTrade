@@ -10,10 +10,13 @@ from cjtrade.apps.ArenaX.market_data import ArenaX_RealMarket
 from cjtrade.apps.ArenaX.time_in_force import policy_for
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import OrderAction
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
+
+log = get_logger("ArenaX.backend.paper")
 
 
 class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
@@ -40,10 +43,9 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 		# create_historical_market to preload it with. Honouring the config's
 		# 365 days here would ask the broker for a year of bars nothing reads.
 		if num_days_preload or not skip_data_preload:
-			print(f"[PaperTrade] ignoring preload config "
-			      f"(num_days_preload={num_days_preload}, "
-			      f"skip_data_preload={skip_data_preload}): paper mode reads "
-			      f"prices live, so there is nothing to preload")
+			log.info("ignoring preload cfg (num_days_preload=%s, skip_data_preload=%s): "
+			         "paper reads prices live, nothing to preload",
+			         num_days_preload, skip_data_preload)
 		super().__init__(
 			state_file=state_file,
 			real_account=real_account,
@@ -91,7 +93,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 			self._reconstruct_positions_from_history()
 			self._update_position_prices()
 		except Exception as exc:
-			print(f"[PaperTrade] Error syncing with real account: {exc}")
+			log.error("sync with real account failed: %s", exc)
 
 	def _load_state_from(self, path: str) -> None:
 		super()._load_state_from(path)
@@ -134,7 +136,7 @@ class ArenaX_Backend_PaperTrade(ArenaX_BackendBase):
 			kbars = self.market_data.get_kbars(symbol, today, tomorrow, "1m")
 			self._kbar_buffer[symbol] = kbars if kbars else []
 		except Exception as exc:
-			print(f"[PaperTrade] Failed to refresh kbar buffer for {symbol}: {exc}")
+			log.warning("refresh kbar buffer for %s failed: %s", symbol, exc)
 			self._kbar_buffer.setdefault(symbol, [])
 
 	def _check_if_any_order_filled(self) -> bool:

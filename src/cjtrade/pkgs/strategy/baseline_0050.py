@@ -32,18 +32,18 @@ if it's not already in the symbol list, so you don't need to include it manually
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from datetime import timedelta
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.baseline_0050")
 
 BASELINE_SYMBOL = "0050"  # Taiwan Top 50 ETF
 BASELINE_MONTHLY_AMOUNT = 4888888  # NT$50,000 per month
@@ -97,7 +97,7 @@ class BaselineStrategy(BaseStrategy):
         self._monthly_amount = float(p.get("baseline_monthly_amount", self._monthly_amount))
 
         log.info(
-            f"[{self.name}] Baseline symbol={self._baseline_symbol}, "
+            f"baseline symbol={self._baseline_symbol}, "
             f"monthly_amount=NT${self._monthly_amount:,.0f}"
         )
 
@@ -143,16 +143,16 @@ class BaselineStrategy(BaseStrategy):
         )
         ts_str = bar.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         log.info(
-            f"ts: {ts_str} | BUY {bar.symbol} @ {price:.2f} * {qty} shares "
-            f"(monthly amount=NT${self._monthly_amount:,.0f})"
+            f"@{ts_str} BUY {bar.symbol} qty={qty} px={price:.2f} "
+            f"(monthly_amount=NT${self._monthly_amount:,.0f})"
         )
         return [sig]
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
         """Log fills for debugging."""
         if fill.action.upper() == "BUY":
-            log.debug(f"[{self.name}] BUY filled for {fill.symbol} @ {fill.price:.2f}")
+            log.debug(f"@{fill.timestamp:%Y-%m-%d %H:%M} BUY filled {fill.symbol} px={fill.price:.2f}")
 
     def on_end(self, ctx: StrategyContext) -> None:
         """Called at end of backtest."""
-        log.info(f"[{self.name}] Backtest complete. Final positions: {ctx.positions}")
+        log.info(f"backtest done, positions: {ctx.positions}")

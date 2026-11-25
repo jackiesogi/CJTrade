@@ -25,17 +25,17 @@ run_oneshot(symbol="2330", start="2023-01-01", strategy=strategy)
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.donchian")
 
 
 class DonchianBreakoutStrategy(BaseStrategy):
@@ -111,7 +111,7 @@ class DonchianBreakoutStrategy(BaseStrategy):
         self._max_position_pct = float(p.get("risk__max_position_pct", p.get("risk_max_position_pct", self._max_position_pct)))
 
         log.info(
-            f"[{self.name}] period={self._period} bars "
+            f"period={self._period} bars "
             f"breakout_mode={self._breakout_mode} "
             f"trailing_stop={self._trailing_stop_pct*100:.2f}% "
             f"max_pos={self._max_position_pct*100:.2f}%"
@@ -181,8 +181,8 @@ class DonchianBreakoutStrategy(BaseStrategy):
                 self._entry_price[symbol] = close
                 self._peak[symbol] = close
                 log.info(
-                    f"ts: {ts_str} | BUY {symbol} @ {close:.2f} "
-                    f"* {qty} shares (Donchian breakout above {donchian_high:.2f})"
+                    f"@{ts_str} BUY {symbol} qty={qty} px={close:.2f} "
+                    f"(Donchian breakout above {donchian_high:.2f})"
                 )
                 signals.append(Signal(
                     action="BUY",
@@ -208,8 +208,8 @@ class DonchianBreakoutStrategy(BaseStrategy):
             if self._trailing_stop_pct > 0 and close < trailing_stop_level:
                 qty = ctx.position_qty(symbol)
                 log.info(
-                    f"ts: {ts_str} | SELL {symbol} @ {close:.2f} "
-                    f"* {qty} shares (trailing stop {self._trailing_stop_pct*100:.2f}% "
+                    f"@{ts_str} SELL {symbol} qty={qty} px={close:.2f} "
+                    f"(trailing stop {self._trailing_stop_pct*100:.2f}% "
                     f"below peak {peak:.2f}, entry was {entry_price:.2f})"
                 )
                 signals.append(Signal(
@@ -239,8 +239,8 @@ class DonchianBreakoutStrategy(BaseStrategy):
         if is_below_breakout and ctx.has_position(symbol):
             qty = ctx.position_qty(symbol)
             log.info(
-                f"ts: {ts_str} | SELL {symbol} @ {close:.2f} "
-                f"* {qty} shares (Donchian breakout below {donchian_low:.2f})"
+                f"@{ts_str} SELL {symbol} qty={qty} px={close:.2f} "
+                f"(Donchian breakout below {donchian_low:.2f})"
             )
             signals.append(Signal(
                 action="SELL",
@@ -264,8 +264,8 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
         """Called after a fill is executed."""
-        log.info(f"[{self.name}] {fill.action} {fill.quantity} @ {fill.price} ({fill.symbol})")
+        log.info(f"@{fill.timestamp:%Y-%m-%d %H:%M} {fill.action} filled {fill.symbol} qty={fill.quantity} px={fill.price}")
 
     def on_end(self, ctx: StrategyContext) -> None:
         """Called at end of backtest."""
-        log.info(f"[{self.name}] Backtest completed")
+        log.info("backtest done")

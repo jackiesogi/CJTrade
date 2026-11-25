@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
 from cjtrade.pkgs.strategy.parameters.schema import PARAM_SCHEMA
 from cjtrade.pkgs.ui.engine import FormEngine
@@ -153,14 +155,18 @@ if __name__ == "__main__":
         help="How to present the form: cli | web | zenity | auto (default: web)",
     )
     args = ap.parse_args()
+    # stdout is eval'd by the caller, so it carries only the export line;
+    # every log line goes to stderr.
+    setup_logging()
+    out = get_console("strategy_params")
 
     toml_str = build_params_toml(args.strategy, args.interval, args.params)
 
     if "[[field]]" not in toml_str:
-        print("export PARAMS=''")
+        out.info("export PARAMS=''")
     else:
         engine = FormEngine(toml_str=toml_str, renderer=args.renderer)
         values = engine.run()
         params_str = _dict_to_params_str(values)
         escaped = params_str.replace("'", "'\\''")
-        print(f"export PARAMS='{escaped}'")
+        out.info("export PARAMS='%s'", escaped)

@@ -23,7 +23,6 @@ one. `__builtins__` is left intact, because stripping it stops `len()` and
 from __future__ import annotations
 
 import ast
-import logging
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -32,13 +31,14 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy import authoring
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill as EngineFill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.user_strategy")
 
 # A strategy that raises every bar would otherwise write one traceback per
 # bar: 22,000 of them in a 120-day replay, which buries everything else in the

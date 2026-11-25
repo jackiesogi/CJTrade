@@ -6,8 +6,11 @@ from typing import List
 from typing import Optional
 
 from cjtrade.pkgs.db.db_base import *
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import *
+
+log = get_logger("db")
 
 _SQL_DIR = Path(__file__).resolve().parent / "sql"
 
@@ -26,7 +29,7 @@ def connect_sqlite(database: str = ":memory:"):
     Returns
     -------
     SqliteDatabaseConnection or None
-        None if a ConnectionError was caught; the error is printed.
+        None if a ConnectionError was caught; the error is logged.
 
     Warnings
     --------
@@ -49,7 +52,7 @@ def connect_sqlite(database: str = ":memory:"):
         conn = sqlite3.connect(db_path, check_same_thread=False)
         return SqliteDatabaseConnection(conn)
     except ConnectionError as e:
-        print(f"Failed to connect to SQLite database: {e}")
+        log.error("SQLite conn failed: %s", e)
 
 
 # def connect_duckdb(database: str = ":memory:"):
@@ -79,7 +82,7 @@ def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script
 
     Warnings
     --------
-    Writes to the database. Errors are printed, not raised.
+    Writes to the database. Errors are logged, not raised.
     """
     if conn is None:
         return
@@ -91,9 +94,9 @@ def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script
             conn.execute_script(sql_script)
         conn.commit()
         # _migrate_coverage_table_if_needed(conn)
-        print("ArenaX local price tables are ready in local DB.")
+        log.debug("ArenaX local price tables ready")
     except Exception as e:
-        print(f"Failed to prepare ArenaX local price tables in local DB: {e}")
+        log.error("prepare ArenaX local price tables failed: %s", e)
 
 
 
@@ -266,7 +269,7 @@ def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
     Warnings
     --------
     Writes and commits. ``fetched_at`` is the wall-clock time. Errors are
-    printed, not raised.
+    logged, not raised.
     """
     if conn is None or symbol is None or price is None:
         return False
@@ -300,7 +303,7 @@ def insert_price_to_arenax_local_price_db(conn: DatabaseConnection = None,
         conn.commit()
         return True
     except Exception as e:
-        print(f"Failed to insert price for {symbol}: {e}")
+        log.error("insert price for %s failed: %s", symbol, e)
         return False
 
 
@@ -328,7 +331,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
     -------
     list of Kbar
         Timestamps are naive local time (``datetime.fromtimestamp``);
-        NULL prices and volumes become 0. Empty on error (printed).
+        NULL prices and volumes become 0. Empty on error (logged).
     """
     results: List[Kbar] = []
     if conn is None or symbol is None:
@@ -358,7 +361,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
             results.append(k)
         return results
     except Exception as e:
-        print(f"Failed to query prices for {symbol}: {e}")
+        log.error("query prices for %s failed: %s", symbol, e)
         return results
 
 
@@ -379,7 +382,7 @@ def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str =
 
     Warnings
     --------
-    Writes to the database. Errors are printed, not raised.
+    Writes to the database. Errors are logged, not raised.
     """
     # Check if {orders,fills} table exists, if not create one
     if conn is None:
@@ -396,9 +399,9 @@ def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str =
                 sql_script = f.read()
                 conn.execute_script(sql_script)
         conn.commit()
-        print("Orders and Fills tables are ready in local DB.")
+        log.debug("orders and fills tables ready")
     except Exception as e:
-        print(f"Failed to prepare orders and fills tables in local DB: {e}")
+        log.error("prepare orders and fills tables failed: %s", e)
 
 def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
                                   cj_order_id: str = None,
@@ -421,7 +424,7 @@ def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
 
     Warnings
     --------
-    Writes and commits. Errors are printed, not raised, so the caller is
+    Writes and commits. Errors are logged, not raised, so the caller is
     not told when a mapping is lost.
     """
     if conn is None:
@@ -433,7 +436,7 @@ def insert_new_ordermap_item_to_db(conn: SqliteDatabaseConnection = None,
         )
         conn.commit()
     except Exception as e:
-        print(f"Failed to insert order mapping for CJ order {cj_order_id} in local DB: {e}")
+        log.error("insert order map for CJ order %s failed: %s", cj_order_id, e)
 
 def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id: str = None) -> str:
     """Return the broker order id mapped to `cj_order_id`.
@@ -442,7 +445,7 @@ def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id:
     -------
     str or None
         None if `conn` is None, no mapping exists, or the query fails
-        (the error is printed).
+        (the error is logged).
     """
     if conn is None:
         return None
@@ -454,10 +457,10 @@ def get_bkr_order_id_from_db(conn: SqliteDatabaseConnection = None, cj_order_id:
         if result:
             return result[0][0]
         else:
-            print(f"No mapping found for CJ order {cj_order_id} in local DB.")
+            log.warning("no order map for CJ order %s", cj_order_id)
             return None
     except Exception as e:
-        print(f"Failed to get broker order ID for CJ order {cj_order_id} from local DB: {e}")
+        log.error("get broker order id for CJ order %s failed: %s", cj_order_id, e)
         return None
 
 def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id: str = None) -> str:
@@ -467,7 +470,7 @@ def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id:
     -------
     str or None
         None if `conn` is None, no mapping exists, or the query fails
-        (the error is printed).
+        (the error is logged).
     """
     if conn is None:
         return None
@@ -481,7 +484,7 @@ def get_cj_order_id_from_db(conn: SqliteDatabaseConnection = None, bkr_order_id:
         else:
             return None
     except Exception as e:
-        print(f"Failed to get CJ order ID for broker order {bkr_order_id} from local DB: {e}")
+        log.error("get CJ order id for broker order %s failed: %s", bkr_order_id, e)
         return None
 
 def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
@@ -500,7 +503,7 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
 
     Warnings
     --------
-    Writes and commits. Database errors are printed, not raised.
+    Writes and commits. Database errors are logged, not raised.
     """
     if conn is None:
         return
@@ -520,9 +523,9 @@ def insert_new_order_to_db(conn: SqliteDatabaseConnection = None,
              order.quantity, created_at_str)
         )
         conn.commit()
-        print(f"Order {order.id} inserted in local DB.")
+        log.debug("@%s order %s inserted", created_at_str[:16], order.id)
     except Exception as e:
-        print(f"Failed to insert order {order.id} in local DB: {e}")
+        log.error("@%s insert order %s failed: %s", created_at_str[:16], order.id, e)
 
 
 def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: Order = None):
@@ -532,7 +535,7 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
 
     Warnings
     --------
-    Legacy and unused in this repo. Writes and commits; errors are printed,
+    Legacy and unused in this repo. Writes and commits; errors are logged,
     not raised.
     """
     if conn is None:
@@ -553,9 +556,9 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
              created_at_str)
         )
         conn.commit()
-        print(f"Order {order.id} inserted in local DB.")
+        log.debug("@%s order %s inserted", created_at_str[:16], order.id)
     except Exception as e:
-        print(f"Failed to insert order {order.id} in local DB: {e}")
+        log.error("@%s insert order %s failed: %s", created_at_str[:16], order.id, e)
 
 def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str, updated_at: datetime = datetime.utcnow() + timedelta(hours=8)):
     """Set ``status`` and ``updated_at`` of order `oid` in the ``orders`` table.
@@ -575,7 +578,7 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
     --------
     The `updated_at` default (``datetime.utcnow() + 8h``) is evaluated once
     at import time, so every call that omits it stores the module load time.
-    Writes and commits; errors are printed, not raised.
+    Writes and commits; errors are logged, not raised.
     """
     if conn is None:
         return
@@ -588,15 +591,19 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
             (status, updated_at_str, oid)
         )
         conn.commit()
-        print(f"Order {oid} status updated to {status} in local DB.")
+        log.debug("@%s order %s status -> %s", updated_at_str[:16], oid, status)
     except Exception as e:
-        print(f"Failed to update order {oid} status in local DB: {e}")
+        log.error("@%s update order %s status failed: %s", updated_at_str[:16], oid, e)
 
 
 # Simple test code
 if __name__ == "__main__":
     from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
+    from cjtrade.pkgs.logger import get_console
+    from cjtrade.pkgs.logger import setup_logging
+    setup_logging()
+    out = get_console()
     conn = connect_sqlite(str(paths.mirror_db_path("sinopac")))
     res = get_cj_order_id_from_db(conn, "f224a302")
-    print(type(res))
-    print(res)
+    out.info("%s", type(res))
+    out.info("%s", res)
