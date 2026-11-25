@@ -28,6 +28,11 @@ Intervals are `1m`, `5m`, `15m`, `30m`, `1h` and `1d`, as far as the source
 serves them (`client.market.capabilities.intervals`). Intraday bars are
 stamped at the minute they close, daily bars at 09:00, and volume is in lots.
 
+Only closed bars are returned. During the session the minute still trading
+is left out, and today's daily bar appears after 13:30. Against ArenaX,
+"now" is the simulated clock, so a replay never shows a bar it has not
+reached. Sinopac and ArenaX return the same bars for the same moment.
+
 !!! warning
     Asking for an interval the source does not serve raises
     `UnsupportedRequest`; a window with no trading returns an empty list.
@@ -50,7 +55,31 @@ minute bars and ticks need a FinMind sponsor plan, and until then
 `Fallback` moves on to the next source.
 
 To use a source of your own, subclass `MarketData`; see the
-[Market data reference](../reference/market-data.md).
+[Market data reference](../reference/market-data.md). A source that only has
+ticks can build 1m bars with `bars_from_ticks`, and every coarser interval
+is aggregated from 1m.
+
+## Offline: a price file of your own
+
+Download the bars once into a file of your own, then run ArenaX on that file
+with no network source:
+
+```sh
+uv run preload-prices --price-db exp.db --symbols 2330,2317 --start 2026-10-26
+CJTRADE_OFFLINE=1 uv run arenaxd --backend=demo --data=offline --price-db=exp.db
+```
+
+`preload-prices` fetches 1m, 5m, 1h and 1d bars by default (`--interval`)
+from FinMind, then Yahoo (`--data`), and only fetches windows the file lacks,
+so running it again tops the file up. `--data=offline` makes ArenaX serve
+only what the file holds: an interval or a day that was not preloaded comes
+back empty. `CJTRADE_OFFLINE=1` makes every network source (FinMind, Yahoo,
+Sinopac) raise `MarketDataUnavailable` instead of connecting, which also
+works for `Cached(...)` in your own code.
+
+!!! warning
+    Yahoo keeps only about 30 days of 1m bars, and the demo backend starts
+    11 to 20 days back. Preload at least a month for a demo run.
 
 ## Indicators
 

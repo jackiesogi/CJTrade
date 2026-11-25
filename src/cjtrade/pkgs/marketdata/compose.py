@@ -10,6 +10,7 @@ from typing import Sequence
 
 from cjtrade.pkgs.marketdata.base import Capabilities
 from cjtrade.pkgs.marketdata.base import in_window
+from cjtrade.pkgs.marketdata.base import is_offline
 from cjtrade.pkgs.marketdata.base import MarketData
 from cjtrade.pkgs.marketdata.base import TimeLike
 from cjtrade.pkgs.marketdata.base import to_datetime
@@ -72,8 +73,9 @@ class Fallback(MarketData):
             except UnsupportedRequest:
                 continue
             except Exception as e:                       # noqa: BLE001
-                log.warning("%s.%s failed, trying the next source: %s",
-                            source.name, method, e)
+                report = log.debug if is_offline() else log.warning
+                report("%s.%s failed, trying the next source: %s",
+                       source.name, method, e)
                 continue
             if result:
                 return source, result
@@ -157,8 +159,10 @@ class Cached(MarketData):
                     raise
                 except Exception as e:                   # noqa: BLE001
                     # A failed chunk stays a gap, to be asked for again.
-                    log.warning("%s: %s %s [%s, %s) not fetched: %s", self.source.name,
-                                symbol, interval, chunk_start, chunk_end, e)
+                    # Offline that is expected, so it is not worth a warning.
+                    report = log.debug if is_offline() else log.warning
+                    report("%s: %s %s [%s, %s) not fetched: %s", self.source.name,
+                           symbol, interval, chunk_start, chunk_end, e)
                     continue
                 if not bars:
                     continue

@@ -1,7 +1,6 @@
 """ArenaXMarketData: read prices from a running ArenaX server."""
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import List
 
 from cjtrade.pkgs.marketdata.base import Capabilities
@@ -23,7 +22,8 @@ class ArenaXMarketData(MarketData):
     Use this, not a separate source, when trading against ArenaX: the
     server fills orders against its own data, so a strategy must see the
     same bars. Which source the server reads from is chosen when the server
-    starts (``arenaxd --data=...``).
+    starts (``arenaxd --data=...``). "Now", for which bars have closed, is the
+    server's simulated clock, not the wall clock.
 
     Parameters
     ----------
@@ -51,10 +51,11 @@ class ArenaXMarketData(MarketData):
         start_dt, end_dt = to_window(start, end)
         if end_dt <= start_dt:
             return []
-        # The server's route takes whole dates with an inclusive end.
-        last = end_dt - timedelta(microseconds=1)
-        bars = self.broker.get_kbars(Product(symbol=symbol), start_dt.strftime("%Y-%m-%d"),
-                                     last.strftime("%Y-%m-%d"), interval)
+        # Datetimes, which the route takes as a half-open window. The server
+        # leaves out bars that have not closed on its simulated clock.
+        bars = self.broker.get_kbars(Product(symbol=symbol),
+                                     start_dt.isoformat(timespec="seconds"),
+                                     end_dt.isoformat(timespec="seconds"), interval)
         return in_window(bars or [], start_dt, end_dt)
 
     def get_snapshots(self, symbols: List[str]) -> List[Snapshot]:

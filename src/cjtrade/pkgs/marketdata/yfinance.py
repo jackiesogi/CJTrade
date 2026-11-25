@@ -6,10 +6,12 @@ from datetime import timedelta
 from typing import List
 
 from cjtrade.pkgs.marketdata.base import Capabilities
+from cjtrade.pkgs.marketdata.base import closed
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import INTERVAL_MINUTES
 from cjtrade.pkgs.marketdata.base import MarketData
 from cjtrade.pkgs.marketdata.base import MarketDataUnavailable
+from cjtrade.pkgs.marketdata.base import require_online
 from cjtrade.pkgs.marketdata.base import TimeLike
 from cjtrade.pkgs.marketdata.base import to_window
 from cjtrade.pkgs.models.kbar import Kbar
@@ -65,9 +67,31 @@ class YFinanceMarketData(MarketData):
     def get_kbars(self, symbol: str, start: TimeLike, end: TimeLike,
                   interval: str = "1m") -> List[Kbar]:
         self.require_interval(interval)
+        require_online(self.name)
         start_dt, end_dt = to_window(start, end)
         if end_dt <= start_dt:
             return []
+        bars = []
+        for piece_start, piece_end in self._pieces(start_dt, end_dt, interval):
+            bars += self._piece(symbol, piece_start, piece_end, interval)
+        # Yahoo includes the bar still forming; it is not closed yet.
+        return closed(in_window(bars, start_dt, end_dt), interval, self.now())
+
+    # Yahoo refuses a 1m request spanning more than 8 days, and each request
+    # is padded by a day, so 1m windows are asked for 6 days at a time.
+    _MINUTE_PIECE = timedelta(days=6)
+
+    def _pieces(self, start: datetime, end: datetime, interval: str):
+        if interval != "1m":
+            yield start, end
+            return
+        while start < end:
+            stop = min(start + self._MINUTE_PIECE, end)
+            yield start, stop
+            start = stop
+
+    def _piece(self, symbol: str, start_dt: datetime, end_dt: datetime,
+               interval: str) -> List[Kbar]:
         data = None
         for ticker in (f"{symbol}.TW", f"{symbol}.TWO"):
             data = self._download(ticker, start_dt, end_dt, interval)
@@ -96,4 +120,4 @@ class YFinanceMarketData(MarketData):
                 volume=int(round(float(fields["Volume"]) / 1000)),
                 symbol=symbol,
             ))
-        return in_window(bars, start_dt, end_dt)
+        return bars

@@ -8,6 +8,7 @@ Tests basic, expected flows:
 - buy_stock / sell_stock convenience methods
 """
 import time
+from datetime import timedelta
 
 import pytest
 from cjtrade.pkgs.models.event import OrderCallback
@@ -164,13 +165,17 @@ class TestNormalOperations:
 
     def test_get_kbars_returns_ohlcv_bars(self, client):
         """get_kbars() should return a list of KBar objects with correct attributes."""
-        # Available Range
-        last_monday_YYYY_MM_DD = time.strftime("%Y-%m-%d", time.localtime(time.time() - (time.localtime().tm_wday + 7) * 24 * 3600))
-        last_friday_YYYY_MM_DD = time.strftime("%Y-%m-%d", time.localtime(time.time() - (time.localtime().tm_wday + 3) * 24 * 3600))
-
-        kbars = client.get_kbars(Product("0050"), interval="1m", start=last_monday_YYYY_MM_DD, end=last_friday_YYYY_MM_DD)
+        # The week before the simulated clock: the server leaves out bars that
+        # have not closed on it, so a window after it would come back empty.
+        now = client.get_market_time()['mock_current_time']
+        start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        kbars = client.get_kbars(Product("0050"), interval="1m", start=start,
+                                 end=now.strftime("%Y-%m-%d"))
         assert isinstance(kbars, list)
         assert len(kbars) > 0
+        # Read again: the clock runs on (120x in demo) while the request is served.
+        later = client.get_market_time()['mock_current_time']
+        assert kbars[-1].timestamp <= later, "no bar from after the simulated clock"
         for k in kbars:
             assert hasattr(k, "timestamp")
             assert hasattr(k, "open")

@@ -1,4 +1,8 @@
-"""Build coarser bars from 1-minute bars, following the MarketData conventions."""
+"""Build bars from finer data: 1m bars from ticks, coarser bars from 1m.
+
+Both follow the MarketData conventions, so a source that only has the finer
+data can still serve every interval.
+"""
 from __future__ import annotations
 
 import math
@@ -9,6 +13,7 @@ from typing import List
 
 from cjtrade.pkgs.marketdata.base import INTERVAL_MINUTES
 from cjtrade.pkgs.models.kbar import Kbar
+from cjtrade.pkgs.models.tick import Tick
 
 SESSION_OPEN = time(9, 0)
 SESSION_CLOSE = time(13, 30)
@@ -84,3 +89,49 @@ def aggregate(minute_bars: List[Kbar], interval: str) -> List[Kbar]:
     if group:
         out.append(_merge(group, stamp(current), group[0].symbol))
     return out
+
+
+def bars_from_ticks(ticks: List[Tick]) -> List[Kbar]:
+    """Build 1m bars from trade prints.
+
+    A print at ``hh:mm:ss`` belongs to the bar closing at ``hh:mm+1``, so a
+    09:00:30 print lands in the 09:01 bar. The closing auction prints at
+    13:30 and is folded into the 13:30 bar rather than opening a 13:31 one.
+    Minutes without a print get no bar.
+
+    Parameters
+    ----------
+    ticks : list of Tick
+        Any order; volumes in lots.
+
+    Returns
+    -------
+    list of Kbar
+        Oldest first, stamped at their close. The last bar may still be
+        forming; pass the result through
+        :func:`~cjtrade.pkgs.marketdata.base.closed` to drop it.
+    """
+    out: List[Kbar] = []
+    group: List[Tick] = []
+    current = None
+    for t in sorted(ticks, key=lambda t: t.timestamp):
+        stamp = t.timestamp.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        close = t.timestamp.replace(hour=SESSION_CLOSE.hour, minute=SESSION_CLOSE.minute,
+                                    second=0, microsecond=0)
+        if stamp == close + timedelta(minutes=1):     # 13:30:xx auction print
+            stamp = close
+        if group and stamp != current:
+            out.append(_from_ticks(group, current))
+            group = []
+        current = stamp
+        group.append(t)
+    if group:
+        out.append(_from_ticks(group, current))
+    return out
+
+
+def _from_ticks(group: List[Tick], stamp: datetime) -> Kbar:
+    prices = [t.price for t in group]
+    return Kbar(timestamp=stamp, open=prices[0], high=max(prices), low=min(prices),
+                close=prices[-1], volume=sum(int(t.volume) for t in group),
+                symbol=group[0].symbol)

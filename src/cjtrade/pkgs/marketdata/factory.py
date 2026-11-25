@@ -10,7 +10,7 @@ from cjtrade.pkgs.marketdata.cache import PriceCache
 from cjtrade.pkgs.marketdata.compose import Cached
 from cjtrade.pkgs.marketdata.compose import Fallback
 
-SOURCE_NAMES = ("sinopac", "finmind", "yfinance", "cache")
+SOURCE_NAMES = ("sinopac", "finmind", "yfinance", "cache", "offline")
 
 
 def parse_names(spec: Union[str, Iterable[str]]) -> list:
@@ -33,8 +33,9 @@ def from_names(spec: Union[str, Iterable[str]], *, sinopac=None,
     Parameters
     ----------
     spec : str or iterable of str
-        ``"sinopac"``, ``"finmind"``, ``"yfinance"`` and ``"cache"``, e.g.
-        ``"finmind,yfinance"``.
+        ``"sinopac"``, ``"finmind"``, ``"yfinance"``, ``"cache"`` (bars
+        already on disk) and ``"offline"`` (nothing; with the cache in front,
+        only what is on disk is served), e.g. ``"finmind,yfinance"``.
     sinopac : SinopacBrokerAPI or AccountClient, optional
         A connected Sinopac broker; required when ``"sinopac"`` is named.
     finmind_token : str, optional
@@ -43,7 +44,8 @@ def from_names(spec: Union[str, Iterable[str]], *, sinopac=None,
         Put a price cache in front (default True). Pass a PriceCache to
         choose the file, or False for no cache.
     cache_path : str, optional
-        Cache file when `cache` is True.
+        Cache file when `cache` is True, and the file the ``"cache"``
+        source reads. Defaults to ``paths.price_db_path()``.
 
     Returns
     -------
@@ -58,8 +60,11 @@ def from_names(spec: Union[str, Iterable[str]], *, sinopac=None,
     --------
     ```python
     market = from_names("finmind,yfinance")     # cached, FinMind first
+    market = from_names("offline", cache_path="exp.db")   # exp.db only
     ```
     """
+    if isinstance(cache, PriceCache) and cache_path is None:
+        cache_path = cache.path
     sources: list = []
     for name in parse_names(spec):
         if name == "sinopac":
@@ -74,7 +79,10 @@ def from_names(spec: Union[str, Iterable[str]], *, sinopac=None,
             from cjtrade.pkgs.marketdata.yfinance import YFinanceMarketData
             sources.append(YFinanceMarketData())
         elif name == "cache":
-            sources.append(PriceCache(cache_path))
+            sources.append(cache if isinstance(cache, PriceCache) else PriceCache(cache_path))
+        elif name == "offline":
+            from cjtrade.pkgs.marketdata.offline import OfflineMarketData
+            sources.append(OfflineMarketData())
     source = sources[0] if len(sources) == 1 else Fallback(sources)
     if cache is False:
         return source

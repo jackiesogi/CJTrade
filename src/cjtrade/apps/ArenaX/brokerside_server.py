@@ -153,7 +153,7 @@ def load_cjsys(backend_str: str = "demo"):
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
             'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND',
             'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT',
-            'AX_DATA_SOURCES']
+            'AX_DATA_SOURCES', 'AX_PRICE_DB_PATH']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -213,7 +213,12 @@ class ArenaX_BrokerSideServer:
         data_sources : str, optional
             Source names in order, e.g. ``"finmind,yfinance"``. Defaults to
             the ``AX_DATA_SOURCES`` setting, then DEFAULT_DATA_SOURCES.
+            ``"offline"`` serves only what the price cache already holds.
+        price_db_path : str, optional
+            The price cache file. Defaults to the ``AX_PRICE_DB_PATH``
+            setting, then ``paths.price_db_path()``.
         """
+        price_db_path = price_db_path or internal_config.get('price_db_path') or None
         if backend is not None:
             self.backend = backend
             self.real = getattr(backend, "real_account", None)
@@ -247,9 +252,13 @@ class ArenaX_BrokerSideServer:
                 self.real.connect()
             if market_data is None:
                 # No cache here: the backend puts its own in front.
-                market_data = from_names(sources, sinopac=self.real, cache=False)
+                market_data = from_names(sources, sinopac=self.real, cache=False,
+                                         cache_path=price_db_path)
             log.info("market data: %s", market_data.name)
-            common = dict(cost_model=cost_model, market_data=market_data, **internal_config)
+            log.info("price cache: %s", price_db_path or paths.price_db_path())
+            config = {k: v for k, v in internal_config.items() if k != 'price_db_path'}
+            common = dict(cost_model=cost_model, market_data=market_data,
+                          price_db_path=price_db_path, **config)
             if backend_str == "backtest":
                 self.backend = ArenaX_Backend_Historical(real_account=self.real, **common)
             elif backend_str == "paper":
@@ -779,11 +788,13 @@ class ArenaX_BrokerSideServer:
         @app.get("/api/v1/market/<string:symbol>/kbars")
         @app.doc(tags=["Market"])
         def market_kbars(symbol: str):
-            """Historical bars. Query: start, end, interval (1m|5m|1h|1d).
+            """Closed bars. Query: start, end, interval (1m|5m|1h|1d).
 
-            The server picks the data source itself (price_db -> real broker ->
-            yfinance); there is deliberately no way to ask for one, so callers
-            cannot depend on where the bars came from.
+            start/end are whole dates (end inclusive) or ISO datetimes (a
+            half-open window). Bars that have not closed on the simulated
+            clock are left out. The source is the one the server was started
+            with (--data), behind its price cache; there is deliberately no way
+            to ask for one, so callers cannot depend on where bars came from.
             """
             start = request.args.get("start")
             end = request.args.get("end")
@@ -1078,8 +1089,11 @@ def main():
     parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo", "real"], default="demo", help="Backend type to use.")
     parser.add_argument("--data", type=str, default=None,
                         help="Price sources in order, e.g. 'finmind,yfinance' "
-                             "(sinopac, finmind, yfinance, cache). CLI > AX_DATA_SOURCES > "
-                             "the backend's default.")
+                             "(sinopac, finmind, yfinance, cache, offline). "
+                             "CLI > AX_DATA_SOURCES > the backend's default.")
+    parser.add_argument("--price-db", type=str, default=None,
+                        help="Price cache file (SQLite). CLI > AX_PRICE_DB_PATH > "
+                             "the default cache file.")
     args = parser.parse_args()
 
     load_cjconf()
@@ -1090,7 +1104,7 @@ def main():
     port = args.port or int(internal_config.get('host_port', 8801))
 
     server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend,
-                                     data_sources=args.data)
+                                     data_sources=args.data, price_db_path=args.price_db)
     print(f"Starting server on {host}:{port} with backend '{args.backend}'...")
     try:
         server.serve_forever()

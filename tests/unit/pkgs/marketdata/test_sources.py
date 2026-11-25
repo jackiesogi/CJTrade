@@ -155,12 +155,12 @@ def test_sinopac_asks_for_1m_with_an_exclusive_end_and_aggregates():
     assert [b.timestamp.minute for b in out] == [5, 10]
 
 
-def test_arenax_asks_its_server_with_an_inclusive_end():
+def test_arenax_asks_its_server_for_the_exact_half_open_window():
     bars = [Kbar(datetime(2026, 3, 2, 9, 1), 1, 1, 1, 1, 1, "2330"),
             Kbar(datetime(2026, 3, 3, 9, 1), 1, 1, 1, 1, 1, "2330")]
     broker = FakeBroker(bars)
     out = ArenaXMarketData(broker).get_kbars("2330", "2026-03-02", "2026-03-03", "1m")
-    assert broker.calls == [("2330", "2026-03-02", "2026-03-02", "1m")]
+    assert broker.calls == [("2330", "2026-03-02T00:00:00", "2026-03-03T00:00:00", "1m")]
     assert len(out) == 1
 
 

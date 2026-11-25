@@ -23,6 +23,8 @@ K 棒標在收盤那一分鐘、不還原權值、成交量以張為單位），
 
 ::: cjtrade.pkgs.marketdata.arenax
 
+::: cjtrade.pkgs.marketdata.offline
+
 ::: cjtrade.pkgs.marketdata.factory
 
 ::: cjtrade.pkgs.marketdata.aggregate

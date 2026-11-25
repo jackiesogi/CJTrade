@@ -171,8 +171,9 @@ passed with `--roster=`. A read-only status page is served on
 > [!NOTE]
 > By default the `backtest` backend reads prices from Sinopac, so it needs
 > the `sinopac` extra and credentials; `arenaxd --data=finmind,yfinance`
-> runs it without a broker account. The trading engine is a proof of
-> concept under `poc/`.
+> runs it without a broker account, and `--data=offline --price-db=FILE`
+> runs it on bars preloaded with `preload-prices`, with no network at all.
+> The trading engine is a proof of concept under `poc/`.
 
 ### Reading the result
 

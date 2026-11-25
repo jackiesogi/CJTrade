@@ -77,7 +77,7 @@ convention. Only new `F401`/`F811`/`F821` are your fault.
 src/cjtrade/
   pkgs/
     brokers/        AccountClient (accounts + orders) + per-broker adapters
-    marketdata/     MarketData sources (sinopac/finmind/yfinance/arenax/cache) + Fallback, Cached
+    marketdata/     MarketData sources (sinopac/finmind/yfinance/arenax/cache/offline) + Fallback, Cached
     models/         Order, Position, Product, Quote, Snapshot, Kbar, Trade, events
     strategy/       BaseStrategy + built-ins (bb, adx, dca, donchian, snr, baseline_0050)
     analytics/      technical (ta.*), fundamental, informational (news+LLM), backtest engine
@@ -123,6 +123,15 @@ source that cannot serve a request raises `UnsupportedRequest` (never returns
 backends take `market_data=`; `real_account` is only the account. New code
 reads `client.market`; `AccountClient.get_kbars/get_snapshots/get_bid_ask`
 are shims kept for existing callers.
+
+Only **closed** bars are returned: a bar appears once its close (13:30 for a
+daily bar) is at or before the source's `now()`, the wall clock for live
+sources and the simulated clock for ArenaX's kbars route. Do not add a
+"current bar" method; a forming bar is not data. Ticks are the finest level
+(`aggregate.bars_from_ticks` makes 1m), and coarser bars come from 1m.
+`CJTRADE_OFFLINE=1` makes network sources raise `MarketDataUnavailable`;
+`arenaxd --data=offline --price-db=FILE` serves only a file filled by
+`preload-prices`.
 
 **Engine code must be broker-agnostic.** Anything broker- or mode-specific
 belongs in an init/bootstrap step, not in the loop. No clock stepping, no

@@ -1,12 +1,15 @@
 # TODO: Add `Lock()`
 from datetime import datetime
 from datetime import timedelta
+from pathlib import Path
 from typing import List
 from typing import Optional
 
 from cjtrade.pkgs.db.db_base import *
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import *
+
+_SQL_DIR = Path(__file__).resolve().parent / "sql"
 
 # Module-level connect functions
 def connect_sqlite(database: str = ":memory:"):
@@ -59,7 +62,9 @@ def connect_sqlite(database: str = ":memory:"):
 #     return DuckDBDatabaseConnection(conn)
 
 ##########################   ArenaX-local-pricedb-specific CURD   ############################
-DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT = "./src/cjtrade/pkgs/db/sql/create_arenax_local_price_db.sql"
+# Beside this module, so the scripts are found whatever the working directory
+# and in an installed package, not only from a checkout's root.
+DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT = str(_SQL_DIR / "create_arenax_local_price_db.sql")
 
 def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script_path: str = None):
     """Create the ArenaX local price tables by running a SQL script.
@@ -69,8 +74,8 @@ def prepare_arenax_local_price_db_tables(conn: DatabaseConnection = None, script
     conn : DatabaseConnection, optional
         Target database; does nothing if None.
     script_path : str, optional
-        Defaults to `DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT`, which is relative
-        to the current working directory.
+        Defaults to `DEFAUT_PREPARE_ARENAX_TABLE_SCRIPT`, the script shipped
+        with this package.
 
     Warnings
     --------
@@ -360,7 +365,7 @@ def get_price_from_arenax_local_price_db(conn: DatabaseConnection = None,
 ##########################   CJTrade-specific CURD   ############################
 from cjtrade.pkgs.db.sqlite import SqliteDatabaseConnection
 
-DEFAUT_PREPARE_TABLE_SCRIPT="./src/cjtrade/pkgs/db/sql"
+DEFAUT_PREPARE_TABLE_SCRIPT = str(_SQL_DIR)
 def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str = None):
     """Create the CJTrade tables by running every ``.sql`` file in `sql_dir`.
 
@@ -369,8 +374,8 @@ def prepare_cjtrade_tables(conn: SqliteDatabaseConnection = None, sql_dir: str =
     conn : SqliteDatabaseConnection, optional
         Target database; does nothing if None.
     sql_dir : str, optional
-        Defaults to `DEFAUT_PREPARE_TABLE_SCRIPT`, which is relative to the
-        current working directory.
+        Defaults to `DEFAUT_PREPARE_TABLE_SCRIPT`, the scripts shipped with
+        this package.
 
     Warnings
     --------

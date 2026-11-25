@@ -17,6 +17,7 @@ from typing import Tuple
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.db import db_api
 from cjtrade.pkgs.marketdata.base import Capabilities
+from cjtrade.pkgs.marketdata.base import closed_until
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import INTERVALS
 from cjtrade.pkgs.marketdata.base import MarketData
@@ -102,8 +103,12 @@ class PriceCache(MarketData):
 
     def mark_fetched(self, symbol: str, interval: str, start: datetime,
                      end: datetime, source: str) -> None:
-        """Record ``[start, end)`` as fetched, clamped so it never reaches the future."""
-        end = min(end, datetime.now())
+        """Record ``[start, end)`` as fetched, clamped to the bars that have closed.
+
+        A bar still open is not in the cache yet, so the window it sits in
+        must stay a gap and be asked for again.
+        """
+        end = min(end, closed_until(interval, datetime.now()))
         if end <= start:
             return
         db_api.upsert_coverage_range(

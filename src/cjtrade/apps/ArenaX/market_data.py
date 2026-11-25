@@ -138,16 +138,20 @@ class ArenaX_Market:
         self.playback_speed = speed
 
     def fetching_available(self, date: datetime, symbol: str = "2330") -> bool:
-        """Return whether the source has 1m bars for `symbol` on `date`.
+        """Return whether 1m bars for `symbol` on `date` are available.
+
+        Asks through the price cache, so a day already on disk counts even
+        when the source is offline, and a day fetched here is kept for the
+        replay that follows.
 
         Warnings
         --------
-        Asks the source directly, uncached: a network call.
+        May make a network call for a day the cache lacks.
         """
         if not self.source.supports("1m"):
             return False
         try:
-            return bool(self.source.get_kbars(symbol, date, date + timedelta(days=1), "1m"))
+            return bool(self.data.get_kbars(symbol, date, date + timedelta(days=1), "1m"))
         except Exception as exc:                          # noqa: BLE001
             log.info("probe for %s on %s failed: %s", symbol, date.date(), exc)
             return False

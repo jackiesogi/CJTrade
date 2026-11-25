@@ -31,6 +31,7 @@ from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.marketdata import Cached
 from cjtrade.pkgs.marketdata import MarketData
 from cjtrade.pkgs.marketdata import PriceCache
+from cjtrade.pkgs.marketdata.base import closed
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
@@ -243,10 +244,17 @@ class ArenaX_BackendBase:
         return self.account_state.positions
 
     def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
-        """Bars for `symbol` from `start` through `end`, both whole dates, inclusive.
+        """Closed bars for `symbol` between `start` and `end`.
 
         Served from the price cache, fetching only what it lacks from
-        ``market_data``.
+        ``market_data``. Only bars that have closed on the simulated clock
+        are returned, so a client cannot see past the replay.
+
+        Parameters
+        ----------
+        start, end : str
+            Whole dates (``YYYY-MM-DD``, `end` inclusive, as the route has
+            always taken them) or ISO datetimes (a half-open window).
 
         Raises
         ------
@@ -254,15 +262,28 @@ class ArenaX_BackendBase:
             The source does not serve `interval`.
         """
         try:
-            start_dt = datetime.strptime(start, "%Y-%m-%d")
-            end_dt = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
+            start_dt = datetime.fromisoformat(start)
+            end_dt = datetime.fromisoformat(end)
         except (TypeError, ValueError) as e:
             print(f"Error parsing date range: {e}")
             return []
+        if len(end) == 10:                  # a whole date: through its end
+            end_dt += timedelta(days=1)
         bars = self.data.get_kbars(symbol, start_dt, end_dt, interval)
+        bars = closed(bars, interval, self._clock())
         print(f"[kbars] Returning {len(bars)} kbars for {symbol} "
               f"(source={self.market_data.name})")
         return bars
+
+    def _clock(self) -> datetime:
+        """The simulated "now"; the wall clock when no simulated clock is set."""
+        market = getattr(self, "market", None)
+        if market is None:
+            return datetime.now()
+        try:
+            return market.get_market_time()["mock_current_time"]
+        except TypeError:       # the clock was never set: its fields are still 0
+            return datetime.now()
 
     def _calculate_kbar_index(self, symbol: str, mock_time: datetime) -> int:
         """Return the row-index of the latest kbar whose timestamp <= mock_time.

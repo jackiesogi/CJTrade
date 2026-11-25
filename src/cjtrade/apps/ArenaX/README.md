@@ -51,7 +51,7 @@ uv run arenaxd --backend=backtest        # or demo / paper / real
 ```
 
 `--data` (or `AX_DATA_SOURCES`) chooses the price sources, tried in order:
-`sinopac`, `finmind`, `yfinance`, `cache`. Sinopac is logged in to only when a
+`sinopac`, `finmind`, `yfinance`, `cache`, `offline`. Sinopac is logged in to only when a
 source or the backend needs it, so a backtest can run with no broker account:
 
 <!-- cjcheck: static -->
@@ -63,6 +63,21 @@ FinMind reads `FINMIND_TOKEN` from your `.cjconf` and serves daily bars on a
 free account; a 1m replay still needs a source of 1m bars for its window
 (yfinance keeps only the last 30 days). From Python, pass any `MarketData` as
 `ArenaX_BrokerSideServer(market_data=...)`.
+
+Every source sits behind a price cache file. `--price-db` (or
+`AX_PRICE_DB_PATH`) chooses the file; the default is the shared cache in the
+platform cache directory. To run with no network at all, preload a file and
+start with `--data=offline`, which serves only what the file holds:
+
+<!-- cjcheck: static -->
+```sh
+uv run preload-prices --price-db exp.db --symbols 2330,2317 --start 2026-10-26
+CJTRADE_OFFLINE=1 uv run arenaxd --backend=demo --data=offline --price-db=exp.db
+```
+
+`GET /api/v1/market/<symbol>/kbars` returns only bars that have closed on the
+simulated clock. `start` and `end` take whole dates (`end` inclusive) or ISO
+datetimes (a half-open window).
 
 :warning: `arenaxd` reads `AX_*` environment variables before its config file,
 and `load_dotenv(override=False)` means whatever is already exported wins. A

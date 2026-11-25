@@ -24,6 +24,8 @@ prices, volume in lots), so sources can be chained and cached freely.
 
 ::: cjtrade.pkgs.marketdata.arenax
 
+::: cjtrade.pkgs.marketdata.offline
+
 ::: cjtrade.pkgs.marketdata.factory
 
 ::: cjtrade.pkgs.marketdata.aggregate

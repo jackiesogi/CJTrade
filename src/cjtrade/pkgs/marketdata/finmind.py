@@ -17,10 +17,12 @@ from typing import Optional
 
 from cjtrade.pkgs.marketdata.aggregate import aggregate
 from cjtrade.pkgs.marketdata.base import Capabilities
+from cjtrade.pkgs.marketdata.base import closed
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import INTRADAY_INTERVALS
 from cjtrade.pkgs.marketdata.base import MarketData
 from cjtrade.pkgs.marketdata.base import MarketDataUnavailable
+from cjtrade.pkgs.marketdata.base import require_online
 from cjtrade.pkgs.marketdata.base import session_days
 from cjtrade.pkgs.marketdata.base import TimeLike
 from cjtrade.pkgs.marketdata.base import to_datetime
@@ -81,6 +83,7 @@ class FinMindMarketData(MarketData):
     # ── HTTP ───────────────────────────────────────────────────────────────
 
     def _request(self, params: Dict[str, str]) -> List[dict]:
+        require_online(self.name)
         import requests
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         try:
@@ -105,9 +108,10 @@ class FinMindMarketData(MarketData):
         if end_dt <= start_dt:
             return []
         if interval == "1d":
-            return in_window(self._daily(symbol, start_dt, end_dt), start_dt, end_dt)
-        minutes = self._minutes(symbol, start_dt, end_dt)
-        return in_window(aggregate(minutes, interval), start_dt, end_dt)
+            bars = self._daily(symbol, start_dt, end_dt)
+        else:
+            bars = aggregate(self._minutes(symbol, start_dt, end_dt), interval)
+        return closed(in_window(bars, start_dt, end_dt), interval, self.now())
 
     def _daily(self, symbol: str, start: datetime, end: datetime) -> List[Kbar]:
         rows = self._request({
@@ -162,9 +166,12 @@ class FinMindMarketData(MarketData):
             raise
         self._ticks_ok = True
         side = {"1": TickSide.BUY, "2": TickSide.SELL}
+        now = self.now()
         ticks = []
         for r in rows:
             stamp = datetime.strptime(f"{r['date']} {r['Time']}", "%Y-%m-%d %H:%M:%S.%f")
+            if stamp > now:
+                continue
             ticks.append(Tick(timestamp=stamp, price=float(r["deal_price"]),
                               volume=int(r["volume"]), symbol=symbol,
                               side=side.get(str(r.get("TickType")), TickSide.UNKNOWN)))

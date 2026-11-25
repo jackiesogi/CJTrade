@@ -6,10 +6,12 @@ from typing import List
 
 from cjtrade.pkgs.marketdata.aggregate import aggregate
 from cjtrade.pkgs.marketdata.base import Capabilities
+from cjtrade.pkgs.marketdata.base import closed
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import INTERVALS
 from cjtrade.pkgs.marketdata.base import MarketData
 from cjtrade.pkgs.marketdata.base import MarketDataUnavailable
+from cjtrade.pkgs.marketdata.base import require_online
 from cjtrade.pkgs.marketdata.base import TimeLike
 from cjtrade.pkgs.marketdata.base import to_window
 from cjtrade.pkgs.models.kbar import Kbar
@@ -48,6 +50,7 @@ class SinopacMarketData(MarketData):
     def get_kbars(self, symbol: str, start: TimeLike, end: TimeLike,
                   interval: str = "1m") -> List[Kbar]:
         self.require_interval(interval)
+        require_online(self.name)
         start_dt, end_dt = to_window(start, end)
         if end_dt <= start_dt:
             return []
@@ -59,15 +62,23 @@ class SinopacMarketData(MarketData):
                 (last + timedelta(days=1)).strftime("%Y-%m-%d"), "1m")
         except ConnectionError as e:
             raise MarketDataUnavailable(f"sinopac: {e}") from e
-        return in_window(aggregate(minutes or [], interval), start_dt, end_dt)
+        # Shioaji stamps 1m bars at their close (09:01 is the first) and
+        # includes the minute still trading; closed() drops it, then the
+        # coarser bars are built only from complete minutes.
+        now = self.now()
+        minutes = closed(minutes or [], "1m", now)
+        return closed(in_window(aggregate(minutes, interval), start_dt, end_dt),
+                      interval, now)
 
     def get_snapshots(self, symbols: List[str]) -> List[Snapshot]:
+        require_online(self.name)
         try:
             return self.broker.get_snapshots([Product(symbol=s) for s in symbols])
         except ConnectionError as e:
             raise MarketDataUnavailable(f"sinopac: {e}") from e
 
     def get_bid_ask(self, symbol: str, intraday_odd: bool = False) -> BidAsk:
+        require_online(self.name)
         try:
             return self.broker.get_bid_ask(Product(symbol=symbol), intraday_odd)
         except ConnectionError as e:

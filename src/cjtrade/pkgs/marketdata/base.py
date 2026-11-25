@@ -13,9 +13,26 @@ chained and cached without changing what a strategy sees:
 * Timestamps are naive Asia/Taipei time.
 * Intraday bars are stamped at the minute they CLOSE: the first 1m bar of a
   session is 09:01, a 5m bar covering 09:00-09:05 is stamped 09:05.
-* Daily bars are stamped 09:00 on the session date.
+* Daily bars are stamped 09:00 on the session date and close at 13:30.
+* Only CLOSED bars are returned: a bar is left out until its close is at or
+  before the source's "now" (the wall clock for a live source, the simulated
+  clock for ArenaX). So the last bar of any answer is complete, and a replay
+  cannot see a bar it has not reached. Ticks follow the same rule.
 * Prices are raw, not adjusted for dividends or splits.
 * Volume is in lots (張, 1,000 shares) for listed and OTC stocks.
+
+Snapshots describe the trading day so far: ``open``, ``high`` and ``low``
+since the open, ``close`` the latest price, ``volume`` the day's total, and
+``timestamp`` the time of the quote.
+
+Granularity: ticks are the finest data, then 1m bars, then everything
+coarser, which is aggregated from 1m by
+:func:`~cjtrade.pkgs.marketdata.aggregate.aggregate`. A source that only has
+ticks can build 1m bars from them with
+:func:`~cjtrade.pkgs.marketdata.aggregate.bars_from_ticks`.
+
+Setting ``CJTRADE_OFFLINE=1`` makes every network source raise
+:class:`MarketDataUnavailable`, so only the local price cache answers.
 
 Intervals are named ``1m 5m 15m 30m 1h 1d``. A source declares which ones it
 serves through :attr:`MarketData.capabilities`, and asking for anything else
@@ -25,12 +42,14 @@ source and a cache never records a window it was not given.
 """
 from __future__ import annotations
 
+import os
 from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import date
 from datetime import datetime
+from datetime import time
 from datetime import timedelta
 from typing import FrozenSet
 from typing import List
@@ -127,6 +146,13 @@ class MarketData(ABC):
     def capabilities(self) -> Capabilities:
         """What this source can serve."""
 
+    def now(self) -> datetime:
+        """The moment this source answers as of; a bar later than it is not closed.
+
+        The wall clock. Override it to replay or to test against a fixed time.
+        """
+        return datetime.now()
+
     def supports(self, interval: str) -> bool:
         """Return whether ``get_kbars`` accepts `interval`."""
         return interval in self.capabilities.intervals
@@ -141,7 +167,7 @@ class MarketData(ABC):
     @abstractmethod
     def get_kbars(self, symbol: str, start: TimeLike, end: TimeLike,
                   interval: str = "1m") -> List[Kbar]:
-        """Return the bars of `symbol` with ``start <= timestamp < end``.
+        """Return the closed bars of `symbol` with ``start <= timestamp < end``.
 
         Parameters
         ----------
@@ -186,7 +212,7 @@ class MarketData(ABC):
         raise UnsupportedRequest(f"{self.name} does not serve bid/ask")
 
     def get_ticks(self, symbol: str, day: TimeLike) -> List[Tick]:
-        """Return every trade print of `symbol` on `day`, oldest first.
+        """Return the trade prints of `symbol` on `day` up to now, oldest first.
 
         Raises
         ------
@@ -228,6 +254,47 @@ def in_window(kbars: List[Kbar], start: datetime, end: datetime) -> List[Kbar]:
             seen.add(k.timestamp)
             out.append(k)
     return out
+
+
+SESSION_CLOSE = time(13, 30)
+
+
+def closes_at(bar: Kbar, interval: str) -> datetime:
+    """When `bar` closes: its stamp, or 13:30 of its date for a daily bar."""
+    if interval == "1d":
+        return datetime.combine(bar.timestamp.date(), SESSION_CLOSE)
+    return bar.timestamp
+
+
+def closed(bars: List[Kbar], interval: str, now: datetime) -> List[Kbar]:
+    """Keep the bars that have closed by `now`."""
+    return [b for b in bars if closes_at(b, interval) <= now]
+
+
+def closed_until(interval: str, now: datetime) -> datetime:
+    """The latest window end such that every bar stamped before it has closed.
+
+    `now` for intraday bars, which are stamped at their close. A daily bar is
+    stamped 09:00 but closes at 13:30, so before 13:30 today's bar is still
+    open and the answer is today's midnight.
+    """
+    if interval != "1d":
+        return now
+    midnight = datetime.combine(now.date(), time(0, 0))
+    if now.time() >= SESSION_CLOSE:
+        return midnight + timedelta(days=1)
+    return midnight
+
+
+def is_offline() -> bool:
+    """Whether ``CJTRADE_OFFLINE`` forbids network sources."""
+    return os.environ.get("CJTRADE_OFFLINE", "").strip().lower() in ("1", "y", "yes", "true")
+
+
+def require_online(name: str) -> None:
+    """Raise MarketDataUnavailable when ``CJTRADE_OFFLINE`` is set."""
+    if is_offline():
+        raise MarketDataUnavailable(f"{name}: CJTRADE_OFFLINE is set")
 
 
 def session_days(start: datetime, end: datetime) -> List[date]:
