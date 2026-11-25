@@ -7,6 +7,7 @@ lives in `doc/` and is published at https://jackiesogi.github.io/CJTrade/.
 
 | File | What it is |
 |---|---|
+| `TOOLS.md` | Every entry point (commands, scripts, servers, dev workflow) and how to run it, with known problems (Chinese) |
 | `TODO.md` | Open work items |
 | `CALLBACK.md` | Design notes for the order-fill callback |
 | `CALLBACK_TEST_PLAN.md` | How the Sinopac callback paths were tested with real odd-lot orders |
