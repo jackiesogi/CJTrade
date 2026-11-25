@@ -518,10 +518,10 @@ near 100/sqrt(PERIOD), about 27 at the default; a clean trend approaches 100.
 It is scale-free, so the thresholds below mean the same thing on a 50 ETF and
 a 1,000 semiconductor, and on 1m bars as on daily ones.
 
-This is NOT the Wilder ADX, which needs each bar's own high and low. The feed
-samples one price per bar, so bar.day_high and bar.day_low are the trading
-day's extremes rather than this bar's, and feeding them to an indicator that
-wants bar ranges computes it off a flat line. ta.adx refuses for that reason.
+This is NOT the Wilder ADX, which needs a series of each bar's own high and
+low. bar carries a history of closes only, and bar.day_high / bar.day_low are
+the trading day's range so far, so ta.adx refuses rather than compute off the
+wrong numbers.
 
 %CHEAT_SHEET%
 """
@@ -735,6 +735,11 @@ class UserStrategy(BaseStrategy):
         # accumulating the series here would grow without bound over a long
         # run, and the runner that samples it is the thing that keeps history.
         self.plotted: Dict[str, float] = {}
+        # symbol -> (session date, high so far, low so far), for bar.day_high
+        # and bar.day_low. Built from the bars themselves, so they mean the
+        # same under both runners: the trading engine and BacktestEngine both
+        # deliver real per-bar highs and lows now.
+        self._day_range: Dict[str, tuple] = {}
 
     def plots(self) -> Dict[str, float]:
         """See BaseStrategy.plots -- whatever plot() was called with."""
@@ -753,6 +758,7 @@ class UserStrategy(BaseStrategy):
             "risk__max_position_pct",
             ctx.params.get("risk_max_position_pct", self._max_pct)))
         authoring.state._reset()
+        self._day_range = {}
         self._sink = authoring._Sink()
         self._sink.decision = "no bars yet"
         if self._init is None:
@@ -762,6 +768,16 @@ class UserStrategy(BaseStrategy):
                 self._init()
             except Exception as exc:
                 self._note_error("init", exc)
+
+    def _day_extremes(self, bar) -> tuple:
+        """The session's high and low up to and including `bar`."""
+        day = bar.timestamp.date()
+        seen = self._day_range.get(bar.symbol)
+        high, low = float(bar.high), float(bar.low)
+        if seen is not None and seen[0] == day:
+            high, low = max(seen[1], high), min(seen[2], low)
+        self._day_range[bar.symbol] = (day, high, low)
+        return high, low
 
     def on_bar(self, bar, ctx: StrategyContext) -> List[Signal]:
         """Call the user's on_bar and turn its intents into sized signals.
@@ -784,10 +800,11 @@ class UserStrategy(BaseStrategy):
 
         closes = ctx.prices(bar.symbol)
         account = self._account(ctx, bar)
+        day_high, day_low = self._day_extremes(bar)
         user_bar = authoring.Bar(
             symbol=bar.symbol, time=bar.timestamp, open=float(bar.open),
             close=float(bar.close), volume=int(bar.volume or 0),
-            closes=closes, day_high=float(bar.high), day_low=float(bar.low),
+            closes=closes, day_high=day_high, day_low=day_low,
         )
 
         self._sink.plotted = {}

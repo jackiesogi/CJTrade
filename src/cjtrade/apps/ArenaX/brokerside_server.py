@@ -30,6 +30,7 @@ from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.marketdata import MarketData
 from cjtrade.pkgs.marketdata import from_names
+from cjtrade.pkgs.marketdata.base import to_window
 from cjtrade.pkgs.marketdata.factory import parse_names
 from apiflask import APIFlask
 from dotenv import load_dotenv
@@ -535,6 +536,34 @@ class ArenaX_BrokerSideServer:
                 "paused": t.get("paused", False),
                 "paused_time": t["paused_time"].isoformat() if t.get("paused_time") else None,
             })
+
+        @app.get("/api/v1/clock/timeline")
+        @app.doc(tags=["Clock"])
+        def get_clock_timeline():
+            """The moments a replay steps through. Query: symbols, start, end, interval.
+
+            The union of the symbols' bar timestamps in the half-open window
+            [start, end), sorted, as ISO 8601. Timestamps only, no prices, and
+            not limited by the clock: a replay driver has to know where the
+            bars are before it can step to them, while the bars themselves
+            (GET /api/v1/market/<symbol>/kbars) stay hidden until the clock
+            reaches them.
+            """
+            symbols = [s.strip() for s in (request.args.get("symbols") or "").split(",")
+                       if s.strip()]
+            interval = request.args.get("interval", "1m")
+            if not symbols:
+                return jsonify({"ok": False, "error": "symbols is required"}), 400
+            try:
+                start, end = to_window(request.args.get("start"), request.args.get("end"))
+            except (TypeError, ValueError) as exc:
+                return jsonify({"ok": False, "error": f"bad start/end: {exc}"}), 400
+            try:
+                stamps = sorted({k.timestamp for sym in symbols
+                                 for k in self.backend.data.get_kbars(sym, start, end, interval)})
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 500
+            return jsonify({"ok": True, "result": [t.isoformat() for t in stamps]}), 200
 
         @app.get("/api/v1/config")
         @app.doc(tags=["Health"])

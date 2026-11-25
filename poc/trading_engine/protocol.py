@@ -12,7 +12,7 @@ The ZMQ messages used to be hand-rolled dicts with abbreviated keys:
     fill   {"b_id": ..., "status": "FILLED", "balance": ..., "position": {...}}
 
 Every one of those is a lossy re-invention of something pkgs/models already
-defines -- Snapshot, Order, OrderEvent, Position -- so the two ends had to
+defines -- Kbar, Order, OrderEvent, Position -- so the two ends had to
 agree on key spelling by convention, a fill could not say *why* it was not a
 fill, and nothing carried a market timestamp you could trust. So the wire now
 carries the models themselves, and this module is the only place that knows how
@@ -27,7 +27,7 @@ What goes on each socket
     PULL tcp://...:5556                      OrderIntent
     PULL tcp://...:5556                      BotStatus
 
-Six envelopes, because pkgs/models has no type for "a tick plus a sequence
+Six envelopes, because pkgs/models has no type for "a bar plus a sequence
 number", "an order event plus the account state it produced", "what a bot and
 its strategy currently look like", "why there are no bars right now", or "stop
 trading now". Everything inside them is a pkgs/models type or a plain scalar.
@@ -42,7 +42,8 @@ Codec
 nested ones (Order carries a Product; OrderReport carries an OrderEvent).
 Dataclasses are tagged on the way out and rebuilt from their own field types on
 the way back, so an OrderAction comes back an OrderAction and not the bare
-string msgpack would otherwise hand you.
+string msgpack would otherwise hand you. Kbar is a plain class rather than a
+dataclass, so it has a tag of its own.
 """
 from dataclasses import dataclass
 from dataclasses import field
@@ -63,6 +64,7 @@ from cjtrade.pkgs.models.event import EventType
 from cjtrade.pkgs.models.event import FillEvent
 from cjtrade.pkgs.models.event import OrderEvent
 from cjtrade.pkgs.models.event import TickEvent
+from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderResult
 from cjtrade.pkgs.models.order import OrderStatus
@@ -70,7 +72,6 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import BidAsk
 from cjtrade.pkgs.models.quote import Quote
-from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.trade import Trade
 
 
@@ -87,9 +88,7 @@ from cjtrade.pkgs.models.trade import Trade
 SOCKET_HOST = "127.0.0.1"
 
 # Defaults only; both ends take the port as a parameter so two engines can run
-# side by side. They used to be two literals copied into five files, which is
-# why the legacy main.py and the new main2.py silently share a port pair while
-# speaking incompatible wire formats.
+# side by side. They used to be two literals copied into five files.
 DEFAULT_PRICE_FEED_PORT = 5555     # master PUB  -> bot SUB   (topic = symbol | bot_id | __feed__)
 DEFAULT_ORDER_INTENT_PORT = 5556   # bot    PUSH -> master PULL
 
@@ -122,20 +121,28 @@ def order_intent_address(port: int = DEFAULT_ORDER_INTENT_PORT) -> str:
 
 @dataclass
 class PriceUpdate:
-    """One bar for one symbol, published on topic = symbol.
+    """One closed 1m bar for one symbol, published on topic = symbol.
+
+    The bar is the broker's own (MarketData.get_kbars), so its open, high, low
+    and volume describe that minute. It used to be a Snapshot, whose open,
+    high, low and volume are the trading day's so far, so a strategy reading
+    bar.high got the day's high.
+
+    A minute with no trade has no bar and sends nothing; master says so on
+    FEED_STATUS_TOPIC instead (see FeedStatus).
 
     `seq` counts per symbol, not globally: a bot subscribes to one symbol, so a
     global counter would look full of holes to it and a dropped message would be
-    indistinguishable from someone else's tick. Per symbol, a gap means ZMQ
+    indistinguishable from someone else's bar. Per symbol, a gap means ZMQ
     really did drop a bar on us -- PUB/SUB has no retransmit, so this is the only
     way the bot can find out.
 
-    The market timestamp lives in `snapshot.timestamp`, straight from the broker.
-    Under ReplayClock that is the replayed bar time, which is why nothing
-    downstream should ever reach for datetime.now().
+    The market time is `bar.timestamp`, the minute the bar closed. Under
+    ReplayClock that is the replayed time, which is why nothing downstream
+    should ever reach for datetime.now().
     """
     seq: int
-    snapshot: Snapshot
+    bar: Kbar
 
 
 @dataclass
@@ -218,9 +225,8 @@ class BotStatus:
     #
     # The price is here because a chart of indicator values without the price
     # they were computed from is unreadable, and the bot is the only process
-    # that definitely has the number: master publishes a Snapshot and the bot
-    # is what turns it into the bar the strategy saw. Asking the broker for it
-    # afterwards would be a different price at a different time.
+    # that definitely has the number: it is the close of the bar the strategy
+    # saw. Asking the broker for it afterwards could be a different bar.
     close: float = 0.0
     plots: dict = field(default_factory=dict)
 
@@ -228,6 +234,11 @@ class BotStatus:
 @dataclass
 class FeedStatus:
     """Master -> every bot: why there are no bars right now.
+
+    Two cases. The market is shut (market_open=False), or it is open and some
+    watched symbol did not trade this minute, so it has no bar
+    (market_open=True). Either way the message keeps a quiet bot from
+    mistaking the silence for a dead master.
 
     This exists because silence is ambiguous and a bot has to resolve the
     ambiguity pessimistically. A bot that hears nothing cannot tell a dead
@@ -366,6 +377,8 @@ _TAG = "__cjt"
 _VAL = "__v"
 
 _DATETIME_TAG = "datetime"
+_KBAR_TAG = "Kbar"
+_KBAR_FIELDS = ("timestamp", "open", "high", "low", "close", "volume", "symbol")
 
 
 def _encode_hook(obj: Any) -> Any:
@@ -379,6 +392,9 @@ def _encode_hook(obj: Any) -> Any:
             )
         return {_TAG: name,
                 _VAL: {f.name: getattr(obj, f.name) for f in fields(obj)}}
+
+    if isinstance(obj, Kbar):
+        return {_TAG: _KBAR_TAG, _VAL: {f: getattr(obj, f) for f in _KBAR_FIELDS}}
 
     if isinstance(obj, datetime):
         # ISO 8601, naive Asia/Taipei — the one datetime convention this
@@ -401,6 +417,8 @@ def _decode_hook(obj: dict) -> Any:
         return obj
     if tag == _DATETIME_TAG:
         return datetime.fromisoformat(obj[_VAL])
+    if tag == _KBAR_TAG:
+        return Kbar(**obj[_VAL])
     cls = _WIRE_TYPES.get(tag)
     if cls is None:
         raise ValueError(f"unknown wire type {tag!r} — version skew between "
@@ -476,6 +494,6 @@ _WIRE_TYPES: Dict[str, type] = {
         BotCommand,
         # pkgs/models
         BidAsk, FillEvent, Order, OrderEvent, OrderResult,
-        Position, Product, Quote, Snapshot, TickEvent, Trade,
+        Position, Product, Quote, TickEvent, Trade,
     )
 }

@@ -55,13 +55,13 @@ supported surface rather than everything that happens to be importable.
 
 What this module deliberately does NOT expose, and why
 ------------------------------------------------------
-`ta.adx`, `ta.atr` and `ta.stoch` take (high, low, close) per bar. This feed
-cannot provide that: master samples one Snapshot per bar and a Snapshot's high
-and low are the trading DAY's so far, not the bar's (main2's _snapshot_real).
-Re-exporting them would have every strategy silently computing an indicator
-from a flat line -- the exact bug adx.py carried until it was measured. They
-raise an explanatory error instead. `bar.day_high` / `bar.day_low` are named
-for what they actually are.
+`ta.adx`, `ta.atr` and `ta.stoch` take a series of (high, low, close) per bar.
+`Bar` carries a history of closes only, and its `day_high` / `day_low` are the
+trading day's range so far, not this bar's. Re-exporting them would have a
+strategy feed the day's range in as if it were each bar's, computing the
+indicator off the wrong numbers -- the bug adx.py carried until it was
+measured, back when the engine's feed was snapshots. They raise an explanatory
+error instead.
 """
 from __future__ import annotations
 
@@ -113,11 +113,11 @@ class Bar:
     time : datetime
         Time of this bar.
     open : float
-        Open price.
+        This bar's open.
     close : float
-        Close price.
+        This bar's close.
     volume : int
-        Volume.
+        This bar's volume, in lots.
     closes : sequence of float
         Close prices seen so far, oldest first, including this bar.
     day_high : float
@@ -127,8 +127,9 @@ class Bar:
 
     Warnings
     --------
-    `day_high` / `day_low` are day-to-date extremes; the feed has no per-bar
-    high or low. History length in `closes` is counted in bars.
+    `day_high` / `day_low` are day-to-date extremes, built from the day's
+    bars; this bar's own high and low are not exposed. History length in
+    `closes` is counted in bars.
     """
     symbol: str
     time: datetime
@@ -136,9 +137,8 @@ class Bar:
     close: float
     volume: int
     closes: Sequence[float]
-    # Named for what the feed actually delivers. These are the trading day's
-    # extremes up to this bar, NOT this bar's own -- one sample per bar means
-    # a per-bar high and low do not exist to be reported.
+    # The trading day's extremes up to this bar, NOT this bar's own. Named
+    # so that nobody reads them as a bar range.
     day_high: float
     day_low: float
 
@@ -592,11 +592,11 @@ param = _Param()
 #  Indicators
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Takes a single close series. Every one of these is usable on this feed.
+# Takes a single close series, which is what Bar carries.
 _CLOSE_ONLY = ("bb", "ema", "sma", "rsi", "macd", "wma")
 
-# Takes (high, low, close) per bar, which this feed does not have. Listed by
-# name so the error can say which, rather than looking like a typo.
+# Takes a series of (high, low, close) per bar, which Bar does not carry.
+# Listed by name so the error can say which, rather than looking like a typo.
 _NEEDS_BAR_RANGE = {
     "adx": "ta.adx(high, low, close)",
     "atr": "ta.atr(high, low, close)",
@@ -605,7 +605,7 @@ _NEEDS_BAR_RANGE = {
 
 
 class _Indicators:
-    """The indicators that are honest on a one-sample-per-bar feed.
+    """The indicators that need nothing but a close series.
 
     Each returns the LATEST value rather than the whole array, and None while
     there is not enough history. That removes the two lines every strategy
@@ -616,7 +616,7 @@ class _Indicators:
     Warnings
     --------
     `ta.adx`, `ta.atr` and `ta.stoch` deliberately raise AttributeError: they
-    need a per-bar high and low that this feed does not have. All
+    need a series of per-bar highs and lows, which `Bar` does not carry. All
     `timeperiod` / `lookback` arguments are counted in bars.
     """
 
@@ -725,7 +725,7 @@ class _Indicators:
         Scale-free, so the same number means the same thing on any symbol and
         any bar length. A random walk sits near 100/sqrt(lookback); a clean
         trend approaches 100. This is what adx.py uses, because a real ADX
-        needs a per-bar high and low that this feed does not carry.
+        needs a series of per-bar highs and lows, and it keeps closes only.
         """
         if len(closes) < lookback + 1:
             return None
@@ -738,12 +738,12 @@ class _Indicators:
     def __getattr__(self, name: str):
         if name in _NEEDS_BAR_RANGE:
             raise AttributeError(
-                f"ta.{name} is not available to a strategy on this feed. "
-                f"{_NEEDS_BAR_RANGE[name]} needs each bar's own high and low, "
-                f"and the engine samples one price per bar -- bar.day_high and "
+                f"ta.{name} is not available to a strategy. "
+                f"{_NEEDS_BAR_RANGE[name]} needs a series of each bar's own "
+                f"high and low, and bar carries closes only -- bar.day_high and "
                 f"bar.day_low are the trading day's extremes, not this bar's, "
-                f"so feeding them in would compute the indicator off a flat "
-                f"line. For trend strength use ta.efficiency(bar.closes).")
+                f"so feeding them in would compute the indicator off the wrong "
+                f"numbers. For trend strength use ta.efficiency(bar.closes).")
         raise AttributeError(
             f"ta.{name} does not exist. Available: "
             + ", ".join(sorted(_CLOSE_ONLY + ("highest", "lowest", "efficiency"))))

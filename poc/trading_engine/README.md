@@ -13,7 +13,7 @@ pid=$!
 
 sleep 15
 
-uv run python poc/trading_engine/main2.py
+uv run python poc/trading_engine/main.py
 
 if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid"

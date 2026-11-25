@@ -317,17 +317,33 @@ class ArenaX_BackendBase:
         idx = int(np.searchsorted(ts_arr, target, side='right')) - 1
         return max(0, min(idx, len(timestamps) - 1))
 
+    def _ensure_market(self, symbol: str) -> None:
+        """Load `symbol`'s replay bars the first time anything needs them.
+
+        Orders are matched against these bars, so an order must load them as
+        well as a snapshot. They used to be loaded by snapshot() alone, which
+        only worked because every client asked for a snapshot before it
+        traded; a client that reads bars instead (the trading engine) placed
+        orders that could never fill.
+
+        Loads ``num_days_preload`` days whatever the price source. It used to
+        be 5 days without a broker account, which was the demo's yfinance
+        limit and became a backtest's once a backtest could run without one.
+        """
+        market = getattr(self, "market", None)
+        if market is None or not hasattr(market, "create_historical_market"):
+            return
+        if symbol in market.historical_data:
+            return
+        if self.real_account and not self.real_account.is_connected():
+            self.real_account.connect()
+        market.create_historical_market(symbol, self.num_days_preload)
+
     def snapshot(self, symbol: str) -> Snapshot:
         if not hasattr(self, "market"):
             return self._create_fallback_snapshot(symbol, datetime.now())
         self._check_if_any_order_filled()
-
-        if symbol not in self.market.historical_data:
-            if self.real_account and not self.real_account.is_connected():
-                self.real_account.connect()
-
-            day_preload = self.num_days_preload if self.real_account else 5
-            self.market.create_historical_market(symbol, day_preload)
+        self._ensure_market(symbol)
 
         mock_current_time = self.market.get_market_time()["mock_current_time"]
         adjusted_mock_time = self.market.adjust_to_market_hours(mock_current_time)
@@ -449,6 +465,7 @@ class ArenaX_BackendBase:
             if not self._is_sufficient_account_inventory(order):
                 return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order, metadata=order.opt_field)
 
+        self._ensure_market(order.product.symbol)
         if hasattr(self, "market"):
             order.opt_field["last_check_for_fill"] = self.market.get_market_time()["mock_current_time"]
         else:

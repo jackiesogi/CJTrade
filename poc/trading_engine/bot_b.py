@@ -7,12 +7,11 @@ resistance while the price ranges.
 Everything that is not the strategy choice lives in bot_runner.py.
 
 Know what you are running: the regime is chosen by an efficiency ratio (net
-move over total path, 0-100), not the Wilder ADX. A real ADX needs each bar's
-own high and low, and this feed does not carry them -- the Snapshot's high and
-low are the trading day's so far, not the bar's. The thresholds below are the
-conventional ADX ones and they do transfer, because the efficiency ratio is
-scale-free; see adx.py's _calculate_adx for the measurement that establishes
-that.
+move over total path, 0-100), not the Wilder ADX. A real ADX needs a history of
+each bar's high and low, which the strategy does not keep. The thresholds
+below are the conventional ADX ones and they do transfer, because the
+efficiency ratio is scale-free; see adx.py's _calculate_adx for the
+measurement that establishes that.
 """
 from bot_runner import run_bot
 from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy

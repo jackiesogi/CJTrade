@@ -60,8 +60,9 @@ def on_bar(bar, account):
     換 interval 就等於換了一個策略。
 
 !!! warning "`bar.day_high` 和 `bar.day_low` 是當天的，不是這根 K 棒的"
-    engine 餵進來的 K 棒是由 snapshot 組成的，snapshot 的高低點是當天到目前為止的。
-    同樣的原因，`ta.adx`、`ta.atr` 和 `ta.stoch` 刻意不提供。
+    它們是當天到這根 K 棒為止的最高價和最低價。`bar.open`、`bar.close` 和 `bar.volume`
+    則是這根 K 棒自己的值。`bar` 只保留收盤價的歷史，所以需要每根 K 棒高低點的
+    `ta.adx`、`ta.atr` 和 `ta.stoch` 刻意不提供。
 
 !!! warning "參數目前無法覆寫"
     `param.*` 永遠回傳宣告時的預設值。要改值請直接改檔案。

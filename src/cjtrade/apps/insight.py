@@ -1457,7 +1457,7 @@ def build(result: BacktestResult, result_path: Path) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 
 # The two things that write a BacktestResult: the trading engine
-# (poc/trading_engine/main2.py) and the oneshot backtester
+# (poc/trading_engine/main.py) and the oneshot backtester
 # (apps/cjtrade_system/cjtrade_oneshot_backtest.py). Both land in reports_dir;
 # the prefix is the only thing that distinguishes them by file name, and the
 # `provenance` field is what distinguishes them properly.

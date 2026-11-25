@@ -21,21 +21,21 @@ What a bot process does, in order:
     on_end, however the process ends
 
 A bot does NOT execute its own trades. Order execution lives in master's
-ExecutionEngine (see main2.py) -- the only place that should ever hold a broker
+ExecutionEngine (see main.py) -- the only place that should ever hold a broker
 session, which gives every bot's view of balance one canonical source instead
 of N independently-simulated ledgers. A bot only ever *sends* order intents and
 *mirrors* whatever master reports back; it never computes balance or position
 math itself.
 
 Everything on the wire is a pkgs/models type (see protocol.py): price bars
-arrive as a Snapshot, order intents go out as an Order, and master answers with
+arrive as a Kbar, order intents go out as an Order, and master answers with
 an OrderEvent. So an "order rejected" and an "order accepted, still resting"
 are different messages here rather than the same one, which is what lets the
 mirror stay in step with master's ledger.
 
-The Snapshot becomes a Kbar via Kbar.from_snapshot(), which is the same type
-BacktestEngine feeds a strategy -- so a strategy cannot tell the two runners
-apart.
+The Kbar is the broker's closed 1m bar, passed to on_bar as it arrives. It is
+the same type, with the same meaning, that BacktestEngine feeds a strategy, so
+a strategy cannot tell the two runners apart.
 """
 import logging
 import signal
@@ -71,7 +71,7 @@ logging.basicConfig(
 log = logging.getLogger("poc.bot")
 
 # Fallback only -- master normally passes the broker's starting balance as
-# argv[2] (main2.py). Used when a bot script is run standalone. The mirror only
+# argv[2] (main.py). Used when a bot script is run standalone. The mirror only
 # matters before this bot's first report; after that master's OrderReport is
 # authoritative and the bot overwrites its mirror with whatever master reports.
 INITIAL_BALANCE = 1_000_000.0
@@ -205,9 +205,8 @@ def bot_argv(default_symbol: str, argv: list[str] | None = None) -> tuple[str, f
                                disagree. The mirror only matters until this
                                bot's first fill, but position sizing before that
                                fill would be computed against the wrong equity.
-    argv[3] session id      -- stamped on every order; empty when launched by
-                               the legacy main.py, which does not report on a
-                               run and so has nothing to filter by.
+    argv[3] session id      -- stamped on every order; empty when the bot is
+                               run by hand, with nothing to filter by.
     argv[4] symbol          -- overrides the bot's own default, so master can
                                point a strategy at a symbol from the watch list
                                without the bot file being edited.
@@ -254,7 +253,7 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
     sub_socket.connect(protocol.price_feed_address())
     sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
     # Order reports from master are published on our own bot_id topic (see
-    # main2.py's publish_report) -- subscribe to that too, same socket.
+    # main.py's publish_report) -- subscribe to that too, same socket.
     sub_socket.set(zmq.SUBSCRIBE, bot_id.encode('utf-8'))
     # News about the feed itself. Without this the bot cannot tell a master
     # that died from a master holding the feed over a closed market, and
@@ -418,10 +417,10 @@ def run_bot(strategy: BaseStrategy, default_symbol: str,
                             f"of {target_symbol} (seq {last_seq} -> {msg.seq})")
             last_seq = msg.seq
 
-            # One broadcast = one closed bar. Master promises 1m-equivalent
-            # granularity (see main.py's Q1/A1 note); if the feed ever drops to
-            # tick granularity, a candle-builder belongs right here.
-            bar = Kbar.from_snapshot(msg.snapshot)
+            # One broadcast = one closed 1m bar, built by the broker. A finer
+            # feed would be built into bars before it is published
+            # (marketdata.aggregate.bars_from_ticks), not here.
+            bar = msg.bar
             price_map[bar.symbol] = bar.close
             price_history.setdefault(bar.symbol, []).append(bar.close)
 

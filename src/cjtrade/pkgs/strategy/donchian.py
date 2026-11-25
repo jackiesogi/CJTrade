@@ -68,11 +68,11 @@ class DonchianBreakoutStrategy(BaseStrategy):
     --------
     `period` is counted in bars, so its time span changes with the interval.
 
-    Note on 'touch' mode: it reads bar.high/bar.low, which only describe this
-    bar on a kbar feed. Under the trading engine the bars come from snapshots,
-    where high and low are the whole trading DAY so far (see
-    Kbar.from_snapshot), so 'touch' means something different there. 'close'
-    mode reads only closes and behaves the same on both feeds.
+    'touch' mode reads bar.high/bar.low. Both runners now deliver real
+    bars, so it means the same in the trading engine as in BacktestEngine.
+    Runs of the trading engine from before that change fed snapshots, whose
+    high and low were the whole trading DAY so far, and are not comparable
+    in 'touch' mode. 'close' mode reads only closes and is unaffected.
     """
 
     name = "Donchian"

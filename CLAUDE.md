@@ -112,8 +112,8 @@ value. Serialise with `.isoformat()` at every JSON boundary, parse with
 `fromisoformat()`. **Never convert timezones anywhere.** Flask's default JSON
 encoder turns `datetime` into an HTTP date (`"Mon, 01 Sep 2025 09:01:00 GMT"`)
 whose `GMT` is a fiction — endpoints that pass a dataclass to `jsonify` leak
-that format, so parse defensively (see `_parse_server_datetime` in
-`poc/trading_engine/main2.py`).
+that format, so parse defensively (see `_parse_kbar` in
+`pkgs/brokers/arenax/arenax_broker_api.py`).
 
 **Prices come from a MarketData, not from a broker.** `pkgs/marketdata/base.py`
 fixes the conventions: half-open `[start, end)` windows, intraday bars stamped
@@ -137,6 +137,13 @@ sources and the simulated clock for ArenaX's kbars route. Do not add a
 belongs in an init/bootstrap step, not in the loop. No clock stepping, no
 `set_market_time`, no `if broker == "arenax"` inside engine logic. The one
 allowed `if` is where the clock or broker is *constructed*.
+
+**The engine feeds bars, not snapshots.** `poc/trading_engine/main.py`
+publishes each symbol's closed 1m bars from `client.market.get_kbars` as a
+`Kbar` (`protocol.PriceUpdate.bar`); a minute with no trade publishes nothing
+and a `FeedStatus` says so. A replay's timeline comes from
+`GET /api/v1/clock/timeline`, because the kbars route hides bars the server
+clock has not reached.
 
 **Market time vs system time.** `get_market_time()` is the canonical reader on
 every broker (`mock_current_time`, `real_current_time`, `mock_init_time`,
@@ -497,8 +504,6 @@ class BalanceCommand(CommandBase):
 
 ## 10. Working agreements
 
-- Keep `main.py` in `poc/trading_engine/` untouched — `main2.py` is the
-  variant under development and the pair is kept for comparison.
 - One commit per package when a change spans several.
 - Don't reformat or "tidy" files you aren't changing. The star imports and
   the existing lint noise are deliberate background.

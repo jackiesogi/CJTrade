@@ -137,6 +137,30 @@ class ArenaXMiddleWare:
             print("Failed to get market time: No response")
             return None
 
+    def get_timeline(self, symbols, start: str, end: str, interval: str = "1m") -> list:
+        """The bar timestamps a replay of `symbols` over ``[start, end)`` steps through.
+
+        Not limited by the server clock, unlike get_kbars: a replay driver
+        needs them before the clock gets there. Carries no prices.
+
+        Returns
+        -------
+        list of datetime
+            Sorted union across `symbols`. Empty if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
+        from datetime import datetime
+        res = self._get(f"api/v1/clock/timeline?symbols={','.join(symbols)}"
+                        f"&start={start}&end={end}&interval={interval}")
+        if res and res.get("ok"):
+            return [datetime.fromisoformat(t) for t in res.get("result", [])]
+        print(f"Failed to get the timeline for {symbols}: "
+              f"{res.get('error') if res else 'No response'}")
+        return []
+
     def get_system_time(self, **kwargs) -> dict:
         """Deprecated alias for get_market_time()."""
         return self.get_market_time(**kwargs)

@@ -85,3 +85,26 @@ def test_the_server_takes_a_market_data_and_logs_in_to_nobody(tmp_path, monkeypa
                                      price_db_path=str(tmp_path / "price.db"))
     assert server.real is None
     assert server.backend.market_data.name == "bars"
+
+
+def test_an_order_loads_its_symbols_bars_without_a_snapshot_first(backend_kwargs):
+    """Orders are matched against the replay bars, so placing one must load
+    them. They used to be loaded only by snapshot(), and a client that reads
+    kbars instead placed orders that could never fill."""
+    from cjtrade.pkgs.models.order import Order
+    from cjtrade.pkgs.models.order import OrderAction
+    from cjtrade.pkgs.models.order import OrderLot
+    from cjtrade.pkgs.models.order import OrderType
+    from cjtrade.pkgs.models.order import PriceType
+    from cjtrade.pkgs.models.product import Product
+
+    backend = ArenaX_Backend_Historical(market_data=Bars(), backtest_start_date=START,
+                                        initial_balance=1_000_000, **backend_kwargs)
+    backend.login()
+    assert "2330" not in backend.market.historical_data
+    backend.place_order(Order(
+        product=Product(symbol="2330"), action=OrderAction.BUY, price=101.0,
+        quantity=1, price_type=PriceType.LMT, order_type=OrderType.ROD,
+        order_lot=OrderLot.IntraDayOdd))
+    assert len(backend.market.historical_data["2330"]["data"]) == 3 * 270, \
+        "num_days_preload days, with or without a broker account"

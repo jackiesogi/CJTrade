@@ -166,6 +166,16 @@ curl -X PUT -H "Content-Type: application/json" \
   http://127.0.0.1:8801/api/v1/clock/origin
 ```
 
+7. List the bar timestamps a replay will step through. This is how a replay
+driver (the trading engine's `ReplayClock`) finds its timeline: the kbars
+route only returns bars the clock has already reached, while this returns
+timestamps for the whole window, with no prices.
+
+<!-- cjcheck: static -->
+```sh
+curl "http://127.0.0.1:8801/api/v1/clock/timeline?symbols=2330,2317&start=2026-03-02&end=2026-03-07"
+```
+
 ### Trading
 
 A client opens a session first (`POST /api/v1/session`), and then uses:
@@ -179,7 +189,7 @@ A client opens a session first (`POST /api/v1/session`), and then uses:
 | `GET /api/v1/orders/<id>` | One order's status |
 | `DELETE /api/v1/orders/<id>` | Cancel it |
 | `GET /api/v1/market/<symbol>/snapshot` | A quote: price, bid/ask, the day's range so far |
-| `GET /api/v1/market/<symbol>/kbars` | Historical K-bars over a date range |
+| `GET /api/v1/market/<symbol>/kbars` | Closed K-bars over a date range, up to the simulated clock |
 | `GET /api/v1/market/data-availability` | Which symbols and windows are actually on disk |
 
 The full interactive spec is served by the process itself — open
