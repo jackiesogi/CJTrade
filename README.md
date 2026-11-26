@@ -12,7 +12,7 @@ changing it.
 **Documentation:** <https://jackiesogi.github.io/CJTrade/>
 ([繁體中文](https://jackiesogi.github.io/CJTrade/zh-TW/))
 
-![CJTrade](./img/combined.png)
+![CJTrade](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/combined.png)
 
 ## Features
 

@@ -35,3 +35,8 @@ htmlcov/
 
 # mkdocs build output
 site/
+
+# Claude Code: personal settings stay local; .claude/settings.json is shared
+# (and has to be un-ignored past the *.json rule above)
+.claude/settings.local.json
+!.claude/settings.json

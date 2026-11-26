@@ -2,7 +2,7 @@
 
 ## Overview
 
-![cjtrade_abstraction](../../../../img/cjtrade_intro.png)
+![cjtrade_abstraction](../../../../doc/assets/img/cjtrade_intro.png)
 
 The `cjtrade` project provides one programming interface for designing trading
 strategies that work across different securities brokers (證券商). This
@@ -201,7 +201,7 @@ into one, and the mapping you choose here is what everything above you will
 believe.
 
 > Order state transition graph
-![order_lifecycle_graph](../../../../img/order_lifecycle.png)
+![order_lifecycle_graph](../../../../doc/assets/img/order_lifecycle.png)
 
 ## Best practices
 

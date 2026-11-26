@@ -513,6 +513,9 @@ class BalanceCommand(CommandBase):
 ---
 
 ## 10. Working agreements
+- `.claude/settings.json` denies reading credentials and running anything
+  that reaches a real Sinopac account; `/verify` runs the CI checks locally
+  and `/offline-backtest` replays the engine on cached bars.
 
 - One commit per package when a change spans several.
 - Don't reformat or "tidy" files you aren't changing. The star imports and
