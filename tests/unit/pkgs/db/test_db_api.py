@@ -393,3 +393,19 @@ class TestConnectSqlite:
         conn = connect_sqlite(db_path)
         assert conn is not None
         conn.close()
+
+
+class TestDefaultSchemaScripts:
+    """The schema scripts ship beside db_api, so any working directory finds them."""
+
+    def test_tables_are_created_from_outside_the_checkout(self, tmp_path, monkeypatch):
+        from cjtrade.pkgs.db.db_api import prepare_arenax_local_price_db_tables
+        from cjtrade.pkgs.db.db_api import prepare_cjtrade_tables
+        monkeypatch.chdir(tmp_path)
+        conn = connect_sqlite(":memory:")
+        prepare_arenax_local_price_db_tables(conn=conn)
+        prepare_cjtrade_tables(conn=conn)
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"arenax_prices", "arenax_symbol_coverage"} <= tables
+        assert len(tables) > 3

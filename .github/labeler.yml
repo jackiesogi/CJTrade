@@ -1,0 +1,149 @@
+# Which label goes on which pull request, read by actions/labeler
+# (.github/workflows/labeler.yml). Every label used here is defined, with its
+# colour and description, in .github/labels.yml.
+#
+# Entries under one label are alternatives: any match adds the label. Labels
+# are only ever added; one that stops matching is left for a person to remove.
+
+# ── type: from the branch name, type/desc ─────────────────────────────────────
+enhancement:
+  - head-branch: ['^feat/', '^feature/']
+bug:
+  - head-branch: ['^fix/', '^hotfix/']
+chore:
+  - head-branch: ['^chore/', '^ci/', '^build/']
+refactor:
+  - head-branch: ['^refactor/']
+poc:
+  - head-branch: ['^poc/']
+documentation:
+  - head-branch: ['^docs?/']
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'doc/**'
+          - 'ref/**'
+          - 'mkdocs.yml'
+          - '**/*.md'
+
+# ── area: from the changed files ──────────────────────────────────────────────
+'area: arenax':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/apps/ArenaX/**'
+          - 'src/cjtrade/pkgs/brokers/arenax/**'
+          - 'src/cjtrade/pkgs/marketdata/arenax.py'
+          - 'tests/integration/arenax/**'
+          - 'tests/unit/apps/arenax/**'
+
+'area: sinopac':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/brokers/sinopac/**'
+          - 'src/cjtrade/pkgs/marketdata/sinopac.py'
+
+'area: brokers':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/brokers/*.py'
+          - 'tests/unit/pkgs/brokers/**'
+
+'area: market-data':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/marketdata/**'
+          - 'src/cjtrade/pkgs/models/kbar.py'
+          - 'src/cjtrade/pkgs/models/tick.py'
+          - 'src/cjtrade/pkgs/models/quote.py'
+          - 'src/cjtrade/apps/preload_prices.py'
+          - 'tests/unit/pkgs/marketdata/**'
+
+'area: engine':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'poc/trading_engine/**'
+          - 'tests/unit/poc/**'
+
+'area: strategy':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/strategy/**'
+          - 'src/cjtrade/apps/strategy_tool.py'
+          - 'src/cjtrade/apps/CJEdit/**'
+          - 'tests/unit/pkgs/strategy/**'
+
+'area: backtest':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/analytics/backtest/**'
+          - 'src/cjtrade/pkgs/analytics/evaluation/**'
+          - 'src/cjtrade/apps/cjtrade_system/cjtrade_oneshot_backtest.py'
+          - 'src/cjtrade/apps/insight.py'
+          - 'poc/backtest*'
+
+'area: risk':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/risk/**'
+          - 'tests/unit/pkgs/risk/**'
+
+'area: system':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/apps/cjtrade_system/**'
+
+'area: shell':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/apps/cjtrade_shell/**'
+          - 'src/cjtrade/test_runner*.py'
+          - 'tests/*.sh'
+
+'area: analytics':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/analytics/technical/**'
+          - 'src/cjtrade/pkgs/analytics/fundamental/**'
+          - 'src/cjtrade/pkgs/analytics/informational/**'
+          - 'src/cjtrade/pkgs/llm/**'
+          - 'src/cjtrade/pkgs/chart/**'
+          - 'src/cjtrade/apps/CJNews/**'
+
+'area: core':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/models/**'
+          - 'src/cjtrade/pkgs/config/**'
+          - 'src/cjtrade/pkgs/db/**'
+          - 'src/cjtrade/pkgs/ui/**'
+          - 'src/cjtrade/pkgs/utils/**'
+          - 'src/cjtrade/pkgs/paths.py'
+          - 'src/cjtrade/pkgs/logger.py'
+          - 'src/cjtrade/__init__.py'
+
+# ── flags ─────────────────────────────────────────────────────────────────────
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ['tests/**']
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - '.pre-commit-config.yaml'
+          - 'scripts/check_readme_examples.py'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['pyproject.toml', 'uv.lock']
+
+# Code on the path to a real order: the Sinopac adapter, ArenaX's real
+# backend (which forwards to it), the system that can drive either, and the
+# pre-commit test that places real odd-lot orders.
+real-money:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/pkgs/brokers/sinopac/**'
+          - 'src/cjtrade/apps/ArenaX/real_backend.py'
+          - 'src/cjtrade/apps/cjtrade_system/**'
+          - 'tests/test_cjtrade_integration.sh'
+          - 'src/cjtrade/test_runner.py'

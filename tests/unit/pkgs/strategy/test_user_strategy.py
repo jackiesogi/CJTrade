@@ -469,10 +469,23 @@ class TestBar:
         assert mon["far"] is None          # not an IndexError on bar 1
 
     def test_the_day_extremes_are_named_for_what_they_are(self):
-        """One sample per bar means a per-bar high and low do not exist; these
-        are the trading day's, which is what the Snapshot carries."""
+        """These are the trading day's range, not a bar's, and named so."""
         assert "day_high" in authoring.Bar.__annotations__
         assert "high" not in authoring.Bar.__annotations__
+
+    def test_the_day_extremes_accumulate_over_the_day_and_reset_next_day(self):
+        s = _loaded("def on_bar(bar, account):\n"
+                    "    watch(hi=bar.day_high, lo=bar.day_low)\n"
+                    "    return hold()\n")
+        bars = [Kbar(T0, 10, 12, 9, 11, 1, SYM),
+                Kbar(T0 + timedelta(minutes=1), 11, 11.5, 8, 10, 1, SYM),
+                Kbar(T0 + timedelta(days=1), 20, 21, 19, 20, 1, SYM)]
+        seen = []
+        for i, bar in enumerate(bars):
+            s.on_bar(bar, _ctx([b.close for b in bars[:i + 1]]))
+            mon = s.monitors()
+            seen.append((mon["hi"], mon["lo"]))
+        assert seen == [(12, 9), (12, 8), (21, 19)]
 
 
 class TestIndicators:

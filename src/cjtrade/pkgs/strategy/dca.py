@@ -31,7 +31,6 @@ Usage
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any
 from typing import Dict
@@ -39,12 +38,13 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.dca")
 
 # NT$ per instalment, when nothing else says otherwise.
 DCA_MONTHLY_AMOUNT = 10_000.0
@@ -131,10 +131,9 @@ class DCA_Monthly(BaseStrategy):
         if any(k in p for k in ("dca__buy_frequency_days",
                                 "dca_buy_frequency_days")):
             log.warning(
-                "[%s] dca__buy_frequency_days is not used: instalments are "
-                "keyed to calendar months, which cannot drift. Use "
-                "dca__buy_frequency_months (currently %d).",
-                self.name, self._months)
+                "dca__buy_frequency_days is unused: instalments are keyed "
+                "to calendar months, which cannot drift; use "
+                "dca__buy_frequency_months (now %d)", self._months)
 
         seed = p.get("dca__last_buy_time", p.get("dca_last_buy_time"))
         if isinstance(seed, dict):
@@ -142,8 +141,8 @@ class DCA_Monthly(BaseStrategy):
                 try:
                     when = datetime.fromisoformat(iso)
                 except (TypeError, ValueError):
-                    log.warning("[%s] ignoring unparseable last_buy_time for "
-                                "%s: %r", self.name, sym, iso)
+                    log.warning("ignoring unparseable last_buy_time for %s: %r",
+                                sym, iso)
                     continue
                 self._last_buy_at[sym] = when
                 self._last_buy_month[sym] = (when.year, when.month)
@@ -151,7 +150,7 @@ class DCA_Monthly(BaseStrategy):
         self._last_reason = "no bars yet"
         sizing = (f"{self._pct * 100:.2f}% of equity" if self._pct > 0
                   else f"{self._amount:,.0f}")
-        log.info(f"[{self.name}] instalment={sizing} every "
+        log.info(f"instalment={sizing} every "
                  f"{self._months} month(s) per symbol")
 
     # ── monitoring ───────────────────────────────────────────────────────────
@@ -246,10 +245,10 @@ class DCA_Monthly(BaseStrategy):
             marker = (sym, now.year, now.month)
             if marker not in self._unaffordable:
                 self._unaffordable.add(marker)
-                log.warning(f"[{self.name}] {sym} at {price:.2f} costs more "
+                log.warning(f"@{now:%Y-%m-%d %H:%M} {sym} px={price:.2f} costs more "
                             f"than one instalment of {instalment:,.0f} — "
                             f"skipping {now.year}-{now.month:02d} unless it "
-                            f"falls before the month is out")
+                            f"falls before month end")
             self._last_reason = (f"unaffordable: one share of {sym} at "
                                  f"{price:.2f} exceeds {instalment:,.0f}")
             return []
@@ -270,7 +269,7 @@ class DCA_Monthly(BaseStrategy):
         self._last_reason = (f"BUY {qty} {sym} @ {price:.2f} — instalment for "
                              f"{now.year}-{now.month:02d}")
         ts_str = bar.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        log.info(f"ts: {ts_str} | BUY {sym} @ {price:.2f} * {qty} shares "
+        log.info(f"@{ts_str} BUY {sym} qty={qty} px={price:.2f} "
                  f"(DCA {now.year}-{now.month:02d})")
         return [Signal(
             action="BUY", symbol=sym, quantity=qty, price=price,
@@ -281,8 +280,8 @@ class DCA_Monthly(BaseStrategy):
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
         """Log BUY fills at debug level."""
         if fill.action.upper() == "BUY":
-            log.debug(f"[{self.name}] BUY filled for {fill.symbol} "
-                      f"@ {fill.price:.2f}")
+            log.debug(f"@{fill.timestamp:%Y-%m-%d %H:%M} BUY filled "
+                      f"{fill.symbol} px={fill.price:.2f}")
 
     def last_buy(self, symbol: str) -> Optional[datetime]:
         """When this strategy last bought `symbol`, or None.

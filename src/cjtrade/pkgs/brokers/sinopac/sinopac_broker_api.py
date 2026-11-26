@@ -20,6 +20,7 @@ from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_product
 from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_ranktype
 from cjtrade.pkgs.brokers.sinopac._internal_func import cj_sj_order_map
 from cjtrade.pkgs.db.db_api import *
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.event import *
 from cjtrade.pkgs.models.kbar import Kbar  # explicit, so get_kbars' annotation is traceable
 from cjtrade.pkgs.models.order import *
@@ -27,6 +28,8 @@ from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import BidAsk
 from cjtrade.pkgs.models.rank_type import *
 from cjtrade.pkgs.models.trade import *
+
+log = get_logger("brokers.sinopac")
 
 class SinopacBrokerAPI(BrokerAPIBase):
     """Broker API for Sinopac, built on shioaji.
@@ -94,7 +97,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         Returns
         -------
         bool
-            True on success; errors are printed and give False.
+            True on success; errors are logged and give False.
 
         Warnings
         --------
@@ -121,7 +124,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             # self._sync_positions_with_broker()
             return True
         except Exception as e:
-            print(f"Connection failed: {e}")
+            log.error("conn failed: %s", e)
             self._connected = False
             return False
 
@@ -129,7 +132,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
     def disconnect(self) -> None:
         """Log out of shioaji and close the mirror database.
 
-        Errors from either step are printed, not raised.
+        Errors from either step are logged, not raised.
 
         Warnings
         --------
@@ -143,14 +146,14 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 # level; the C++ terminate() is unavoidable from user-side code
                 # but at least we can keep the Python stack clean.
                 self.api.logout()
-                print("Sinopac broker disconnected")
+                log.info("disconnected")
             except Exception as e:
-                print(f"Warning during shioaji logout (known shioaji pybind11 issue): {e}")
+                log.warning("shioaji logout err (known pybind11 issue): %s", e)
             try:
                 self.db.close()
-                print("Local mirror DB disconnected")
+                log.info("local mirror DB closed")
             except Exception as e:
-                print(f"Error closing local DB: {e}")
+                log.error("close local DB failed: %s", e)
             finally:
                 self._connected = False
 
@@ -164,6 +167,16 @@ class SinopacBrokerAPI(BrokerAPIBase):
         """
         return self._connected
 
+
+    def market_data(self):
+        """Return a SinopacMarketData that shares this session.
+
+        Returns
+        -------
+        SinopacMarketData
+        """
+        from cjtrade.pkgs.marketdata.sinopac import SinopacMarketData
+        return SinopacMarketData(self)
 
     def get_positions(self) -> List[Position]:
         """Return current stock positions, quantities in shares.
@@ -204,7 +217,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
             return result
         except Exception as e:
-            print(f"Failed to get positions: {e}")
+            log.error("get positions failed: %s", e)
             return []
 
 
@@ -288,7 +301,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         if not received_bidask:
             # TODO: Consider raising exception/error here
-            print(f"No bid/ask data received for {product.symbol}")
+            log.warning("no bid/ask recv for %s", product.symbol)
             return None
 
         return _from_sinopac_bidask(received_bidask[-1])
@@ -380,8 +393,8 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 # to yfinance on an exception, and it records cache coverage
                 # for whatever it was handed -- a silent partial result would
                 # be written to the price cache and marked complete.
-                print(f"Error fetching sinopac kbars for {product.symbol} "
-                      f"[{window_start:%Y-%m-%d} to {window_end:%Y-%m-%d}]: {e}")
+                log.error("kbars %s [%s, %s) failed: %s", product.symbol,
+                          window_start.date(), window_end.date(), e)
                 raise
 
             window_start = window_end
@@ -469,17 +482,17 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         Warnings
         --------
-        The first call installs a shioaji order callback. Prints debug output.
+        The first call installs a shioaji order callback. Logs at DEBUG.
         """
         self._order_callbacks.append(callback)
-        print(f"[DEBUG] Order callback registered. Total callbacks: {len(self._order_callbacks)}")
+        log.debug("order cb registered, n=%d", len(self._order_callbacks))
 
         if not self._shioaji_callback_registered:
-            print("[DEBUG] Setting up Shioaji order callback (first time)...")
+            log.debug("setting up shioaji order cb (first time)")
             self._setup_shioaji_order_callback()
             self._shioaji_callback_registered = True
         else:
-            print("[DEBUG] Shioaji callback already registered, skipping setup")
+            log.debug("shioaji cb already registered, skip setup")
 
 
     # Sinopac-specific method
@@ -616,7 +629,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         Warnings
         --------
         Makes a network call, writes order status to the mirror database and
-        prints the order map.
+        logs the order map at DEBUG.
         """
         if not self._connected:
             raise ConnectionError("Not connected to broker")
@@ -625,7 +638,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             self.api.update_status(self.api.stock_account)
 
             res = []
-            print(cj_sj_order_map)
+            log.debug("order map: %s", cj_sj_order_map)
             # TODO: Not only check in-mem but also check in DB
             from ._internal_func import STATUS_MAP
 
@@ -760,7 +773,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
 
         except Exception as e:
             # TODO: Consider raising exception/error here
-            print(f"list_orders() exception: {e}")
+            log.error("list_orders failed: %s", e)
             return []
 
 
@@ -848,7 +861,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
             exchange=Exchange.TSE,  # Assuming TSE for simplicity
             symbol=symbol
         )
-        print(f"intraday_odd: {intraday_odd}")
+        log.debug("intraday_odd=%s", intraday_odd)
 
         order = Order(
             product=product,
@@ -869,7 +882,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         if state is not None:
             temp.status = state.status
         else:
-            print(f"Warning: Failed to sync order state for order {order.id}, using local result.")
+            log.warning("sync state for order %s failed, using local result", order.id)
 
         return temp
 
@@ -926,7 +939,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
         if state is not None:
             temp.status = state.status
         else:
-            print(f"Warning: Failed to sync order state for order {order.id}, using local result.")
+            log.warning("sync state for order %s failed, using local result", order.id)
 
         return temp
     ##### SIMPLE HIGH-LEVEL METHODS (END) #####
@@ -947,8 +960,7 @@ class SinopacBrokerAPI(BrokerAPIBase):
                     - deal_quantity
                 msg: message string
             """
-            print(f"\n[DEBUG] 🔔 Shioaji callback triggered!")
-            print(f"[DEBUG] stat: {stat}, msg keys: {msg.keys() if msg else None}")
+            log.debug("shioaji cb: stat=%s, msg keys=%s", stat, msg.keys() if msg else None)
 
             try:
                 from ._internal_func import OPERATION_TYPE_MAP, STATUS_MAP
@@ -957,11 +969,11 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 if stat.name == 'StockDeal':
                     # Deal callback: different structure
                     # Use seqno to look up the order (ordno might not match DB)
-                    print(f"[DEBUG] This is a Deal callback")
+                    log.debug("deal cb")
                     op_type = 'Deal'
                     sj_seqno = msg['seqno']
                     cj_status = STATUS_MAP.get(stat, OrderStatus.FILLED)
-                    print(f"[DEBUG] Deal seqno: {sj_seqno}, cj_status: {cj_status}")
+                    log.debug("deal seqno=%s, cj_status=%s", sj_seqno, cj_status)
 
                     # Find order_id from seqno by checking the in-memory map first
                     matching_trade = None
@@ -987,29 +999,29 @@ class SinopacBrokerAPI(BrokerAPIBase):
                                     break
 
                     if not matching_trade:
-                        print(f"[DEBUG] ⚠️ Cannot find order with seqno={sj_seqno}, ignoring")
+                        log.warning("no order with seqno=%s, ignored", sj_seqno)
                         return
 
-                    print(f"[DEBUG] Found matching order: {sj_order_id}")
+                    log.debug("matched order %s", sj_order_id)
                 else:
                     # Order status callback: has 'operation' field
-                    print(f"[DEBUG] This is an Order Status callback")
+                    log.debug("order status cb")
                     op_type = msg['operation']['op_type']
                     sj_order_id = msg['order']['id']
                     cj_status = OPERATION_TYPE_MAP.get(op_type, OrderStatus.UNKNOWN)
-                    print(f"[DEBUG] sj_order_id: {sj_order_id}, op_type: {op_type}, cj_status: {cj_status}")
+                    log.debug("sj_order_id=%s, op_type=%s, cj_status=%s", sj_order_id, op_type, cj_status)
 
                 # 2. Get CJ order_id from DB
                 cj_order_id = get_cj_order_id_from_db(conn=self.db, bkr_order_id=sj_order_id)
-                print(f"[DEBUG] Looking up cj_order_id for sj_order_id={sj_order_id} -> {cj_order_id}")
+                log.debug("cj_order_id for sj_order_id=%s: %s", sj_order_id, cj_order_id)
                 if not cj_order_id:
-                    print(f"[DEBUG] ⚠️ CJ order_id not found in DB, ignoring callback")
+                    log.warning("cj order_id for sj_order_id=%s not in DB, cb ignored", sj_order_id)
                     return  # Ignore if not found
 
                 # 3. Get the complete trade object (including contract information)
                 trade_obj = _retrieve_sinopac_trade_by_cj_order_id(api=self.api, db_conn=self.db, cj_order_id=cj_order_id)
                 if not trade_obj:
-                    print(f"[DEBUG] ⚠️ Trade object not found for cj_order_id={cj_order_id}")
+                    log.warning("trade obj not found for cj_order_id=%s", cj_order_id)
                     return  # Ignore if not found
 
                 # 4. Extract order information from msg dict
@@ -1079,26 +1091,22 @@ class SinopacBrokerAPI(BrokerAPIBase):
                 self._order_status_cache[cj_order_id] = cj_status
 
                 # 9. Trigger order callbacks
-                print(f"[DEBUG] Triggering {len(self._order_callbacks)} order callbacks...")
+                log.debug("triggering %d order cbs", len(self._order_callbacks))
                 for callback in self._order_callbacks:
                     try:
                         callback(order_event)
                     except Exception as e:
-                        print(f"Error in order callback: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        log.exception("order cb failed: %s", e)
 
                 # 9. Update database status
                 update_order_status_to_db(conn=self.db, oid=cj_order_id, status=cj_status.value)
 
             except Exception as e:
-                print(f"Error in Shioaji callback handler: {e}")
-                import traceback
-                traceback.print_exc()
+                log.exception("shioaji cb handler failed: %s", e)
 
         # Callback function registration
         result = self.api.set_order_callback(shioaji_order_status_callback)
-        print(f"✅ Shioaji order callback registered (return value: {result})")
+        log.info("shioaji order cb registered (ret=%s)", result)
 
     ##### INTERNAL METHODS (END) #####
 
@@ -1117,7 +1125,11 @@ if __name__ == "__main__":
     from cjtrade.pkgs.models.product import Product, Exchange
     from cjtrade.pkgs.config.config_loader import load_supported_config_files
     import time
+    from cjtrade.pkgs.logger import get_console
+    from cjtrade.pkgs.logger import setup_logging
 
+    setup_logging()
+    out = get_console()
     load_supported_config_files()
 
     client = AccountClient(
@@ -1132,29 +1144,29 @@ if __name__ == "__main__":
 
     # 2. Define callback for order status changes (including fills)
     def on_order_change(event: OrderEvent):
-        print(f"\n📝 Order Status Change")
-        print(f"  Order ID: {event.order_id}")
-        print(f"  Symbol: {event.symbol}")
-        print(f"  {event.old_status.value} → {event.new_status.value}")
+        out.info(f"\n📝 Order Status Change")
+        out.info(f"  Order ID: {event.order_id}")
+        out.info(f"  Symbol: {event.symbol}")
+        out.info(f"  {event.old_status.value} → {event.new_status.value}")
 
         # Check if order is filled
         if event.is_filled():
-            print(f"\n🎉 Order Filled!")
-            print(f"  Action: {event.action.value}")
-            print(f"  Filled Quantity: {event.filled_quantity}")
-            print(f"  Filled Price: {event.filled_price}")
-            print(f"  Filled Value: {event.filled_quantity * event.filled_price if event.filled_price else 0}")
+            out.info(f"\n🎉 Order Filled!")
+            out.info(f"  Action: {event.action.value}")
+            out.info(f"  Filled Quantity: {event.filled_quantity}")
+            out.info(f"  Filled Price: {event.filled_price}")
+            out.info(f"  Filled Value: {event.filled_quantity * event.filled_price if event.filled_price else 0}")
 
             if event.is_completely_filled():
-                print(f"  ✅ Order Completely Filled")
+                out.info(f"  ✅ Order Completely Filled")
             else:
-                print(f"  ⏳ Partial Fill")
+                out.info(f"  ⏳ Partial Fill")
 
         # Check other status
         if event.is_rejected():
-            print(f"  ❌ Rejection Reason: {event.message}")
+            out.info(f"  ❌ Rejection Reason: {event.message}")
         elif event.is_cancelled():
-            print(f"  ⚠️ Order Cancelled")
+            out.info(f"  ⚠️ Order Cancelled")
 
     # 3. Register callback
     client.register_order_callback(on_order_change)
@@ -1177,21 +1189,21 @@ if __name__ == "__main__":
         order_type=OrderType.ROD
     )
 
-    print(f"\n📮 Placing Order: Buy {order.product.symbol} x{order.quantity} @ {order.price}")
+    out.info(f"\n📮 Placing Order: Buy {order.product.symbol} x{order.quantity} @ {order.price}")
     result = client.place_order(order)
-    print(f"  Order Result: {result.status.value}")
+    out.info(f"  Order Result: {result.status.value}")
 
     if result.status == OrderStatus.PLACED:
-        print(f"\n📤 Submitting Order")
+        out.info(f"\n📤 Submitting Order")
         commit_results = client.sync_state()
         for res in commit_results:
-            print(f"  Submission Result: {res.status.value}")
+            out.info(f"  Submission Result: {res.status.value}")
 
     # 5. Keep the program running, waiting for callback triggers
-    print(f"\n⏳ Waiting for order fills (Ctrl+C to exit)...")
+    out.info(f"\n⏳ Waiting for order fills (Ctrl+C to exit)...")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print(f"\n👋 Connection closed")
+        out.info(f"\n👋 Connection closed")
         client.disconnect()

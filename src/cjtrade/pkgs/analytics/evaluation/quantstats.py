@@ -20,9 +20,15 @@ import warnings
 from typing import Optional
 from typing import TYPE_CHECKING
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+
 # Suppress matplotlib font-not-found warnings that flood the log when
 # quantstats renders charts on Linux systems without Arial installed.
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+
+log = get_logger("analytics.evaluation")
+out = get_console("analytics.evaluation")
 
 if TYPE_CHECKING:
     from cjtrade.pkgs.models.backtest import BacktestResult
@@ -129,29 +135,29 @@ class BacktestReport:
         # rPnL = realized PnL = balance change only
         realized_pnl = r.final_balance - r.initial_balance
 
-        print("=" * 50)
-        print("  Backtest Summary")
-        print("=" * 50)
-        print(f"  Session      : {r.session_id or 'N/A'}")
-        print(f"  Start time   : {r.start_time or 'N/A'}")
-        print(f"  Init balance : {r.initial_balance:>15,.2f}")
-        print(f"  Final balance: {r.final_balance:>15,.2f}")
-        print(f"  Final equity : {final_equity:>15,.2f}")
-        print(f"  PnL (Total)  : {pnl:>+15,.2f}  ({pnl_pct:+.2f}%)")
-        print(f"  rPnL         : {realized_pnl:>+15,.2f}")
-        print(f"  uPnL         : {unrealized_pnl:>+15,.2f}  ({unrealized_pnl_pct:+.2f}%)")
-        print(f"  Total fills  : {len(r.fill_history)}")
+        out.info("=" * 50)
+        out.info("  Backtest Summary")
+        out.info("=" * 50)
+        out.info(f"  Session      : {r.session_id or 'N/A'}")
+        out.info(f"  Start time   : {r.start_time or 'N/A'}")
+        out.info(f"  Init balance : {r.initial_balance:>15,.2f}")
+        out.info(f"  Final balance: {r.final_balance:>15,.2f}")
+        out.info(f"  Final equity : {final_equity:>15,.2f}")
+        out.info(f"  PnL (Total)  : {pnl:>+15,.2f}  ({pnl_pct:+.2f}%)")
+        out.info(f"  rPnL         : {realized_pnl:>+15,.2f}")
+        out.info(f"  uPnL         : {unrealized_pnl:>+15,.2f}  ({unrealized_pnl_pct:+.2f}%)")
+        out.info(f"  Total fills  : {len(r.fill_history)}")
         total_commission = sum(f.get("commission", 0.0) for f in r.fill_history)
         total_tax        = sum(f.get("tax", 0.0)        for f in r.fill_history)
         total_slippage   = sum(f.get("slippage_cost", 0.0) for f in r.fill_history)
         total_cost       = total_commission + total_tax + total_slippage
         if total_cost > 0:
-            print(f"  Commission   : {total_commission:>15,.2f}")
-            print(f"  Tax (證交稅)  : {total_tax:>15,.2f}")
+            out.info(f"  Commission   : {total_commission:>15,.2f}")
+            out.info(f"  Tax (證交稅)  : {total_tax:>15,.2f}")
             if total_slippage > 0:
-                print(f"  Slippage     : {total_slippage:>15,.2f}")
-            print(f"  Total cost   : {total_cost:>15,.2f}")
-        print(f"  Equity pts   : {len(r.equity_curve)}")
+                out.info(f"  Slippage     : {total_slippage:>15,.2f}")
+            out.info(f"  Total cost   : {total_cost:>15,.2f}")
+        out.info(f"  Equity pts   : {len(r.equity_curve)}")
 
         if not self.returns.empty:
             try:
@@ -163,9 +169,9 @@ class BacktestReport:
                 cagr   = qs.stats.cagr(self.returns, periods=p)
                 mdd    = qs.stats.max_drawdown(self.returns)
                 label  = "minute" if p > 252 else "daily"
-                print(f"  Sharpe ratio : {sharpe:.4f}  ({label} resolution, annualised)")
-                print(f"  CAGR         : {cagr*100:.2f}%")
-                print(f"  Max drawdown : {mdd*100:.2f}%")
+                out.info(f"  Sharpe ratio : {sharpe:.4f}  ({label} resolution, annualised)")
+                out.info(f"  CAGR         : {cagr*100:.2f}%")
+                out.info(f"  Max drawdown : {mdd*100:.2f}%")
             except ImportError:
                 pass   # quantstats optional; basic stats already printed
 
@@ -178,13 +184,13 @@ class BacktestReport:
                 avg_pnl  = sum(rt.pnl for rt in rts) / len(rts)
                 avg_hold = sum(rt.holding_days for rt in rts) / len(rts)
                 win_rate = len(wins) / len(rts) * 100
-                print(f"  Round trips  : {len(rts)}  (win {len(wins)} / loss {len(losses)},  win rate {win_rate:.1f}%)")
-                print(f"  Avg PnL/trip : {avg_pnl:>+,.2f}")
-                print(f"  Avg hold days: {avg_hold:.1f}")
+                out.info(f"  Round trips  : {len(rts)}  (win {len(wins)} / loss {len(losses)},  win rate {win_rate:.1f}%)")
+                out.info(f"  Avg PnL/trip : {avg_pnl:>+,.2f}")
+                out.info(f"  Avg hold days: {avg_hold:.1f}")
         except Exception:
             pass
 
-        print("=" * 50)
+        out.info("=" * 50)
 
     def print_round_trips(self) -> None:
         """Print every round-trip (entry→exit) in a compact table.
@@ -195,35 +201,35 @@ class BacktestReport:
         try:
             rts = self.result.compute_round_trips()
         except Exception as e:
-            print(f"  (round-trip computation failed: {e})")
+            log.warning("round-trip computation failed: %s", e)
             return
 
         if not rts:
-            print("  No round trips found.")
+            out.info("  No round trips found.")
             return
 
         wins   = [rt for rt in rts if rt.pnl > 0]
         losses = [rt for rt in rts if rt.pnl <= 0]
         total_pnl = sum(rt.pnl for rt in rts)
 
-        print()
-        print("=" * 80)
-        print(f"  Round-Trip History  ({len(rts)} trades,  "
+        out.info("")
+        out.info("=" * 80)
+        out.info(f"  Round-Trip History  ({len(rts)} trades,  "
               f"win {len(wins)} / loss {len(losses)},  "
               f"total PnL {total_pnl:+,.2f})")
-        print("=" * 80)
-        print(f"  {'#':>3}  {'Symbol':<8}  {'Entry Date':<12}  {'Entry $':>9}  "
+        out.info("=" * 80)
+        out.info(f"  {'#':>3}  {'Symbol':<8}  {'Entry Date':<12}  {'Entry $':>9}  "
               f"{'Exit Date':<12}  {'Exit $':>9}  {'Qty':>6}  {'PnL':>10}  {'Days':>5}")
-        print("  " + "-" * 76)
+        out.info("  " + "-" * 76)
         for i, rt in enumerate(rts, 1):
             icon = "🟢" if rt.pnl > 0 else "🔴"
             entry_date = rt.entry_time[:10] if rt.entry_time else "?"
             exit_date  = rt.exit_time[:10]  if rt.exit_time  else "?"
-            print(f"  {i:>3}  {rt.symbol:<8}  {entry_date:<12}  {rt.entry_price:>9.2f}  "
+            out.info(f"  {i:>3}  {rt.symbol:<8}  {entry_date:<12}  {rt.entry_price:>9.2f}  "
                   f"{exit_date:<12}  {rt.exit_price:>9.2f}  {rt.quantity:>6}  "
                   f"{rt.pnl:>+10.2f}  {rt.holding_days:>4}d  {icon}")
-        print("=" * 80)
-        print()
+        out.info("=" * 80)
+        out.info("")
 
     def metrics(self) -> dict:
         """Return key metrics as a plain dict (suitable for logging/JSON)."""
@@ -303,7 +309,7 @@ class BacktestReport:
         if not self.result.fill_history:
             _write_no_trades_html(path, title or "Strategy Tearsheet", self.result)
             abs_path = os.path.abspath(path)
-            print(f"[BacktestReport] HTML saved → {abs_path}  (no trades executed)")
+            out.info(f"HTML saved -> {abs_path}  (no trades executed)")
             if open_browser:
                 webbrowser.open(f"file://{abs_path}")
             return abs_path
@@ -322,7 +328,7 @@ class BacktestReport:
         self._inject_round_trips_html(path)
 
         abs_path = os.path.abspath(path)
-        print(f"[BacktestReport] HTML saved → {abs_path}")
+        out.info(f"HTML saved -> {abs_path}")
         if open_browser:
             webbrowser.open(f"file://{abs_path}")
         return abs_path
@@ -406,8 +412,7 @@ class BacktestReport:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
         except Exception as e:
-            import logging as _log
-            _log.getLogger(__name__).warning(f"[BacktestReport] Could not inject round-trip table: {e}")
+            log.warning("round-trip table injection failed: %s", e)
 
     # ------------------------------------------------------------------
     # Persistence
@@ -431,7 +436,7 @@ class BacktestReport:
         """
         df = self.result.daily_summary()
         df.to_csv(path, index=False)
-        print(f"[BacktestReport] CSV saved → {path}")
+        out.info(f"CSV saved -> {path}")
 
 
 # ---------------------------------------------------------------------------

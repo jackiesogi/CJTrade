@@ -10,11 +10,15 @@ import os
 
 from cjtrade.pkgs.analytics.informational.news_client import *
 from cjtrade.pkgs.llm.gemini import GeminiClient
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
 if __name__ == "__main__":
+    setup_logging()
+    out = get_console("analytics.informational")
     client = GeminiClient(api_key=os.getenv("GEMINI_API_KEY"))
     # postman = Webscraper()
     # postman = NewsClient(provider_type=NewsProviderType.MOCK)
@@ -30,4 +34,4 @@ if __name__ == "__main__":
             - Related product or service.\
             And summarize the news content in 50 words using original language."
         response = client.generate_response(prompt)
-        print(f"Title: {n.title}\nSentiment Analysis:\n{response}\n")
+        out.info(f"Title: {n.title}\nSentiment Analysis:\n{response}\n")

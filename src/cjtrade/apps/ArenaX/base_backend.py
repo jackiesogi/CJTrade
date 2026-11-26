@@ -4,13 +4,14 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import timedelta
 from typing import Dict
 from typing import List
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
+from cjtrade.apps.ArenaX.market_data import default_market_data
 from cjtrade.apps.ArenaX.oder_result_helper import CANCELLED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import COMMITTED_ORDER_STANDARD
 from cjtrade.apps.ArenaX.oder_result_helper import PLACED_ORDER_STANDARD
@@ -27,6 +28,11 @@ from cjtrade.apps.ArenaX.time_in_force import TIFContext
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.marketdata import Cached
+from cjtrade.pkgs.marketdata import MarketData
+from cjtrade.pkgs.marketdata import PriceCache
+from cjtrade.pkgs.marketdata.base import closed
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
@@ -42,6 +48,10 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
 from cjtrade.pkgs.models.quote import Snapshot
 from cjtrade.pkgs.models.trade import Trade
+
+log = get_logger("ArenaX.backend")
+log_state = log.getChild("state")
+log_tif = log.getChild("tif")
 
 NOT_AVAILABLE_FOR_THIS_BACKEND = None
 PLEASE_DEFINE_THIS_PARAM_IN_SUBCLASS = None
@@ -98,6 +108,7 @@ class ArenaX_BackendBase:
         initial_balance: float = 0.0,
         price_db_path: Optional[str] = None,
         cost_model: Optional[CostModel] = None,
+        market_data: Optional[MarketData] = None,
         **kwargs,
     ) -> None:
         # ── Account state: snapshots in, a new snapshot out ───────────────────
@@ -134,6 +145,14 @@ class ArenaX_BackendBase:
         self.account_state = ArenaX_AccountState()
         self.price_db_path = str(price_db_path) if price_db_path else str(paths.price_db_path())
         self._cost_model = cost_model if cost_model is not None else CostModel()
+        # ── Prices: a MarketData, cached on this machine ──────────────────────
+        # The simulated exchange fills against the same bars it serves, so
+        # there is exactly one source. real_account is no longer a price
+        # source unless no market_data is given, which keeps old callers
+        # reading Sinopac then yfinance as before.
+        self.market_data = (market_data if market_data is not None
+                            else default_market_data(real_account))
+        self.data = Cached(self.market_data, PriceCache(self.price_db_path))
 
     # NOTE: login() affect whether the account state is synced and whether the flag _connected is set.
     def login(self) -> bool:
@@ -141,16 +160,15 @@ class ArenaX_BackendBase:
             self._connected = True
 
             if self.state_in:
-                print(f"[state] resuming from snapshot: {self.state_in}")
+                log_state.info("resume from snapshot %s", self.state_in)
                 self._load_state_from(self.state_in)
             elif self.seed_from_live and self.real_account:
-                print("[state] seeding from live account — this run is NOT reproducible")
+                log_state.warning("seeding from live account, run is NOT reproducible")
                 self._sync_with_real_account()
             else:
-                print("[state] fresh account")
+                log_state.info("fresh account")
                 self._init_fresh_state()
-            print(f"[state] session {self.session_id} — "
-                  f"snapshot will be written to {self.state_out}")
+            log_state.info("session %s, snapshot -> %s", self.session_id, self.state_out)
 
             # Stamp initial_balance once per session (after state is loaded so we
             # can fall back to the loaded balance when no explicit override is given).
@@ -160,10 +178,10 @@ class ArenaX_BackendBase:
                 # First run: treat the starting cash as initial_balance
                 self.account_state.initial_balance = self.account_state.balance
 
-            print("Simulation environment started")
+            log.info("sim env started")
             return True
         except Exception as e:
-            print(f"Failed to start simulation environment: {e}")
+            log.error("sim env start failed: %s", e)
             self._connected = False
             return False
 
@@ -172,7 +190,7 @@ class ArenaX_BackendBase:
             self.real_account.disconnect()
         self._write_state_snapshot()
         self._connected = False
-        print("Simulation environment stopped")
+        log.info("sim env stopped")
 
     def _write_state_snapshot(self) -> None:
         """Persist the final state to this session's own file.
@@ -195,9 +213,9 @@ class ArenaX_BackendBase:
             }
             with open(self.state_out, "w") as f:
                 json.dump(data, f, indent=4)
-            print(f"[state] snapshot written: {self.state_out}")
+            log_state.info("snapshot written: %s", self.state_out)
         except Exception as exc:
-            print(f"[state] failed to write snapshot {self.state_out}: {exc}")
+            log_state.error("write snapshot %s failed: %s", self.state_out, exc)
 
     def _init_fresh_state(self) -> None:
         """Start from an empty account. Touches no disk.
@@ -229,227 +247,48 @@ class ArenaX_BackendBase:
         self._update_position_prices()
         return self.account_state.positions
 
-    # TODO: Also store to local 1d kbar price cache
-    def kbars_yf(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
-        yf_symbol = f"{symbol}.TW"
-
-        try:
-            data = yf.download(
-                yf_symbol,
-                start=start,
-                end=end,
-                interval=interval,
-                auto_adjust=True,
-                progress=False,
-            )
-
-            if data.empty:
-                print(f"No data available for {symbol} in range {start} to {end}")
-                return []
-
-            if not isinstance(data.index, pd.DatetimeIndex):
-                data.index = pd.to_datetime(data.index)
-            if data.index.tz is not None:
-                if str(data.index.tz) in ["UTC", "UTC+00:00"]:
-                    import pytz
-
-                    taiwan_tz = pytz.timezone("Asia/Taipei")
-                    data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-                else:
-                    data.index = data.index.tz_localize(None)
-
-            kbars = []
-            for timestamp, row in data.iterrows():
-                kbar = Kbar(
-                    timestamp=timestamp.to_pydatetime(),
-                    open=round(row["Open"].item(), 2),
-                    high=round(row["High"].item(), 2),
-                    low=round(row["Low"].item(), 2),
-                    close=round(row["Close"].item(), 2),
-                    volume=int(row["Volume"].item()),
-                    symbol=symbol,
-                )
-                kbars.append(kbar)
-
-            return kbars
-
-        except Exception as exc:
-            print(f"Error loading kbars for {symbol}: {exc}")
-            return []
-
     def kbars(self, symbol: str, start: str, end: str, interval: str = "1m") -> List[Kbar]:
-        """Fetch kbars: first try price_db, then fill gaps from broker.
+        """Closed bars for `symbol` between `start` and `end`.
 
-        This hybrid approach reduces broker API calls by leveraging cached local data,
-        while ensuring we have the complete requested range by fetching missing pieces.
+        Served from the price cache, fetching only what it lacks from
+        ``market_data``. Only bars that have closed on the simulated clock
+        are returned, so a client cannot see past the replay.
+
+        Parameters
+        ----------
+        start, end : str
+            Whole dates (``YYYY-MM-DD``, `end` inclusive, as the route has
+            always taken them) or ISO datetimes (a half-open window).
+
+        Raises
+        ------
+        UnsupportedRequest
+            The source does not serve `interval`.
         """
-        from datetime import datetime as dt
-        from cjtrade.pkgs.db.db_api import compute_missing_ranges
-
-        # Parse date range
         try:
-            start_dt = dt.strptime(start, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
-            end_dt = dt.strptime(end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        except Exception as e:
-            print(f"Error parsing date range: {e}")
+            start_dt = datetime.fromisoformat(start)
+            end_dt = datetime.fromisoformat(end)
+        except (TypeError, ValueError) as e:
+            log.warning("bad date range: %s", e)
             return []
+        if len(end) == 10:                  # a whole date: through its end
+            end_dt += timedelta(days=1)
+        bars = self.data.get_kbars(symbol, start_dt, end_dt, interval)
+        now = self._clock()
+        bars = closed(bars, interval, now)
+        log.debug("@%s kbars %s n=%d (source=%s)", f"{now:%Y-%m-%d %H:%M}",
+                  symbol, len(bars), self.market_data.name)
+        return bars
 
-        # Try to get cached data from price_db if available
-        cached_kbars = []
-        if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
-            try:
-                cached_kbars = self.market.price_db.get_price(
-                    symbol=symbol,
-                    timeframe=interval,
-                    start_ts=start_dt,
-                    end_ts=end_dt
-                )
-                print(f"[kbars] Found {len(cached_kbars)} cached kbars for {symbol} [{start} to {end}]")
-            except Exception as e:
-                print(f"[kbars] Error retrieving from price_db: {e}")
-
-        # Check what ranges are missing
-        missing_ranges = []
-        if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
-            try:
-                s_epoch = int(start_dt.timestamp())
-                e_epoch = int(end_dt.timestamp())
-                missing_ranges = compute_missing_ranges(
-                    self.market.price_db.conn,
-                    symbol,
-                    interval,
-                    s_epoch,
-                    e_epoch
-                )
-                print(f"[kbars] Missing ranges for {symbol}: {len(missing_ranges)} gaps")
-            except Exception as e:
-                print(f"[kbars] Error computing missing ranges: {e}")
-                # If we can't check coverage, fetch all from broker as fallback
-                missing_ranges = [(int(start_dt.timestamp()), int(end_dt.timestamp()))]
-        else:
-            # No price_db available, fetch all from broker
-            missing_ranges = [(int(start_dt.timestamp()), int(end_dt.timestamp()))]
-
-        # Fetch missing ranges from broker
-        # Shioaji (sinopac) fetches 1-minute data internally and aggregates, so it has a
-        # hard 30-day limit per request.  Split every missing range into ≤30-day chunks.
-        _BROKER_MAX_DAYS = 30
-        broker_kbars = []
-        if missing_ranges and self.real_account:
-            try:
-                from datetime import timedelta as _td
-                chunked_ranges = []
-                for start_epoch, end_epoch in missing_ranges:
-                    chunk_start = dt.fromtimestamp(start_epoch)
-                    chunk_end   = dt.fromtimestamp(end_epoch)
-                    while chunk_start < chunk_end:
-                        chunk_stop = min(chunk_start + _td(days=_BROKER_MAX_DAYS), chunk_end)
-                        chunked_ranges.append((chunk_start, chunk_stop))
-                        chunk_start = chunk_stop
-
-                for chunk_start_dt, chunk_end_dt in chunked_ranges:
-                    range_start = chunk_start_dt.strftime("%Y-%m-%d")
-                    range_end   = chunk_end_dt.strftime("%Y-%m-%d")
-                    print(f"[kbars] Fetching from broker: {symbol} [{range_start} to {range_end}]")
-
-                    # TODO: check if the backend real broker api support specified interval
-                    fetched = self.real_account.get_kbars(
-                        start=range_start,
-                        end=range_end,
-                        product=Product(symbol=symbol),
-                        interval=interval
-                    )
-
-                    broker_kbars.extend(fetched)
-
-                    # Cache the fetched data
-                    if hasattr(self, 'market') and hasattr(self.market, 'price_db'):
-                        try:
-                            self.market.price_db.insert_prices_batch(
-                                symbol=symbol,
-                                kbars=fetched,
-                                timeframe=interval,
-                                source="broker_api",
-                                overwrite=False
-                            )
-                            # Claim only the range the bars actually cover.
-                            #
-                            # This used to record the whole requested chunk
-                            # unconditionally, which marks a range "covered"
-                            # even when the broker returned nothing. Coverage
-                            # is what compute_missing_ranges() consults, so a
-                            # range wrongly marked covered is never asked for
-                            # again: every later run skips the broker and
-                            # serves a truncated set of bars, permanently and
-                            # silently. Found in the live cache -- 2317's 1m
-                            # coverage claimed 282 days past its last real bar,
-                            # out to 2027-08-18, so any request inside that
-                            # window reported zero gaps and returned zero bars.
-                            #
-                            # Nothing fetched means nothing is known about the
-                            # range, so it stays a gap and a later run can try
-                            # again -- which is what should happen for a window
-                            # whose data does not exist yet.
-                            if fetched:
-                                # The requested chunk, clamped so it never
-                                # reaches into the future.
-                                #
-                                # Deliberately NOT narrowed to the bars' own
-                                # first/last timestamps: bars exist only
-                                # 09:01-13:30, so a request for a whole day
-                                # would leave 00:00-09:01 and 13:30-23:59
-                                # permanently "missing" and every later run
-                                # would re-ask the broker for the margins of
-                                # every day it already has. Once a fetch comes
-                                # back with bars, the broker has answered for
-                                # that window and the quiet parts of it are the
-                                # market being closed, not data we lack.
-                                #
-                                # The future is the one thing a successful
-                                # fetch cannot vouch for, and that is exactly
-                                # what went wrong here.
-                                self.market.price_db.record_coverage(
-                                    symbol=symbol,
-                                    timeframe=interval,
-                                    start_ts=chunk_start_dt,
-                                    end_ts=min(chunk_end_dt, datetime.now()),
-                                    source="broker_api"
-                                )
-                            else:
-                                print(f"[kbars] {symbol} [{range_start} to "
-                                      f"{range_end}] returned no bars — "
-                                      f"leaving it uncovered so it can be "
-                                      f"retried")
-                        except Exception as e:
-                            print(f"[kbars] Error caching fetched data: {e}")
-
-            except Exception as exc:
-                print(f"[kbars] Error fetching from broker for {symbol}: {exc}")
-                # Do NOT return here — fall through to the yfinance fallback below.
-                if cached_kbars:
-                    return cached_kbars
-
-        # Merge cached + broker data, sorted by timestamp
-        all_kbars = cached_kbars + broker_kbars
-        all_kbars.sort(key=lambda k: k.timestamp)
-
-        # Remove duplicates (keep first occurrence)
-        seen_timestamps = set()
-        unique_kbars = []
-        for kb in all_kbars:
-            ts = kb.timestamp
-            if ts not in seen_timestamps:
-                unique_kbars.append(kb)
-                seen_timestamps.add(ts)
-
-        # Final fallback: yfinance (covers demo mode and any other case where
-        # neither price_db nor real_account yielded results)
-        if not unique_kbars:
-            print(f"[kbars] No data from price_db/broker for {symbol}, falling back to yfinance")
-            unique_kbars = self.kbars_yf(symbol, start, end, interval)
-
-        print(f"[kbars] Returning {len(unique_kbars)} total kbars for {symbol}")
-        return unique_kbars
+    def _clock(self) -> datetime:
+        """The simulated "now"; the wall clock when no simulated clock is set."""
+        market = getattr(self, "market", None)
+        if market is None:
+            return datetime.now()
+        try:
+            return market.get_market_time()["mock_current_time"]
+        except TypeError:       # the clock was never set: its fields are still 0
+            return datetime.now()
 
     def _calculate_kbar_index(self, symbol: str, mock_time: datetime) -> int:
         """Return the row-index of the latest kbar whose timestamp <= mock_time.
@@ -483,17 +322,33 @@ class ArenaX_BackendBase:
         idx = int(np.searchsorted(ts_arr, target, side='right')) - 1
         return max(0, min(idx, len(timestamps) - 1))
 
+    def _ensure_market(self, symbol: str) -> None:
+        """Load `symbol`'s replay bars the first time anything needs them.
+
+        Orders are matched against these bars, so an order must load them as
+        well as a snapshot. They used to be loaded by snapshot() alone, which
+        only worked because every client asked for a snapshot before it
+        traded; a client that reads bars instead (the trading engine) placed
+        orders that could never fill.
+
+        Loads ``num_days_preload`` days whatever the price source. It used to
+        be 5 days without a broker account, which was the demo's yfinance
+        limit and became a backtest's once a backtest could run without one.
+        """
+        market = getattr(self, "market", None)
+        if market is None or not hasattr(market, "create_historical_market"):
+            return
+        if symbol in market.historical_data:
+            return
+        if self.real_account and not self.real_account.is_connected():
+            self.real_account.connect()
+        market.create_historical_market(symbol, self.num_days_preload)
+
     def snapshot(self, symbol: str) -> Snapshot:
         if not hasattr(self, "market"):
             return self._create_fallback_snapshot(symbol, datetime.now())
         self._check_if_any_order_filled()
-
-        if symbol not in self.market.historical_data:
-            if self.real_account and not self.real_account.is_connected():
-                self.real_account.connect()
-
-            day_preload = self.num_days_preload if self.real_account else 5
-            self.market.create_historical_market(symbol, day_preload)
+        self._ensure_market(symbol)
 
         mock_current_time = self.market.get_market_time()["mock_current_time"]
         adjusted_mock_time = self.market.adjust_to_market_hours(mock_current_time)
@@ -615,6 +470,7 @@ class ArenaX_BackendBase:
             if not self._is_sufficient_account_inventory(order):
                 return REJECTED_ORDER_NOT_SUFFICIENT_STOCK(order, metadata=order.opt_field)
 
+        self._ensure_market(order.product.symbol)
         if hasattr(self, "market"):
             order.opt_field["last_check_for_fill"] = self.market.get_market_time()["mock_current_time"]
         else:
@@ -715,18 +571,17 @@ class ArenaX_BackendBase:
         try:
             if not self.real_account.is_connected():
                 self.real_account.connect()
-            print("Syncing with real account...")
+            log.info("syncing with real account")
 
             self.account_state.balance = self.real_account.get_balance()
             real_positions = self.real_account.get_positions()
 
             if not real_positions:
-                print("No positions in real account")
+                log.info("no positions in real account")
                 self.account_state.positions = []
                 return
 
             day_preload = self.num_days_preload if self.real_account else 5
-            # print(f"preload: {day_preload}")
             for pos in real_positions:
                 if (
                     not self.skip_data_preload
@@ -749,7 +604,7 @@ class ArenaX_BackendBase:
             if not self.skip_data_preload:
                 self._update_position_prices()
         except Exception as exc:
-            print(f"Error syncing with real account: {exc}")
+            log.error("sync with real account failed: %s", exc)
 
     def _load_state_from(self, path: str) -> None:
         """Resume from an existing snapshot. Read-only: never writes `path`.
@@ -947,10 +802,10 @@ class ArenaX_BackendBase:
                 # reservation in the same step.
                 self.cancel_order(order.id)
                 cancelled.append(order.id)
-                print(f"[TIF] {order.order_type.value} {order.id} cancelled: "
-                      f"{decision.reason}")
+                log_tif.info("@%s %s %s cancelled: %s", f"{now:%Y-%m-%d %H:%M}",
+                             order.order_type.value, order.id, decision.reason)
             except Exception as exc:
-                print(f"[TIF] Could not cancel {order.id}: {exc}")
+                log_tif.error("@%s cancel %s failed: %s", f"{now:%Y-%m-%d %H:%M}", order.id, exc)
         return cancelled
 
     # ── Reservation ───────────────────────────────────────────────────────────
@@ -1058,7 +913,6 @@ class ArenaX_BackendBase:
     def _check_if_any_order_filled(self) -> bool:
         if not hasattr(self, "market"):
             return False
-        # print("Checking for order fills...")
 
         calendar = getattr(self.market, "calendar", None) or TradingCalendar()
 
@@ -1082,8 +936,6 @@ class ArenaX_BackendBase:
             deadline = policy_for(order.order_type).expires_at(order, calendar)
             if deadline is not None and deadline < cmp_time_range_end:
                 cmp_time_range_end = deadline
-
-            # print(f"Checking order {order.id} from {cmp_time_range_start} to {cmp_time_range_end} against target price {target_price} !!!")
 
             if cmp_time_range_end <= cmp_time_range_start:
                 continue
@@ -1143,12 +995,12 @@ class ArenaX_BackendBase:
                 # filter fill_history by session after the backtest ends.
                 "session_id": order.opt_field.get("session_id") if order.opt_field else None,
             })
-            print("Order filled:", order.id)
+            log.info("@%s order filled: %s", f"{fill_time:%Y-%m-%d %H:%M}", order.id)
 
             self._reconstruct_positions_from_history()
             return True
         except Exception as exc:
-            print(f"Error moving order {order.id} to filled: {exc}")
+            log.error("move order %s to filled failed: %s", order.id, exc)
             return False
 
     def _find_fill_time(
@@ -1198,8 +1050,8 @@ class ArenaX_BackendBase:
                 "close" if "close" in data.columns else None
             )
             if column is None:
-                print(f"_find_fill_time: no close column for {symbol} "
-                      f"(have {list(data.columns)})")
+                log.warning("_find_fill_time: no close column for %s (have %s)",
+                            symbol, list(data.columns))
                 return None
             # Not cached: to_numpy() on a contiguous float column is ~5us even
             # for four years of 1m bars, so a cache would add an invalidation
@@ -1218,7 +1070,7 @@ class ArenaX_BackendBase:
             # Report the type too: a bare message turned a NameError in here
             # into a silent "nothing filled", which looks exactly like a
             # correct no-match and cost an afternoon to spot.
-            print(f"_find_fill_time error: {type(exc).__name__}: {exc}")
+            log.error("_find_fill_time: %s: %s", type(exc).__name__, exc)
             return None
 
     def _reconstruct_positions_from_history(self) -> None:
@@ -1288,8 +1140,8 @@ class ArenaX_BackendBase:
                 # negative share count in a cash equity account is a bug
                 # upstream, and silently dropping the position would erase the
                 # only evidence.
-                print(f"Warning: {sym} fill history oversells by {oversold} "
-                      f"share(s) — position reported as {held_qty}")
+                log.warning("%s fill history oversells by %s share(s), position reported as %s",
+                            sym, oversold, held_qty)
 
             held_cost = sum(p * q for p, q in lots)
             avg_cost = held_cost / held_qty if held_qty > 0 else 0.0
@@ -1326,7 +1178,7 @@ class ArenaX_BackendBase:
                     unrealized_pnl=round((simulated_price - pos.avg_cost) * pos.quantity, 1),
                 ))
             except Exception as exc:
-                print(f"Warning: Failed to update price for {pos.symbol}: {exc}")
+                log.warning("update px for %s failed: %s", pos.symbol, exc)
                 updated_positions.append(pos)
 
         self.account_state.positions = updated_positions

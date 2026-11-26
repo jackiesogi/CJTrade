@@ -76,7 +76,8 @@ convention. Only new `F401`/`F811`/`F821` are your fault.
 ```
 src/cjtrade/
   pkgs/
-    brokers/        AccountClient (the one API users see) + per-broker adapters
+    brokers/        AccountClient (accounts + orders) + per-broker adapters
+    marketdata/     MarketData sources (sinopac/finmind/yfinance/arenax/cache/offline) + Fallback, Cached
     models/         Order, Position, Product, Quote, Snapshot, Kbar, Trade, events
     strategy/       BaseStrategy + built-ins (bb, adx, dca, donchian, snr, baseline_0050)
     analytics/      technical (ta.*), fundamental, informational (news+LLM), backtest engine
@@ -111,13 +112,48 @@ value. Serialise with `.isoformat()` at every JSON boundary, parse with
 `fromisoformat()`. **Never convert timezones anywhere.** Flask's default JSON
 encoder turns `datetime` into an HTTP date (`"Mon, 01 Sep 2025 09:01:00 GMT"`)
 whose `GMT` is a fiction — endpoints that pass a dataclass to `jsonify` leak
-that format, so parse defensively (see `_parse_server_datetime` in
-`poc/trading_engine/main2.py`).
+that format, so parse defensively (see `_parse_kbar` in
+`pkgs/brokers/arenax/arenax_broker_api.py`).
+
+**Prices come from a MarketData, not from a broker.** `pkgs/marketdata/base.py`
+fixes the conventions: half-open `[start, end)` windows, intraday bars stamped
+at their closing minute, daily bars at 09:00, raw prices, volume in lots. A
+source that cannot serve a request raises `UnsupportedRequest` (never returns
+`[]` for it), so `Fallback` moves on and `Cached` records nothing. ArenaX
+backends take `market_data=`; `real_account` is only the account. New code
+reads `client.market`; `AccountClient.get_kbars/get_snapshots/get_bid_ask`
+are shims kept for existing callers.
+
+Only **closed** bars are returned: a bar appears once its close (13:30 for a
+daily bar) is at or before the source's `now()`, the wall clock for live
+sources and the simulated clock for ArenaX's kbars route. Do not add a
+"current bar" method; a forming bar is not data. Ticks are the finest level
+(`aggregate.bars_from_ticks` makes 1m), and coarser bars come from 1m.
+`CJTRADE_OFFLINE=1` makes network sources raise `MarketDataUnavailable`;
+`arenaxd --data=offline --price-db=FILE` serves only a file filled by
+`preload-prices`.
+
+**No print(); log through `cjtrade.pkgs.logger`.** `log = get_logger("brokers.sinopac")`,
+named for the path below `pkgs/` (or below `apps/`; the trading engine is
+`engine.*`, bots `bot.<id>`). Lines read
+`[INFO][2026-11-25 15:41:29] brokers.sinopac: message`. A tag such as `[Clock]`
+is a logger name (`engine.clock`), never repeated in the message. Simulated
+time goes in the message as `@2025-09-01 09:05`. A command's result (a shell
+reply, a report, a table) is program output: `get_console(...)`, bare on
+stdout. Only entry points call `setup_logging()`; `CJTRADE_LOG_LEVEL=DEBUG`
+overrides the level.
 
 **Engine code must be broker-agnostic.** Anything broker- or mode-specific
 belongs in an init/bootstrap step, not in the loop. No clock stepping, no
 `set_market_time`, no `if broker == "arenax"` inside engine logic. The one
 allowed `if` is where the clock or broker is *constructed*.
+
+**The engine feeds bars, not snapshots.** `poc/trading_engine/main.py`
+publishes each symbol's closed 1m bars from `client.market.get_kbars` as a
+`Kbar` (`protocol.PriceUpdate.bar`); a minute with no trade publishes nothing
+and a `FeedStatus` says so. A replay's timeline comes from
+`GET /api/v1/clock/timeline`, because the kbars route hides bars the server
+clock has not reached.
 
 **Market time vs system time.** `get_market_time()` is the canonical reader on
 every broker (`mock_current_time`, `real_current_time`, `mock_init_time`,
@@ -478,8 +514,6 @@ class BalanceCommand(CommandBase):
 
 ## 10. Working agreements
 
-- Keep `main.py` in `poc/trading_engine/` untouched — `main2.py` is the
-  variant under development and the pair is kept for comparison.
 - One commit per package when a change spans several.
 - Don't reformat or "tidy" files you aren't changing. The star imports and
   the existing lint noise are deliberate background.

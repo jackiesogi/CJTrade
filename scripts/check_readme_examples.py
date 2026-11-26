@@ -95,6 +95,12 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+
+log = get_logger("scripts.check_readme_examples")
+
 ROOT = Path(__file__).resolve().parents[1]
 
 # The hand-written READMEs. poc/trading_engine/README.md and doc/ are out of
@@ -650,6 +656,8 @@ def main() -> int:
     ap.add_argument("--list", action="store_true",
                     help="print every block and how it is checked, then exit")
     args = ap.parse_args()
+    setup_logging()
+    out = get_console("scripts.check_readme_examples")
 
     no_smoke = args.no_smoke or os.environ.get("CJ_CHECK_NO_SMOKE") == "1"
 
@@ -666,9 +674,9 @@ def main() -> int:
         for b in blocks:
             first = next((ln for ln in b.body.splitlines() if ln.strip()), "")
             note = b.opts.get("reason", "")
-            print(f"{b.mode:7} {b.where:52} {first[:60]}"
-                  + (f"   ({note})" if note else ""))
-        print(f"\n{len(blocks)} block(s)")
+            out.info("%s", f"{b.mode:7} {b.where:52} {first[:60]}"
+                     + (f"   ({note})" if note else ""))
+        out.info("\n%d block(s)", len(blocks))
         return 1 if problems else 0
 
     entries, tables = _entry_points(), _route_tables()
@@ -684,24 +692,21 @@ def main() -> int:
             if b.mode not in ("smoke", "run"):
                 continue
             launched += 1
-            print(f"  launching {b.where} ... ", end="", flush=True)
             trouble = _launch(b)
-            print("FAIL" if trouble else "ok")
+            out.info("  launching %s ... %s", b.where,
+                     "FAIL" if trouble else "ok")
             problems.extend(trouble)
 
     checked = sum(1 for b in blocks if b.mode != "skip")
     skipped = sum(1 for b in blocks if b.mode == "skip")
     if problems:
-        print(f"\n{len(problems)} problem(s) in the README examples:\n",
-              file=sys.stderr)
-        for p in problems:
-            print(f"  - {p}", file=sys.stderr)
-        print("\nThe docs promise these work. Fix the example, or the code it "
-              "documents.", file=sys.stderr)
+        log.error("%d problem(s) in the README examples:\n%s\nThe docs promise "
+                  "these work. Fix the example, or the code it documents.",
+                  len(problems), "\n".join(f"  - {p}" for p in problems))
         return 1
 
-    print(f"README examples: {checked} checked ({launched} launched), "
-          f"{skipped} skipped, {len(blocks)} total — all good.")
+    out.info("README examples: %d checked (%d launched), %d skipped, "
+             "%d total — all good.", checked, launched, skipped, len(blocks))
     return 0
 
 

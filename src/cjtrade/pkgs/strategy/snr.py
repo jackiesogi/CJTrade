@@ -19,19 +19,19 @@ run_oneshot(symbol="2330", start="2023-01-01", strategy=strategy)
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from datetime import timedelta
 from typing import Dict
 from typing import List
 
 import numpy
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.snr")
 
 
 class SupportResistanceStrategy(BaseStrategy):
@@ -110,7 +110,7 @@ class SupportResistanceStrategy(BaseStrategy):
             self._bars_per_day = 270  # ~270 minutes per trading day
 
         log.info(
-            f"[{self.name}] lookback={self._lookback_days}d "
+            f"lookback={self._lookback_days}d "
             f"support_thr={self._support_threshold_pct*100:.2f}% "
             f"resistance_thr={self._resistance_threshold_pct*100:.2f}% "
             f"breakout_mode={self._breakout_mode} "
@@ -156,7 +156,7 @@ class SupportResistanceStrategy(BaseStrategy):
             qty = ctx.calc_qty(price, self._max_position_pct)
             if qty > 0:
                 log.info(
-                    f"ts: {ts_str} | BUY {bar.symbol} @ {price:.2f} "
+                    f"@{ts_str} BUY {bar.symbol} px={price:.2f} "
                     f"(near support={support:.2f})"
                 )
                 signals.append(Signal(
@@ -177,7 +177,7 @@ class SupportResistanceStrategy(BaseStrategy):
             if qty > 0:
                 self._resistance_broken[bar.symbol] = True
                 log.info(
-                    f"ts: {ts_str} | BUY {bar.symbol} @ {price:.2f} "
+                    f"@{ts_str} BUY {bar.symbol} px={price:.2f} "
                     f"(resistance breakout, R={resistance:.2f})"
                 )
                 signals.append(Signal(
@@ -195,7 +195,7 @@ class SupportResistanceStrategy(BaseStrategy):
             ctx.has_position(bar.symbol)):
             qty = ctx.position_qty(bar.symbol)
             log.info(
-                f"ts: {ts_str} | SELL {bar.symbol} @ {price:.2f} "
+                f"@{ts_str} SELL {bar.symbol} px={price:.2f} "
                 f"(near resistance={resistance:.2f})"
             )
             signals.append(Signal(
@@ -218,19 +218,19 @@ class SupportResistanceStrategy(BaseStrategy):
         """Log fills for debugging."""
         if fill.action.upper() == "BUY":
             log.debug(
-                f"[{self.name}] BUY filled for {fill.symbol} @ {fill.price:.2f} "
+                f"@{fill.timestamp:%Y-%m-%d %H:%M} BUY filled {fill.symbol} px={fill.price:.2f} "
                 f"qty={fill.quantity}"
             )
         elif fill.action.upper() == "SELL":
             log.debug(
-                f"[{self.name}] SELL filled for {fill.symbol} @ {fill.price:.2f} "
+                f"@{fill.timestamp:%Y-%m-%d %H:%M} SELL filled {fill.symbol} px={fill.price:.2f} "
                 f"qty={fill.quantity}"
             )
 
     def on_end(self, ctx: StrategyContext) -> None:
         """Called at end of backtest."""
         log.info(
-            f"[{self.name}] Done – equity {ctx.equity:,.0f}  "
-            f"balance {ctx.balance:,.0f}  "
-            f"positions: {[p['symbol'] for p in ctx.positions]}"
+            f"done, equity={ctx.equity:,.0f} "
+            f"balance={ctx.balance:,.0f} "
+            f"positions={[p['symbol'] for p in ctx.positions]}"
         )

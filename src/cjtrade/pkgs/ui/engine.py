@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Any
 from typing import Callable
 
+from cjtrade.pkgs.logger import get_console
+
 from .base_renderer import FormRenderer
+from .renderers.cli import form_console
 from .schema import FormSchema
 from .user_state import UserState
 
@@ -184,7 +187,7 @@ class FormEngine:
             else:
                 result = {}
         except KeyboardInterrupt:
-            print("\n\n  Cancelled.", file=sys.stderr)
+            form_console().info("\n\n  Cancelled.")
             sys.exit(0)
 
         # Merge: CLI-provided values win; renderer fills the rest
@@ -304,7 +307,7 @@ class FormEngine:
                 else:
                     raw = str(val)
                 escaped = raw.replace("'", "'\\''")
-                print(f"export {f.env_out}='{escaped}'")
+                get_console().info(f"export {f.env_out}='{escaped}'")
 
     # ------------------------------------------------------------------
     @staticmethod

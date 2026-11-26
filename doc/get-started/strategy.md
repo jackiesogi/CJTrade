@@ -62,9 +62,10 @@ def on_bar(bar, account):
     trading days on 1d bars. Changing the interval changes the strategy.
 
 !!! warning "`bar.day_high` and `bar.day_low` are the day's, not the bar's"
-    The engine feeds bars built from snapshots, whose high and low are the
-    trading day's so far. For the same reason `ta.adx`, `ta.atr` and
-    `ta.stoch` are deliberately not available.
+    They are the trading day's high and low up to this bar. `bar.open`,
+    `bar.close` and `bar.volume` are this bar's own. `bar` keeps a history
+    of closes only, so `ta.adx`, `ta.atr` and `ta.stoch`, which need each
+    bar's high and low, are deliberately not available.
 
 !!! warning "Parameters cannot be overridden yet"
     `param.*` always returns the declared default. Edit the file to change

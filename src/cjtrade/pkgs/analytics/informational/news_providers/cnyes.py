@@ -8,9 +8,12 @@ from typing import List
 
 import aiohttp
 import requests
+from cjtrade.pkgs.logger import get_logger
 
 from ._base import News
 from ._base import NewsInterface
+
+log = get_logger("analytics.informational")
 
 ##############################################################################
 
@@ -50,7 +53,7 @@ class CnyesNewsSpider():
         }
         r = requests.get(f"https://api.cnyes.com/media/api/v1/newslist/category/headline?page={page}&limit={limit}", headers=headers)
         if r.status_code != requests.codes.ok:
-            print('請求失敗', r.status_code)
+            log.error("cnyes newslist req failed: HTTP %s", r.status_code)
             return None
         # Return the full response with items in 'data' key for consistency
         try:
@@ -74,7 +77,7 @@ class CnyesNewsSpider():
                 items = []
             return {'data': items}
         except Exception as e:
-            print(f'Failed to parse CNYES response: {e}')
+            log.error("cnyes resp parse failed: %s", e)
             return None
 
     async def get_newslist_info_async(self, page=1, limit=30):
@@ -127,10 +130,10 @@ class CnyesNewsSpider():
                             items = []
                         return {'data': items}
                     else:
-                        print('請求失敗', response.status)
+                        log.error("cnyes newslist req failed: HTTP %s", response.status)
                         return None
         except Exception as e:
-            print(f'Async request failed: {e}')
+            log.error("cnyes async req failed: %s", e)
             return None
 
 ##############################################################################
@@ -221,7 +224,7 @@ class CnyesProvider(NewsInterface):
             newslist_info = await self.spider.get_newslist_info_async(page=1, limit=n)
             return self._convert_to_news_list(newslist_info, n)
         except Exception as e:
-            print(f"Error fetching news from CNYES: {e}")
+            log.error("cnyes fetch news failed: %s", e)
             return []
 
 
@@ -244,7 +247,7 @@ class CnyesProvider(NewsInterface):
             newslist_info = self.spider.get_newslist_info(page=1, limit=n)
             return self._convert_to_news_list(newslist_info, n)
         except Exception as e:
-            print(f"Error fetching news from CNYES: {e}")
+            log.error("cnyes fetch news failed: %s", e)
             return []
 
 
@@ -305,7 +308,7 @@ class CnyesProvider(NewsInterface):
 
             return filtered_news
         except Exception as e:
-            print(f"Error searching news from CNYES: {e}")
+            log.error("cnyes search news failed: %s", e)
             return []
 
 

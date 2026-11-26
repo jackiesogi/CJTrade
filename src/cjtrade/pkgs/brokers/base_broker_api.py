@@ -15,7 +15,12 @@ from cjtrade.pkgs.models.trade import Trade
 # get_positions / get_balance / get_quotes /
 # place_order / get_broker_name
 class BrokerAPIBase(ABC):
-    """A unified interface for different brokers.
+    """A unified interface for different brokers: accounts and orders.
+
+    Market data is a separate concern (``cjtrade.pkgs.marketdata``).
+    ``get_kbars``, ``get_snapshots`` and ``get_bid_ask`` are optional here:
+    a broker whose API only places orders leaves them unimplemented, and a
+    broker that does serve prices also returns them from ``market_data()``.
 
     All broker implementations must inherit from
     this class and implement all abstract methods.
@@ -54,6 +59,16 @@ class BrokerAPIBase(ABC):
         """
         pass
 
+    def market_data(self):
+        """Return this broker's own MarketData, or None if it serves no prices.
+
+        Returns
+        -------
+        MarketData or None
+            Shares this broker's session.
+        """
+        return None
+
     @abstractmethod
     def get_positions(self) -> List[Position]:
         """Get current stock positions.
@@ -75,7 +90,6 @@ class BrokerAPIBase(ABC):
         """
         pass
 
-    @abstractmethod
     def get_bid_ask(self, product: Product, intraday_odd: bool = False) -> BidAsk:
         """Return the current bid/ask quote for a product.
 
@@ -90,17 +104,19 @@ class BrokerAPIBase(ABC):
         -------
         BidAsk
         """
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} does not serve market data; "
+            "use a cjtrade.pkgs.marketdata.MarketData")
 
-    @abstractmethod
     def get_kbars(self, products: List[Product], start: str, end: str, interval: str) -> List[Kbar]:
         """Return a list of Kbar, 1-min kbar by default.
 
         Note that the range is [start, end), end is exclusive.
         """
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} does not serve market data; "
+            "use a cjtrade.pkgs.marketdata.MarketData")
 
-    @abstractmethod
     def get_snapshots(self, products: List[Product]) -> List[Snapshot]:
         """
         Get real-time market snapshots for given products.
@@ -108,7 +124,9 @@ class BrokerAPIBase(ABC):
         If broker's api does not provide some fields that required by `Snapshot`,
         broker must mention them in the `additional_note`.
         """
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} does not serve market data; "
+            "use a cjtrade.pkgs.marketdata.MarketData")
 
     # @abstractmethod  # TODO: Un-comment this when implementation is done
     # Event:

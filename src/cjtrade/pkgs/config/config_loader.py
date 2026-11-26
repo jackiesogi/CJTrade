@@ -40,7 +40,10 @@ from pathlib import Path
 from typing import List
 from typing import Union
 
+from cjtrade.pkgs.logger import get_logger
 from dotenv import load_dotenv
+
+log = get_logger("config")
 
 # TODO: Implement a hierarchical configuration structure
 # e.g. a setting called "simulation.playback_speed"
@@ -187,7 +190,7 @@ def load_supported_config_files(
         loaded.append(str(f))
 
     for l in loaded:
-        print(f"Found config file: {l}")
+        log.info("loaded cfg file %s", l)
     return loaded
 
 

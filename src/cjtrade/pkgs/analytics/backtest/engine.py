@@ -29,13 +29,13 @@ Multi-symbol
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.backtest import BacktestResult
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.kbar import Kbar
@@ -44,9 +44,7 @@ from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
-# Ensure engine emits INFO-level logs by default so runs are visible
-log.setLevel(logging.DEBUG)
+log = get_logger("analytics.backtest")
 
 # ---------------------------------------------------------------------------
 # Simulated account (internal to engine)
@@ -105,7 +103,6 @@ class _SimAccount:
 
     def buy(self, symbol: str, qty: int, price: float,
             timestamp: datetime, reason: str = "") -> Optional[Fill]:
-        # print(f"Attempting to BUY {qty} shares of {symbol} at {price} TWD/share")
         """Simulate a buy of `qty` shares at `price` after costs.
 
         Returns
@@ -118,11 +115,10 @@ class _SimAccount:
         adj_price, notional, commission, tax = self._cost_model.buy_total(price, qty, symbol)
         cost = round(notional + commission, 0)
         if cost > self.balance:
-            log.debug(f"[Engine] BUY rejected – insufficient balance "
-                      f"({self.balance:,.0f} < {cost:,.0f})")
+            log.debug(f"@{timestamp:%Y-%m-%d %H:%M} BUY {symbol} rejected: "
+                      f"balance {self.balance:,.0f} < cost {cost:,.0f}")
             return None
 
-        # print("SIM account receive BUY order")
         self.balance -= cost
         pos = self._positions.setdefault(symbol, {"quantity": 0, "avg_cost": 0.0})
         # quantity is stored as SHARES
@@ -149,7 +145,7 @@ class _SimAccount:
         """
         pos = self._positions.get(symbol)
         if not pos or pos["quantity"] < qty or qty <= 0:
-            log.debug(f"[Engine] SELL rejected – no / insufficient position in {symbol}")
+            log.debug(f"@{timestamp:%Y-%m-%d %H:%M} SELL {symbol} rejected: no/short position")
             return None
         adj_price, notional, commission, tax = self._cost_model.sell_total(price, qty, symbol)
         proceeds = round(notional - commission - tax, 0)
@@ -162,7 +158,6 @@ class _SimAccount:
         fill = Fill(symbol=symbol, action="SELL", quantity=qty,
                     price=adj_price, timestamp=timestamp, reason=reason,
                     commission=commission, tax=tax, slippage_cost=slippage_cost)
-        # print("SIM account receive SELL order")
         self._record_fill(fill)
         return fill
 
@@ -236,7 +231,6 @@ class BacktestEngine:
 
         self.kbars = sorted(kbars, key=lambda k: k.timestamp)
         # import time
-        # print([t.timestamp for t in self.kbars[:200]])
         # time.sleep(50)
         self.symbol = symbol
         self.initial_balance = initial_balance
@@ -259,8 +253,7 @@ class BacktestEngine:
         if not self.kbars:
             raise ValueError("kbars list is empty – nothing to backtest.")
 
-        # Informational startup log to make engine activity visible
-        log.info(f"[BacktestEngine] Starting run – {len(self.kbars)} bars, session_id={self.session_id}")
+        log.info("run start: n=%d bars, session_id=%s", len(self.kbars), self.session_id)
 
         account    = self._account
         price_map: Dict[str, float] = {}   # latest price per symbol
@@ -306,13 +299,11 @@ class BacktestEngine:
             # Execute signals
             for sig in signals:
                 if sig.action == "BUY":
-                    # print("Engine receive BUY signal")
                     fill = account.buy(sig.symbol, sig.quantity, sig.price,
                                        bar.timestamp, reason=sig.reason)
                     if fill:
                         strategy.on_fill(fill, ctx)
                 elif sig.action == "SELL":
-                    # print("Engine receive SELL signal")
                     fill = account.sell(sig.symbol, sig.quantity, sig.price,
                                         bar.timestamp, reason=sig.reason)
                     if fill:
@@ -340,9 +331,9 @@ class BacktestEngine:
 
         final_equity = account.equity(price_map)
         log.info(
-            f"[BacktestEngine] Finished – {len(self.kbars)} bars, "
+            f"run done: {len(self.kbars)} bars, "
             f"{len(account.fill_history)} fills, "
-            f"equity {account.initial_balance:,.0f} → {final_equity:,.0f}"
+            f"equity {account.initial_balance:,.0f} -> {final_equity:,.0f}"
         )
 
         return BacktestResult(

@@ -6,15 +6,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+
+log = get_logger("test_runner")
+
 
 def main():
     """Run the integration test script"""
+    setup_logging()
     # Get the project root directory (go up from src/cjtrade to project root)
     project_root = Path(__file__).parent.parent.parent
     test_script = project_root /  "tests" / "test_cjtrade_integration_arenax.sh"
 
     if not test_script.exists():
-        print(f"Error: Test script not found at {test_script}")
+        log.error("test script not found: %s", test_script)
         sys.exit(1)
 
     # Pass through all command line arguments to the test script
@@ -26,10 +32,10 @@ def main():
         result = subprocess.run(cmd, cwd=project_root)
         sys.exit(result.returncode)
     except KeyboardInterrupt:
-        print("\nTest interrupted by user")
+        log.warning("interrupted by user")
         sys.exit(130)
     except Exception as e:
-        print(f"Error running tests: {e}")
+        log.error("running tests failed: %s", e)
         sys.exit(1)
 
 

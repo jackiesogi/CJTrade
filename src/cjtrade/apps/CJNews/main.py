@@ -3,7 +3,11 @@ from textwrap import dedent
 import toml
 from cjtrade.pkgs.analytics.informational.news_client import NewsClient
 from cjtrade.pkgs.analytics.informational.news_client import NewsProviderType
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.ui import FormEngine
+
+log = get_logger("CJNews")
 
 def generate_news_search_form(news_list):
     return toml.dumps({
@@ -21,6 +25,7 @@ def generate_news_search_form(news_list):
     })
 
 if __name__ == "__main__":
+    setup_logging()
     spec = dedent("""\
         title = "CJNews search engine (lite)"
 
@@ -50,7 +55,7 @@ if __name__ == "__main__":
     """)
 
     form = FormEngine(toml_str=spec, renderer="web").run()
-    print(f"User input: {form}")
+    log.info("user input: %s", form)
 
     provider = {
         "CNYES 鉅亨網": NewsProviderType.CNYES,

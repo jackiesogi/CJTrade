@@ -1,7 +1,6 @@
 """
 Data parsing utilities for TWSE API responses
 """
-import logging
 from datetime import datetime
 from typing import Any
 from typing import Dict
@@ -9,8 +8,12 @@ from typing import List
 from typing import Optional
 from typing import Union
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger("analytics.fundamental")
 
 
 class TWSEDataParser:
@@ -313,25 +316,27 @@ class TWSEDataParser:
 # 使用範例
 def example_usage():
     """使用範例"""
+    out = get_console("analytics.fundamental")
     parser = TWSEDataParser()
 
     # 解析日期
     date = parser.parse_date("2023/12/26")
-    print(f"解析日期: {date}")
+    out.info(f"解析日期: {date}")
 
     # 解析數值
     pe_ratio = parser.parse_float("15.67")
     revenue = parser.parse_float("1,234,567")
-    print(f"PE比率: {pe_ratio}, 營收: {revenue}")
+    out.info(f"PE比率: {pe_ratio}, 營收: {revenue}")
 
     # 正規化股票代號
     symbol = parser.normalize_symbol("2330")
-    print(f"股票代號: {symbol}")
+    out.info(f"股票代號: {symbol}")
 
     # 分類公告
     category = parser.categorize_announcement("公布111年第三季財務報告")
-    print(f"公告分類: {category}")
+    out.info(f"公告分類: {category}")
 
 
 if __name__ == "__main__":
+    setup_logging()
     example_usage()

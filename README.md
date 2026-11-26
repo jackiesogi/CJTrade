@@ -150,28 +150,31 @@ command line. Built-in strategies: `BollingerStrategy`, `ADXAdaptiveStrategy`,
 ### Trading engine
 
 Each strategy runs as its own process; only the master process holds the
-broker session and the risk gate. Before stepping to the next bar, the master
-waits for every bot to answer the current one, so `--speed=0` and
-`--speed=60` produce the same bars, orders and fills.
+broker session and the risk gate. Every bar, the master publishes each
+symbol's closed 1m bars (`client.market.get_kbars`) to its bots. Before
+stepping to the next bar, it waits for every bot to answer the current one,
+so `--speed=0` and `--speed=60` produce the same bars, orders and fills.
 
 <!-- cjcheck: static -->
 ```sh
 uv run arenaxd --backend=backtest --port=8802 > /dev/null 2>&1 &
 sleep 15
-ARENAX_PORT=8802 uv run python poc/trading_engine/main2.py \
+ARENAX_PORT=8802 uv run python poc/trading_engine/main.py \
   --broker=arenax --mode=backtest --watch-list=2357 \
   --fund=1000000 --days=30 --start-date=2025-09-01 --speed=0
 ```
 
 The bots that run are listed in `BOT_ROSTER` in
-[`poc/trading_engine/main2.py`](./poc/trading_engine/main2.py), or in a file
+[`poc/trading_engine/main.py`](./poc/trading_engine/main.py), or in a file
 passed with `--roster=`. A read-only status page is served on
 `http://127.0.0.1:8898/status` while a run is in progress.
 
 > [!NOTE]
-> The `backtest` backend logs in to Sinopac to read price data, so it needs
-> the `sinopac` extra and credentials. The trading engine is a proof of
-> concept under `poc/`.
+> By default the `backtest` backend reads prices from Sinopac, so it needs
+> the `sinopac` extra and credentials; `arenaxd --data=finmind,yfinance`
+> runs it without a broker account, and `--data=offline --price-db=FILE`
+> runs it on bars preloaded with `preload-prices`, with no network at all.
+> The trading engine is a proof of concept under `poc/`.
 
 ### Reading the result
 

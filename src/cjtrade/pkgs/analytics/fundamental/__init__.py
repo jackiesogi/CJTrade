@@ -6,7 +6,6 @@ and other public sources. It includes company basic information, financial ratio
 EPS data, and major announcements.
 """
 import asyncio
-import logging
 from datetime import datetime
 from typing import Any
 from typing import Dict
@@ -21,6 +20,9 @@ from cjtrade.pkgs.analytics.fundamental.models.financial_data import FinancialRa
 from cjtrade.pkgs.analytics.fundamental.models.financial_data import IncomeStatementInfo
 from cjtrade.pkgs.analytics.fundamental.providers.twse import TWSEProvider
 from cjtrade.pkgs.analytics.fundamental.utils.parser import TWSEDataParser
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 
 # get_company_basic_info(): 公司基本資料（上市時間、負責人、公司全名......）
 # get_financial_ratios(): 財務比率（PE/PB等）
@@ -31,7 +33,7 @@ from cjtrade.pkgs.analytics.fundamental.utils.parser import TWSEDataParser
 # get_company_summary(): 一次獲取公司資訊總結（基本資料、財務比率、EPS、綜損表、資負表等）
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger("analytics.fundamental")
 
 
 class CompanyInfoProvider:
@@ -311,20 +313,21 @@ async def example_usage():
     --------
     Demo only; makes network calls to TWSE.
     """
+    out = get_console("analytics.fundamental")
     async with CompanyInfoProvider() as provider:
         # Get complete information for TSMC (2330)
         summary = await provider.get_company_summary("2330")
-        print("TSMC Summary:", summary['basic_info'])
-        print("TSMC Financial Ratios:", summary['financial_ratios'])
+        out.info("TSMC Summary: %s", summary['basic_info'])
+        out.info("TSMC Financial Ratios: %s", summary['financial_ratios'])
 
         # Get major announcements from the past 7 days
         recent_news = await provider.get_recent_announcements(days=7)
-        print(f"Major announcements from the past 7 days: {len(recent_news)} records")
+        out.info(f"Major announcements from the past 7 days: {len(recent_news)} records")
 
         for news in recent_news[:3]:
-            print(f"  {news}")
+            out.info(f"  {news}")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
     asyncio.run(example_usage())

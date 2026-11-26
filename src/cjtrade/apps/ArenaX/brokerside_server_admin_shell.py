@@ -23,10 +23,14 @@ from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models import *
 from dotenv import load_dotenv
 # from cjtrade.apps.ArenaX.arenax_middleware import ArenaXMiddleWare
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
+
+out = get_console("ArenaX.admin_shell")
 
 exit_flag = False
 interactive_mode = False  # Track if running in interactive mode
@@ -57,19 +61,19 @@ class CommandBase(ABC):
         if self.variadic:
             if provided_count < required_count:
                 min_args = f"at least {required_count}" if required_count > 0 else "any number of"
-                print(f"Error: '{self.name}' requires {min_args} arguments")
+                out.info(f"Error: '{self.name}' requires {min_args} arguments")
                 return False
             return True
 
         # For fixed-arg commands, check exact requirements
         if provided_count < required_count:
-            print(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
+            out.info(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
             if self.optional_params:
-                print(f"Optional: {', '.join(self.optional_params)}")
+                out.info(f"Optional: {', '.join(self.optional_params)}")
             return False
 
         if provided_count > total_count:
-            print(f"Error: '{self.name}' accepts at most {total_count} arguments")
+            out.info(f"Error: '{self.name}' accepts at most {total_count} arguments")
             return False
 
         return True
@@ -100,7 +104,7 @@ class HealthCheckCommand(CommandBase):
         self.params = []
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
-        print(client.check_health())
+        out.info(client.check_health())
 
 
 class ShowConfigCommand(CommandBase):
@@ -112,12 +116,12 @@ class ShowConfigCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         response = client.get_config()
-        print("Server configuration:")
+        out.info("Server configuration:")
         for key, value in response["server_config"].items():
-            print(f"  {key}: {value}")
-        print("Backend configuration:")
+            out.info(f"  {key}: {value}")
+        out.info("Backend configuration:")
         for key, value in response["backend_config"].items():
-            print(f"  {key}: {value}")
+            out.info(f"  {key}: {value}")
 
 
 class StartServerCommand(CommandBase):
@@ -128,7 +132,7 @@ class StartServerCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         res = client.start_backend(headers={"X-Client": "admin-shell"})
-        print(f"Start response: {res}")
+        out.info(f"Start response: {res}")
 
 
 class StopServerCommand(CommandBase):
@@ -139,7 +143,7 @@ class StopServerCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         res = client.stop_backend(headers={"X-Client": "admin-shell"})
-        print(f"Stop response: {res}")
+        out.info(f"Stop response: {res}")
 
 
 class SetTimeCommand(CommandBase):
@@ -154,7 +158,7 @@ class SetTimeCommand(CommandBase):
         # parse to isoformat
         anchor_time = datetime.fromisoformat(anchor_time).isoformat()
         res = client.set_timeline_origin(anchor_time, headers={"X-Client": "admin-shell"})
-        print(f"Set-time response: {res}")
+        out.info(f"Set-time response: {res}")
 
 
 class PauseCommand(CommandBase):
@@ -165,7 +169,7 @@ class PauseCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         res = client.pause_time_progress(headers={"X-Client": "admin-shell"})
-        print(f"Pause response: {res}")
+        out.info(f"Pause response: {res}")
 
 
 class ResumeCommand(CommandBase):
@@ -176,7 +180,7 @@ class ResumeCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         res = client.resume_time_progress(headers={"X-Client": "admin-shell"})
-        print(f"Resume response: {res}")
+        out.info(f"Resume response: {res}")
 
 
 class ShowTimeCommand(CommandBase):
@@ -188,7 +192,7 @@ class ShowTimeCommand(CommandBase):
 
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         res = client.get_market_time(headers={"X-Client": "admin-shell"})
-        print(f"System time: {res}")
+        out.info(f"System time: {res}")
 
 
 class QueryCommand(CommandBase):
@@ -201,7 +205,7 @@ class QueryCommand(CommandBase):
     def execute(self, client: ArenaXMiddleWare, *args, **kwargs) -> None:
         symbol = args[0]
         res = client.get_price_from_exchange(symbol, headers={"X-Client": "admin-shell"})
-        print(f"Price of {symbol}: {res}")
+        out.info(f"Price of {symbol}: {res}")
 
 
 class ExitCommand(CommandBase):
@@ -244,7 +248,7 @@ class HelpCommand(CommandBase):
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         for cmd in command_registry.values():
-            print(f"  {cmd.get_help()}")
+            out.info(f"  {cmd.get_help()}")
 
 
 # ========== Command Registry ==========
@@ -292,8 +296,8 @@ def process_command(cmd_line: str, client: ArenaXMiddleWare, **config: Any):
     # Look up command
     cmd = command_registry.get(cmd_name)
     if cmd is None:
-        print(f"Unknown command: '{cmd_name}'")
-        print("Type 'help' to see available commands")
+        out.info(f"Unknown command: '{cmd_name}'")
+        out.info("Type 'help' to see available commands")
         return False
 
     # Validate arguments
@@ -305,10 +309,10 @@ def process_command(cmd_line: str, client: ArenaXMiddleWare, **config: Any):
         cmd.execute(client, *args, **config)
         return True
     except ValueError as e:
-        print(f"Invalid argument: {e}")
+        out.info(f"Invalid argument: {e}")
         return False
     except Exception as e:
-        print(f"Command failed: {e}")
+        out.info(f"Command failed: {e}")
         return False
 
 
@@ -326,9 +330,9 @@ def init_readline():
 
 def print_header():
     # Red version
-    print("\033[91m--------------------------------------------------------------------------\033[0m")
-    print("\033[91mArenaX Server Admin Shell. Use it with caution!!!\033[0m")
-    print("\033[91m--------------------------------------------------------------------------\033[0m")
+    out.info("\033[91m--------------------------------------------------------------------------\033[0m")
+    out.info("\033[91mArenaX Server Admin Shell. Use it with caution!!!\033[0m")
+    out.info("\033[91m--------------------------------------------------------------------------\033[0m")
 
 
 def interactive_shell(client: AccountClient, config: dict = None):
@@ -358,12 +362,14 @@ def interactive_shell(client: AccountClient, config: dict = None):
 
         except (EOFError, KeyboardInterrupt):
             break
-    print("Bye!")
+    out.info("Bye!")
 
 
 def main():
     import sys
     import argparse
+
+    setup_logging()
 
     # Force line buffering for stdout and stderr to keep output in order
     # This prevents stderr (errors/warnings from yfinance) and stdout (our logs)
@@ -400,7 +406,7 @@ def main():
             args = shell_argv[1:]
 
             cmd_line = f"{command} {' '.join(args)}".strip()
-            print(f"Executing: {cmd_line}")
+            out.info(f"Executing: {cmd_line}")
             success = process_command(cmd_line, mid, config=config)
             if not success:
                 exit_code = 1
@@ -410,7 +416,7 @@ def main():
             interactive_shell(mid, config=config)
 
     except Exception as e:
-        print(f"Fatal error: {e}")
+        out.info(f"Fatal error: {e}")
         exit_code = 1
     finally:
         pass

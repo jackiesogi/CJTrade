@@ -1,0 +1,82 @@
+# Every label the repository uses, kept in sync by .github/workflows/labels.yml.
+#
+# Three kinds, told apart by colour and prefix:
+#   type      what the change is; set from the branch name (type/desc), so it
+#             is the PR title's [type] in label form
+#   area:     which part of the code it touches; set from the changed files
+#   the rest  cross-cutting flags: tests, CI, dependencies, real money
+#
+# The sync creates and updates labels; it never deletes one. Rules for which
+# label goes on which pull request live in .github/labeler.yml.
+
+# ── type (branch prefix) ──────────────────────────────────────────────────────
+- name: enhancement
+  color: a2eeef
+  description: "New feature or request (feat/ branches)"
+- name: bug
+  color: d73a4a
+  description: "Something isn't working (fix/ branches)"
+- name: documentation
+  color: 0075ca
+  description: "Docs, READMEs, ref/ notes (docs/ branches or doc files)"
+- name: chore
+  color: c5def5
+  description: "Tooling, cleanup, housekeeping (chore/ branches)"
+- name: refactor
+  color: d4c5f9
+  description: "Code change with no behaviour change (refactor/ branches)"
+- name: poc
+  color: fef2c0
+  description: "Proof of concept, not production code (poc/ branches)"
+
+# ── area: (changed files) ─────────────────────────────────────────────────────
+- name: "area: arenax"
+  color: 1d76db
+  description: "ArenaX simulated broker: server, backends, its client"
+- name: "area: sinopac"
+  color: 1d76db
+  description: "Sinopac (shioaji) broker adapter"
+- name: "area: brokers"
+  color: 1d76db
+  description: "Broker-neutral API: AccountClient, BrokerAPIBase"
+- name: "area: market-data"
+  color: 0e8a16
+  description: "pkgs/marketdata sources, cache, bar/tick models, preload-prices"
+- name: "area: engine"
+  color: 5319e7
+  description: "Trading engine and bots (poc/trading_engine)"
+- name: "area: strategy"
+  color: 5319e7
+  description: "Strategies, strategy authoring, strategy-tool, CJEdit"
+- name: "area: backtest"
+  color: 5319e7
+  description: "Backtest engine, evaluation reports, oneshot, insight"
+- name: "area: risk"
+  color: b60205
+  description: "Pre-trade risk gate"
+- name: "area: system"
+  color: bfd4f2
+  description: "CJTrade System (apps/cjtrade_system)"
+- name: "area: shell"
+  color: bfd4f2
+  description: "Interactive cjtrade shell"
+- name: "area: analytics"
+  color: bfdadc
+  description: "Indicators, fundamentals, news, LLM, charts"
+- name: "area: core"
+  color: bfdadc
+  description: "Models, config, paths, logging, db, utils, forms"
+
+# ── flags (changed files) ─────────────────────────────────────────────────────
+- name: tests
+  color: fbca04
+  description: "Adds or changes tests"
+- name: ci
+  color: ededed
+  description: "GitHub workflows, pre-commit hooks"
+- name: dependencies
+  color: 0366d6
+  description: "pyproject.toml or uv.lock"
+- name: real-money
+  color: e11d21
+  description: "Touches code that can place orders on a real account; review with care"

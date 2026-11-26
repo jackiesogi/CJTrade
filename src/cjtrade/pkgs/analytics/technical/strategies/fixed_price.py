@@ -1,6 +1,9 @@
 import asyncio
 
 from cjtrade.pkgs.analytics.technical.models import *
+from cjtrade.pkgs.logger import get_logger
+
+log = get_logger("analytics.technical")
 
 class FixedPriceStrategy:
     """A simple fixed price strategy based on OHLCV data.
@@ -31,13 +34,13 @@ class FixedPriceStrategy:
         """Return a BUY, SELL or HOLD signal for `state`.
 
         The buy check runs first, so BUY wins if both targets are hit.
-        Prints a line when a BUY or SELL signal is produced.
+        Logs a line when a BUY or SELL signal is produced.
         """
         if self._should_buy(state):
-            print(f"!!!!!! Buy signal generated at price: {state.close}")
+            log.info("BUY signal px=%s", state.close)
             return Signal(action=SignalAction.BUY, reason=f"Price reached buy target of {self.buy_target_price}")
         elif self._should_sell(state):
-            print(f"!!!!!! Sell signal generated at price: {state.close}")
+            log.info("SELL signal px=%s", state.close)
             return Signal(action=SignalAction.SELL, reason=f"Price reached sell target of {self.sell_target_price}")
         else:
             return Signal(action=SignalAction.HOLD, reason="Price not at target")

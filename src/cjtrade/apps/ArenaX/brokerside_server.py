@@ -28,6 +28,14 @@ from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import kv
+from cjtrade.pkgs.logger import one_line
+from cjtrade.pkgs.logger import setup_logging
+from cjtrade.pkgs.marketdata import MarketData
+from cjtrade.pkgs.marketdata import from_names
+from cjtrade.pkgs.marketdata.base import to_window
+from cjtrade.pkgs.marketdata.factory import parse_names
 from apiflask import APIFlask
 from dotenv import load_dotenv
 from flask import g
@@ -60,30 +68,19 @@ def _redact_secrets(cfg: dict) -> dict:
         for k, v in cfg.items()
     }
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)-8s: %(message)s"
-)
-log = logging.getLogger("cjtrade.arenax_server")
+log = get_logger("ArenaX.server")
 
-# Strip the "IP - - [timestamp] " prefix that werkzeug embeds directly into
-# the access-log message string, so the outer logging formatter's timestamp
-# is the only one shown.
+# werkzeug embeds "IP - - [timestamp] " in every access-log message. The log
+# prefix already carries a timestamp, so drop werkzeug's (and the IP with it,
+# as the old formatter did) to keep one timestamp per line.
 import re as _re
-class _WerkzeugAccessFormatter(logging.Formatter):
+class _WerkzeugAccessFilter(logging.Filter):
     _PREFIX = _re.compile(r'^\S+ - - \[[^\]]+\] ')
-    def format(self, record: logging.LogRecord) -> str:
+    def filter(self, record: logging.LogRecord) -> bool:
         record.msg = self._PREFIX.sub('', record.getMessage())
         record.args = None
-        return super().format(record)
+        return True
 
-_wz_logger = logging.getLogger("werkzeug")
-_wz_logger.propagate = False
-_wz_handler = logging.StreamHandler()
-_wz_handler.setFormatter(_WerkzeugAccessFormatter(
-    fmt="[%(asctime)s] %(levelname)-8s: %(message)s"
-))
-_wz_logger.addHandler(_wz_handler)
 
 def prepare_price_db(price_db_path: Optional[str]):
     if not price_db_path:
@@ -102,6 +99,17 @@ _FINISHED_ORDER_STATUSES = frozenset((
     OrderStatus.CANCELLED.value,
     OrderStatus.REJECTED.value,
 ))
+
+# Where each backend reads prices from unless told otherwise (--data or
+# AX_DATA_SOURCES). Tried in order. backtest keeps Sinopac first, which is
+# what it always did; naming only sources that need no account (finmind,
+# yfinance) lets it run without logging in to Sinopac at all.
+DEFAULT_DATA_SOURCES = {
+    "demo": "yfinance",
+    "backtest": "sinopac,yfinance",
+    "paper": "sinopac",
+    "real": "sinopac",
+}
 
 BROKER_KBAR_DATA_AVAILABILITY = {
     "sinopac": { "start": "2020-03-20", "end": "3000-12-31" },
@@ -138,7 +146,8 @@ def load_cjsys(backend_str: str = "demo"):
     keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
             'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND',
-            'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT']
+            'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT',
+            'AX_DATA_SOURCES', 'AX_PRICE_DB_PATH']
     for key in keys:
         if os.environ.get(key):
             log.info(f"  {key}={os.environ[key]}")
@@ -186,45 +195,72 @@ class ArenaX_BrokerSideServer:
         host: str = "127.0.0.1",
         port: int = 8801,
         match_interval: float = 1.0,   # real seconds between matching sweeps
+        market_data: Optional[MarketData] = None,
+        data_sources: Optional[str] = None,
     ):
+        """
+        Parameters
+        ----------
+        market_data : MarketData, optional
+            Where the simulated exchange reads prices from. Takes precedence
+            over `data_sources`.
+        data_sources : str, optional
+            Source names in order, e.g. ``"finmind,yfinance"``. Defaults to
+            the ``AX_DATA_SOURCES`` setting, then DEFAULT_DATA_SOURCES.
+            ``"offline"`` serves only what the price cache already holds.
+        price_db_path : str, optional
+            The price cache file. Defaults to the ``AX_PRICE_DB_PATH``
+            setting, then ``paths.price_db_path()``.
+        """
+        price_db_path = price_db_path or internal_config.get('price_db_path') or None
         if backend is not None:
             self.backend = backend
+            self.real = getattr(backend, "real_account", None)
         else:
             # Redacted, and through the logger rather than print(). This used
             # to print external_config verbatim, so every start wrote the live
             # Sinopac api_key, secret_key and CA password into the server log
             # in plaintext. GET /api/v1/config was fixed to redact; the log was
             # still handing the same values out.
-            log.info("internal_config: %s", _redact_secrets(internal_config))
-            log.info("external_config: %s", _redact_secrets(external_config))
+            log.info("internal_config: %s", kv(_redact_secrets(internal_config)))
+            log.info("external_config: %s", kv(_redact_secrets(external_config)))
             cost_model = CostModel(
                 commission_discount=float(internal_config.get('commission_discount', 1.0)),
                 slippage_model=internal_config.get('slippage_model', 'none'),
                 slippage_pct=float(internal_config.get('slippage_pct', 0.0005)),
             )
-            if backend_str == "backtest":
-                # Current default, ArenaX use sinopac backend for price feed.
-                # print(f"internal_config: {internal_config}")
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.real.connect()   # must connect before creating backend so that
-                                      # _initialize_market_time() / _fetch_and_cache_range()
-                                      # can use the real broker instead of falling back to yfinance
-                self.backend = ArenaX_Backend_Historical(real_account=self.real, cost_model=cost_model, **internal_config)
-            elif backend_str == "paper":
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, cost_model=cost_model, **internal_config)
-            elif backend_str == "demo":
-                self.real = None
-                self.backend = ArenaX_Backend_None(cost_model=cost_model, **internal_config)
-            elif backend_str == "real":
-                # TODO: Add this environment variable also into the external config
-                if not os.environ.get("I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
-                    raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
-                self.real = AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
-                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, cost_model=cost_model, **internal_config)
-            else:
+            if backend_str not in DEFAULT_DATA_SOURCES:
                 raise ValueError(f"Unsupported backend_str: {backend_str}")
-
+            sources = parse_names(data_sources or internal_config.get('data_sources')
+                                  or DEFAULT_DATA_SOURCES[backend_str])
+            # Sinopac is logged in to only when something needs it: the
+            # account itself (paper and real trade on it) or its prices.
+            needs_account = backend_str in ("paper", "real")
+            needs_sinopac_data = market_data is None and "sinopac" in sources
+            if backend_str == "real" and not os.environ.get(
+                    "I_UNDERSTAND_REAL_TRADING_RISKS", "n").lower() in ("y", "yes", "true", "1"):
+                raise ValueError("Real trading backend is currently disabled for safety reasons. Please enable it by setting the environment variable I_UNDERSTAND_REAL_TRADING_RISKS=y")
+            self.real = (AccountClient(broker_type=BrokerType.SINOPAC, **external_config)
+                         if needs_account or needs_sinopac_data else None)
+            if needs_sinopac_data:
+                self.real.connect()
+            if market_data is None:
+                # No cache here: the backend puts its own in front.
+                market_data = from_names(sources, sinopac=self.real, cache=False,
+                                         cache_path=price_db_path)
+            log.info("market data: %s", market_data.name)
+            log.info("price cache: %s", price_db_path or paths.price_db_path())
+            config = {k: v for k, v in internal_config.items() if k != 'price_db_path'}
+            common = dict(cost_model=cost_model, market_data=market_data,
+                          price_db_path=price_db_path, **config)
+            if backend_str == "backtest":
+                self.backend = ArenaX_Backend_Historical(real_account=self.real, **common)
+            elif backend_str == "paper":
+                self.backend = ArenaX_Backend_PaperTrade(real_account=self.real, **common)
+            elif backend_str == "demo":
+                self.backend = ArenaX_Backend_None(**common)
+            else:
+                self.backend = ArenaX_Backend_RealTrade(real_account=self.real, **common)
         self.host = host
         self.port = port
         self._match_interval = match_interval
@@ -494,6 +530,37 @@ class ArenaX_BrokerSideServer:
                 "paused_time": t["paused_time"].isoformat() if t.get("paused_time") else None,
             })
 
+        @app.get("/api/v1/clock/timeline")
+        @app.doc(tags=["Clock"])
+        def get_clock_timeline():
+            """The moments a replay steps through. Query: symbols, start, end, interval.
+
+            The union of the symbols' bar timestamps in the half-open window
+            [start, end), sorted, as ISO 8601. Timestamps only, no prices, and
+            not limited by the clock: a replay driver has to know where the
+            bars are before it can step to them, while the bars themselves
+            (GET /api/v1/market/<symbol>/kbars) stay hidden until the clock
+            reaches them.
+            """
+            symbols = [s.strip() for s in (request.args.get("symbols") or "").split(",")
+                       if s.strip()]
+            interval = request.args.get("interval", "1m")
+            if not symbols:
+                return jsonify({"ok": False, "error": "symbols is required"}), 400
+            try:
+                start, end = to_window(request.args.get("start"), request.args.get("end"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False,
+                                "error": "start and end must be ISO dates or datetimes"}), 400
+            try:
+                stamps = sorted({k.timestamp for sym in symbols
+                                 for k in self.backend.data.get_kbars(sym, start, end, interval)})
+            except Exception:
+                # Details stay in the server log; a client gets no stack trace.
+                log.exception("timeline %s failed", one_line(",".join(symbols)))
+                return jsonify({"ok": False, "error": "could not read the timeline"}), 500
+            return jsonify({"ok": True, "result": [t.isoformat() for t in stamps]}), 200
+
         @app.get("/api/v1/config")
         @app.doc(tags=["Health"])
         def get_config():
@@ -518,10 +585,11 @@ class ArenaX_BrokerSideServer:
             payload = request.get_json(silent=True) or {}
             api_key = payload.get("api_key")
             if api_key in self._valid_api_keys:
-                print(f"API key {api_key} is valid. Login successful.")
+                # Never the key, not even part of it.
+                log.info("login ok")
                 return jsonify({"ok": True, "message": "Login successful"})
             else:
-                print(f"API key {api_key} is invalid. Login failed.")
+                log.warning("login failed: invalid api key")
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
         @app.delete("/api/v1/session")
@@ -663,8 +731,18 @@ class ArenaX_BrokerSideServer:
                     opt_field=opt_field,
                 )
                 result = self.backend.place_order(order)
-                print(f"Placing order {order.__dict__}")
-                print(f"Order result: {result.__dict__ if result else None}")
+                log.info("@%s order %s %s %s.%s x%d px=%s %s/%s/%s opt={%s} -> %s",
+                         f"{order.created_at:%Y-%m-%d %H:%M}", order.id,
+                         order.action.value, product.symbol, product.exchange,
+                         order.quantity, order.price, order.price_type.value,
+                         order.order_type.value, order.order_lot.value,
+                         kv(order.opt_field),
+                         (f"{result.status.value} ({result.message})"
+                          # linked_order is usually the order's own id; only a
+                          # different one says something.
+                          + (f" linked={result.linked_order}"
+                             if result.linked_order and result.linked_order != order.id else "")
+                          if result else None))
                 return jsonify({"ok":True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -675,8 +753,7 @@ class ArenaX_BrokerSideServer:
             """Cancel a resting order."""
             try:
                 result = self.backend.cancel_order(order_id)
-                print(f"Cancelling order {order_id}")
-                print(f"Order result: {result.__dict__ if result else None}")
+                log.info("cancel order %s -> %s", order_id, result.__dict__ if result else None)
                 return jsonify({"ok": True, "result": result.to_dict() if result else None}), 200
             except Exception as e:
                 return jsonify({"ok": False, "error": str(e)}), 500
@@ -723,30 +800,38 @@ class ArenaX_BrokerSideServer:
             whether to call the kbars route – that endpoint handles all source
             selection internally (price_db → real broker → yfinance).
             """
-            if self.backend.real_account is None:
-                return jsonify({"ok": True, "has_real_broker": False}), 200
-            try:
-                broker = self.backend.real_account.get_broker_name()
-                availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker, {})
-                return jsonify({
-                    "ok": True,
-                    "has_real_broker": True,
-                    "broker": broker,
-                    "available_start": availability.get("start"),
-                    "available_end":   availability.get("end"),
-                }), 200
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
+            source = getattr(self.backend, "market_data", None)
+            caps = source.capabilities if source is not None else None
+            info = {
+                "ok": True,
+                "source": source.name if source is not None else None,
+                "intervals": sorted(caps.intervals) if caps else [],
+                "has_real_broker": self.backend.real_account is not None,
+            }
+            if self.backend.real_account is not None:
+                try:
+                    broker = self.backend.real_account.get_broker_name()
+                    availability = BROKER_KBAR_DATA_AVAILABILITY.get(broker, {})
+                    info.update(broker=broker,
+                                available_start=availability.get("start"),
+                                available_end=availability.get("end"))
+                except Exception:
+                    log.exception("data availability: broker query failed")
+                    return jsonify({"ok": False,
+                                    "error": "could not query the broker"}), 500
+            return jsonify(info), 200
 
 
         @app.get("/api/v1/market/<string:symbol>/kbars")
         @app.doc(tags=["Market"])
         def market_kbars(symbol: str):
-            """Historical bars. Query: start, end, interval (1m|5m|1h|1d).
+            """Closed bars. Query: start, end, interval (1m|5m|1h|1d).
 
-            The server picks the data source itself (price_db -> real broker ->
-            yfinance); there is deliberately no way to ask for one, so callers
-            cannot depend on where the bars came from.
+            start/end are whole dates (end inclusive) or ISO datetimes (a
+            half-open window). Bars that have not closed on the simulated
+            clock are left out. The source is the one the server was started
+            with (--data), behind its price cache; there is deliberately no way
+            to ask for one, so callers cannot depend on where bars came from.
             """
             start = request.args.get("start")
             end = request.args.get("end")
@@ -759,8 +844,8 @@ class ArenaX_BrokerSideServer:
                 }), 400
             try:
                 kbars = self.backend.kbars(symbol, start, end, interval)
-                print(f"length of kbars: {len(kbars)}")
-                print(f"first kbar {kbars[0].__dict__ if kbars else None} of {symbol}")
+                log.debug("kbars %s n=%d first=%s", symbol, len(kbars),
+                          kbars[0].__dict__ if kbars else None)
                 resp = {"ok": True, "result": [kb.__dict__ for kb in kbars]}
                 if self._data_readiness != DataReadiness.ALL_SET:
                     resp["warning"] = f"data_readiness={self._data_readiness.value}; result may be inaccurate"
@@ -903,7 +988,7 @@ class ArenaX_BrokerSideServer:
                 self._data_readiness = DataReadiness.ALL_SET
             return True
         except Exception as e:
-            print(f"Error in set_timeline_origin: {e}")
+            log.error("set_timeline_origin failed: %s", e)
             return False
 
     # TODO: Need to verify functionality and carify data flow (whom to consume the symbols to preload)
@@ -937,17 +1022,18 @@ class ArenaX_BrokerSideServer:
         symbols = [symbol for symbol in (preload_symbols or []) if symbol]
 
         if not symbols and not self.backend.real_account:
-            print("Warning: No symbols specified and cannot fetch positions from real account. Abort!")
+            log.warning("preload aborted: no symbols given and no real account to read positions from")
             return []
 
         if not self.backend.is_connected():
-            print("Warning: Calling _preload_data() when backend is not connected!")
-            print("         The symbols to preload may be outdated (only when backend.login() will sync account state)")
+            log.warning("_preload_data() called while backend not connected; "
+                        "symbols may be outdated (only backend.login() syncs account state)")
         # NOTE: Weird data flow occurs here!
-        symbols = [s.symbol for s in self.backend.real_account.get_positions()] if not symbols else symbols
+        if not symbols:
+            symbols = [s.symbol for s in self.backend.real_account.get_positions()]
         days = preload_days or getattr(self.backend, "num_days_preload", 3)
 
-        print(f"Preloading data for symbols: {symbols} for {preload_days} days...")
+        log.info("preload %s, days=%s", symbols, preload_days)
         for symbol in symbols:
             self.backend.market.create_historical_market(symbol, days)
         return sorted(symbols)
@@ -985,7 +1071,7 @@ class ArenaX_BrokerSideServer:
             # a whole interval.
             with self._backend_lock:
                 if hasattr(self.backend, "_check_if_any_order_filled"):
-                    self.backend._check_if_any_order_filled()  # NOTE: this function has implicit print
+                    self.backend._check_if_any_order_filled()  # NOTE: logs each fill
 
                 # Expiry is the backend's business, keyed on each order's own
                 # time-in-force. The server used to run a date-latched EOD sweep
@@ -1027,6 +1113,13 @@ class ArenaX_BrokerSideServer:
 def main():
     import argparse
 
+    setup_logging()
+    # setup_logging() holds werkzeug at WARNING; the server shows its HTTP
+    # access lines, minus werkzeug's own "IP - - [time]" prefix.
+    _wz = logging.getLogger("werkzeug")
+    _wz.setLevel(logging.INFO)
+    _wz.addFilter(_WerkzeugAccessFilter())
+
     # Where this instance keeps its data, so a bug report can say so instead of
     # guessing, and so CJTRADE_HOME being set (or not) is visible immediately.
     log.info("Storage locations:\n%s", paths.describe())
@@ -1038,6 +1131,13 @@ def main():
     parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")
     parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo", "real"], default="demo", help="Backend type to use.")
+    parser.add_argument("--data", type=str, default=None,
+                        help="Price sources in order, e.g. 'finmind,yfinance' "
+                             "(sinopac, finmind, yfinance, cache, offline). "
+                             "CLI > AX_DATA_SOURCES > the backend's default.")
+    parser.add_argument("--price-db", type=str, default=None,
+                        help="Price cache file (SQLite). CLI > AX_PRICE_DB_PATH > "
+                             "the default cache file.")
     args = parser.parse_args()
 
     load_cjconf()
@@ -1047,12 +1147,13 @@ def main():
     host = args.host or internal_config.get('host_address', '127.0.0.1')
     port = args.port or int(internal_config.get('host_port', 8801))
 
-    server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend)
-    print(f"Starting server on {host}:{port} with backend '{args.backend}'...")
+    server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend,
+                                     data_sources=args.data, price_db_path=args.price_db)
+    log.info("starting on %s:%s, backend=%s", host, port, args.backend)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down server...")
+        log.info("shutting down")
         server.stop_http()
         server.stop_backend()
 

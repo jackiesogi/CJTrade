@@ -7,6 +7,13 @@ import locale
 import sys
 from datetime import datetime
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+
+log = get_logger("utils")
+out = get_console()
+
 
 def format_date(dt: datetime, format_str: str = None) -> str:
     """Format a datetime object.
@@ -125,6 +132,7 @@ def parse_date_string(date_str: str) -> datetime:
 
 def main():
     """Main entry point for command-line usage."""
+    setup_logging()
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -170,7 +178,7 @@ Examples:
                 format_str = args.format[1:]
                 output = dt.strftime(format_str)
             else:
-                print(f"Error: Format must start with '+'", file=sys.stderr)
+                log.error("format must start with '+'")
                 sys.exit(1)
         elif args.iso_8601:
             if args.iso_8601 == 'date':
@@ -189,13 +197,13 @@ Examples:
             # Default format
             output = format_date(dt)
 
-        print(output)
+        out.info(output)
 
     except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        log.error("%s", e)
         sys.exit(1)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        log.error("%s", e)
         sys.exit(1)
 
 

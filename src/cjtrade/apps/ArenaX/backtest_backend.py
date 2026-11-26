@@ -7,6 +7,10 @@ from typing import Optional
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.market_data import ArenaX_Market
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import kv
+
+log = get_logger("ArenaX.backend.backtest")
 
 
 class ArenaX_Backend_Historical(ArenaX_BackendBase):
@@ -29,14 +33,16 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             **kwargs
         )
         self._backtest_start_date = backtest_start_date
-        self.market = ArenaX_Market(real_account=real_account, price_db_path=self.price_db_path)
+        self.market = ArenaX_Market(market_data=self.market_data, data=self.data)
         if hasattr(self.market, "set_playback_speed"):
             self.market.set_playback_speed(playback_speed)
         self._initialize_market_time()
 
     def _initialize_market_time(self) -> None:
-        if not self.real_account:
-            raise ValueError("Historical backend requires a real account to fetch historical data.")
+        if not self.market_data.supports("1m"):
+            raise ValueError(
+                f"the historical backend replays 1m bars, and {self.market_data.name} "
+                f"does not serve them; choose a source that does (e.g. sinopac, yfinance)")
 
         # ── Fixed start_date path ─────────────────────────────────────
         if self._backtest_start_date is not None:
@@ -49,10 +55,10 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
                 real_init_time=datetime.now(),
                 mock_init_time=start_dt,
             )
-            print(f"[ArenaX] Fixed start_date: {start_dt.date()}")
-            print(self.market.get_market_time())
+            log.info("fixed start_date: %s", start_dt.date())
+            log.info("market time: %s", kv(self.market.get_market_time()))
             # self.market.pause_time_progress()
-            # print("[ArenaX] Market time paused – waiting for client to call resume.")
+            # log.info("market time paused, waiting for client resume")
             return
 
         # ── Random start_date path ────────────────────────────────────
@@ -68,9 +74,9 @@ class ArenaX_Backend_Historical(ArenaX_BackendBase):
             dt = datetime.now() - timedelta(days=days_back)
 
         if attempt >= max_attempts:
-            print("Not able to fetch historical data within max_attempts. Please try again")
+            log.error("no fetchable history found in %d attempts, try again", max_attempts)
             return
         self.market.set_historical_time(datetime.now(), days_back=days_back)
-        print(self.market.get_market_time())
+        log.info("market time: %s", kv(self.market.get_market_time()))
         # self.market.pause_time_progress()
-        # print("[ArenaX] Market time paused – waiting for client to call resume.")
+        # log.info("market time paused, waiting for client resume")

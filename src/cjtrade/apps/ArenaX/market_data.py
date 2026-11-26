@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 from datetime import datetime
@@ -10,13 +9,15 @@ from typing import List
 from typing import Optional
 
 import pandas as pd
-import yfinance as yf
-
-log = logging.getLogger("cjtrade.arenax_market")
-from cjtrade.apps.ArenaX.price_db import ArenaX_LocalPriceDB
 from cjtrade.apps.ArenaX.trading_calendar import TradingCalendar
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.marketdata import Cached
+from cjtrade.pkgs.marketdata import Fallback
+from cjtrade.pkgs.marketdata import MarketData
+from cjtrade.pkgs.marketdata import PriceCache
+from cjtrade.pkgs.marketdata import YFinanceMarketData
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderAction
@@ -27,7 +28,19 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.quote import Snapshot
 
-# Price source: yfinance
+log = get_logger("ArenaX.market")
+
+def default_market_data(real_account: Optional[AccountClient] = None) -> MarketData:
+    """What ArenaX read prices from before sources were pluggable.
+
+    The real account's broker first when there is one, then yfinance.
+    """
+    if real_account is None:
+        return YFinanceMarketData()
+    from cjtrade.pkgs.marketdata.sinopac import SinopacMarketData
+    return Fallback([SinopacMarketData(real_account), YFinanceMarketData()])
+
+
 class ArenaX_Market:
     """Simulated exchange clock and historical price cache.
 
@@ -63,13 +76,29 @@ class ArenaX_Market:
     since in general the client runs on a different machine.
     """
 
-    def __init__(self, real_account: AccountClient = None, price_db_path: Optional[str] = None):
+    def __init__(self, real_account: AccountClient = None,
+                 price_db_path: Optional[str] = None,
+                 market_data: Optional[MarketData] = None,
+                 data: Optional[MarketData] = None):
+        """
+        Parameters
+        ----------
+        real_account : AccountClient, optional
+            Deprecated as a price source: pass `market_data` instead. Used
+            only to build the default source when `market_data` is None.
+        price_db_path : str, optional
+            The price cache file. Defaults to ``paths.price_db_path()``.
+        market_data : MarketData, optional
+            Where historical bars come from. Defaults to
+            ``default_market_data(real_account)``.
+        data : MarketData, optional
+            Ready-made cached source, used as is (the backend shares its own).
+        """
         self.historical_data = {}     # {symbol: {'data': DataFrame, 'timestamps': numpy_array}}
         self.playback_speed = 1.0     # 1x real-time speed (play N kbars per minute)
         self.real_init_time = 0       # real_current_time - real_init_time = time_offset
         self.mock_init_time = 0       # mock_init_time + time_offset = mock_current_time
         self.start_date = 0
-        self.real_account = real_account if real_account else None
         self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
         # Pause/resume support
         self.paused: bool = False
@@ -77,10 +106,8 @@ class ArenaX_Market:
 
         self.calendar = TradingCalendar()
 
-        self.price_db = ArenaX_LocalPriceDB(
-            path=str(price_db_path) if price_db_path else str(paths.price_db_path())
-        )
-        self.price_db.connect()
+        self.source = market_data if market_data is not None else default_market_data(real_account)
+        self.data = data if data is not None else Cached(self.source, PriceCache(price_db_path))
 
     def set_playback_speed(self, speed: float):
         """
@@ -110,20 +137,24 @@ class ArenaX_Market:
 
         self.playback_speed = speed
 
-    def fetching_available(self, date: datetime) -> bool:
-        # Currently a workaround
-        if self.real_account and self.real_account.is_connected():
-            return True
+    def fetching_available(self, date: datetime, symbol: str = "2330") -> bool:
+        """Return whether 1m bars for `symbol` on `date` are available.
 
-        data = yf.download(
-            "2330.TW",
-            start=date.strftime("%Y-%m-%d"),
-            end=(date + timedelta(days=1)).strftime("%Y-%m-%d"),
-            interval="1m",
-            auto_adjust=True,
-            progress=False
-        )
-        return True if not data.empty else False
+        Asks through the price cache, so a day already on disk counts even
+        when the source is offline, and a day fetched here is kept for the
+        replay that follows.
+
+        Warnings
+        --------
+        May make a network call for a day the cache lacks.
+        """
+        if not self.source.supports("1m"):
+            return False
+        try:
+            return bool(self.data.get_kbars(symbol, date, date + timedelta(days=1), "1m"))
+        except Exception as exc:                          # noqa: BLE001
+            log.info("probe for %s on %s failed: %s", symbol, date.date(), exc)
+            return False
 
 
     def set_historical_time_abs(self, real_init_time: datetime, mock_init_time: datetime):
@@ -166,8 +197,8 @@ class ArenaX_Market:
             hours: Number of hours to shift (can be negative)
         """
         self.manual_time_offset += timedelta(hours=hours)
-        # print(f"Mock time adjusted by {hours:+.1f} hours")
-        # print(f"Total manual offset: {self.manual_time_offset.total_seconds() / 3600:+.1f} hours")
+        # log.debug("mock time %+.1fh, total offset %+.1fh", hours,
+        #           self.manual_time_offset.total_seconds() / 3600)
 
     def get_market_time(self):
         real_current_time = datetime.now()
@@ -309,259 +340,43 @@ class ArenaX_Market:
             OrderLot.Common, self.get_market_time()['mock_current_time']
         )
 
-    # TODO: Check if the gap filling mechanism really work and is with correct timezone
     def create_historical_market(self, symbol: str, days_preload: int = 5):
-        """Load historical market data for a symbol with gap-aware caching.
+        """Load `days_preload` days of 1m bars for `symbol` from `start_date`.
 
-        Strategy
-        --------
-        1. Compute which sub-intervals of [start_date, end_date] are NOT yet cached
-           in the local price DB (``arenax_symbol_coverage``).
-        2. For every missing gap, fetch from ``real_account`` (preferred) or yfinance,
-           persist every fetched kbar and record the covered range so subsequent calls
-           skip that window.
-        3. Load the full [start_date, end_date] range from the local price DB and
-           build the in-memory ``historical_data`` DataFrame.
+        Bars come through the cached source, so windows already in the price
+        cache are not fetched again.
 
-        All fetching is fill-only (``overwrite=False``) – existing cached bars are
-        never overwritten unless the caller explicitly clears the DB.
-
-        Args:
-            symbol: Stock symbol to load data for.
-            days_preload: Number of days beyond ``start_date`` to pre-load.
+        Parameters
+        ----------
+        symbol : str
+            Stock symbol to load data for.
+        days_preload : int
+            Days after ``start_date`` to load.
         """
-        # Skip if already loaded in memory
-
-        # print(f"create_historical_market() called for {symbol} with days_preload={days_preload}")
         if symbol in self.historical_data:
             return
-
         end_date = self.start_date + timedelta(days=days_preload)
-
-        # ── 1. Identify missing ranges ───────────────────────────────────────
-        if self.price_db:
-            missing = self.price_db.get_missing_ranges(symbol, "1m", self.start_date, end_date)
-        else:
-            # No price DB – treat entire window as missing
-            missing = [(int(self.start_date.timestamp()), int(end_date.timestamp()))]
-
-        # ── 2. Fetch & cache each gap ────────────────────────────────────────
-        if missing:
-            total = int((end_date - self.start_date).total_seconds())
-            missing_secs = sum(e - s for s, e in missing)
-            gap_summaries = ", ".join(
-                f"{datetime.fromtimestamp(s).strftime('%m/%d')}-{datetime.fromtimestamp(e).strftime('%m/%d')}"
-                for s, e in missing
-            )
-            if missing_secs >= total * 0.95:
-                print(f"[{symbol}] No cached data in requested range ({self.start_date.date()} – {end_date.date()}), fetching now...")
-            else:
-                print(f"[{symbol}] Partially missing data in requested range, {len(missing)} gap(s) to fetch: {gap_summaries}")
-            for gap_start_epoch, gap_end_epoch in missing:
-                gap_start = datetime.fromtimestamp(gap_start_epoch)
-                gap_end   = datetime.fromtimestamp(gap_end_epoch)
-                self._fetch_and_cache_range(symbol, gap_start, gap_end)
-        else:
-            print(f"[{symbol}] Cache fully hit for requested range ({self.start_date.date()} – {end_date.date()})")
-
-        # ── 3. Load full requested range from local DB ───────────────────────
-        if self.price_db:
-            self._load_from_price_db(symbol, end_date, had_missing=bool(missing))
-
-        # Fallback: if DB load produced nothing (e.g. no price_db at all)
-        if not self.historical_data.get(symbol) or self.historical_data[symbol]['data'].empty:
-            self._store_empty_data(symbol, "No data after gap-fill attempt")
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _fetch_and_cache_range(self, symbol: str, gap_start: datetime, gap_end: datetime):
-        """Fetch kbars for [gap_start, gap_end] from the best available source,
-        persist them to the local price DB, and record coverage.
-
-        Fill-only: bars already present are *not* overwritten.
-        Long ranges are chunked automatically inside _fetch_from_real_account().
-        """
-        source = "yfinance"
-        kbars: list = []
-
-        if self.real_account and self.real_account.is_connected():
-            source = self.real_account.get_broker_name()
-            kbars = self._fetch_from_real_account(
-                symbol,
-                gap_start.strftime("%Y-%m-%d"),
-                gap_end.strftime("%Y-%m-%d"),
-            )
-
-        if not kbars:
-            log.warning(
-                f"[{symbol}] {'real_account not connected' if not (self.real_account and self.real_account.is_connected()) else source + ' returned no data'}"
-                f" for {gap_start.date()} – {gap_end.date()}, falling back to yfinance"
-            )
-            source = "yfinance"
-            kbars = self._fetch_from_yahoo_finance(
-                symbol,
-                gap_start.strftime("%Y-%m-%d"),
-                gap_end.strftime("%Y-%m-%d"),
-            )
-
-        if not kbars:
-            print(f"[{symbol}] No data available for gap [{gap_start} – {gap_end}]")
+        try:
+            bars = self.data.get_kbars(symbol, self.start_date, end_date, "1m")
+        except Exception as exc:                          # noqa: BLE001
+            log.warning("@%s %s load bars failed: %s",
+                        f"{self.start_date:%Y-%m-%d %H:%M}", symbol, exc)
+            bars = []
+        if not bars:
+            self._store_empty_data(symbol, "no bars in the requested window")
             return
-
-        self._persist_kbars(symbol, kbars, gap_start, gap_end, source)
-
-    def _persist_kbars(self, symbol: str, kbars: list,
-                        gap_start: datetime, gap_end: datetime, source: str):
-        """Write kbars to the local price DB and record coverage."""
-        if self.price_db:
-            saved = self.price_db.insert_prices_batch(
-                symbol, kbars, timeframe="1m", source=source, overwrite=False
-            )
-            print(f"[{symbol}] Fetched and cached {saved}/{len(kbars)} bars "
-                  f"({gap_start.date()} – {gap_end.date()}, source={source})")
-
-            actual_start = min(kb.timestamp for kb in kbars)
-            actual_end   = max(kb.timestamp for kb in kbars)
-            self.price_db.record_coverage(symbol, "1m", actual_start, actual_end, source)
-
-    def _fetch_from_real_account(self, symbol: str,
-                                  start: str, end: str,
-                                  interval: str = "1m") -> list:
-        """Fetch kbars from real_account, auto-chunking into ≤28-day windows
-        to stay within the Sinopac 30-day per-request limit.
-        Returns a combined List[Kbar] or [] on failure.
-        """
-        CHUNK_DAYS = 28
-        start_dt = datetime.strptime(start, "%Y-%m-%d")
-        end_dt   = datetime.strptime(end,   "%Y-%m-%d")
-        total_days = (end_dt - start_dt).days
-
-        if total_days <= CHUNK_DAYS:
-            # Single request — no chunking needed
-            try:
-                kbars = self.real_account.get_kbars(
-                    Product(symbol=symbol), start=start, end=end, interval=interval
-                )
-                return kbars or []
-            except Exception as exc:
-                print(f"[{symbol}] real_account fetch failed ({start}–{end}): {exc}")
-                return []
-
-        # Multi-chunk fetch
-        all_kbars: list = []
-        chunk_start = start_dt
-        while chunk_start < end_dt:
-            chunk_end = min(chunk_start + timedelta(days=CHUNK_DAYS), end_dt)
-            cs = chunk_start.strftime("%Y-%m-%d")
-            ce = chunk_end.strftime("%Y-%m-%d")
-            try:
-                fetched = self.real_account.get_kbars(
-                    Product(symbol=symbol), start=cs, end=ce, interval=interval
-                )
-                if fetched:
-                    all_kbars.extend(fetched)
-            except Exception as exc:
-                print(f"[{symbol}] real_account fetch failed ({cs}–{ce}): {exc}")
-            chunk_start = chunk_end
-        return all_kbars
-
-    def _fetch_from_yahoo_finance(self, symbol: str,
-                                   start: str, end: str,
-                                   interval: str = "1m") -> list:
-        """Fetch kbars from yfinance; returns List[Kbar] or [] on failure."""
-        yf_symbol = f"{symbol}.TW"
-        try:
-            data = yf.download(
-                yf_symbol, start=start, end=end,
-                interval=interval, auto_adjust=True, progress=False
-            )
-            if data.empty:
-                return []
-            data = self._normalize_timezone(data)
-            kbars = []
-            for ts, row in data.iterrows():
-                kbars.append(Kbar(
-                    timestamp=ts.to_pydatetime(),
-                    open=round(row["Open"].item(), 2),
-                    high=round(row["High"].item(), 2),
-                    low=round(row["Low"].item(), 2),
-                    close=round(row["Close"].item(), 2),
-                    volume=int(row["Volume"].item()),
-                    symbol=symbol,
-                ))
-            return kbars
-        except Exception as exc:
-            print(f"[{symbol}] yfinance fetch failed ({start}–{end}): {exc}")
-            return []
-
-    def _load_from_price_db(self, symbol: str, end_date: datetime, had_missing: bool = False):
-        """Load historical data from the local price database into self.historical_data."""
-        try:
-            ks = self.price_db.get_price(
-                symbol=symbol, timeframe="1m",
-                start_ts=self.start_date, end_ts=end_date
-            )
-            if ks:
-                df = pd.DataFrame([{
-                    'Open':   k.open,
-                    'High':   k.high,
-                    'Low':    k.low,
-                    'Close':  k.close,
-                    'Volume': k.volume,
-                } for k in ks], index=[k.timestamp for k in ks])
-
-                self.historical_data[symbol] = {
-                    'data': df,
-                    'timestamps': df.index.to_numpy(),
-                }
-                if had_missing:
-                    print(f"[{symbol}] All gaps filled — loaded {len(df)} bar(s) from cache ({self.start_date.date()} – {end_date.date()})")
-                else:
-                    print(f"[{symbol}] Loaded {len(df)} bar(s) from cache ({self.start_date.date()} – {end_date.date()})")
-            else:
-                print(f"[{symbol}] Local price cache returned empty for requested range")
-
-        except Exception as exc:
-            print(f"[{symbol}] Error loading from local price cache: {exc}")
-            self._store_empty_data(symbol, str(exc))
-
-    # NOTE: _load_from_real_account and _load_from_yahoo_finance are replaced by the
-    # lower-level _fetch_from_real_account / _fetch_from_yahoo_finance helpers above,
-    # which return List[Kbar] and let create_historical_market handle persistence.
-    # Kept as thin stubs so external callers do not break.
-
-    def _load_from_real_account(self, symbol: str, end_date: datetime):
-        """Deprecated shim – use _fetch_and_cache_range instead."""
-        self._fetch_and_cache_range(symbol, self.start_date, end_date)
-        if self.price_db:
-            self._load_from_price_db(symbol, end_date)
-
-    def _load_from_yahoo_finance(self, symbol: str, end_date: datetime):
-        """Deprecated shim – use _fetch_and_cache_range instead."""
-        self._fetch_and_cache_range(symbol, self.start_date, end_date)
-        if self.price_db:
-            self._load_from_price_db(symbol, end_date)
-
-    def _normalize_timezone(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Normalize DataFrame timezone to naive Taiwan time."""
-        if not isinstance(data.index, pd.DatetimeIndex):
-            data.index = pd.to_datetime(data.index)
-
-        if data.index.tz is not None:
-            if str(data.index.tz) in ['UTC', 'UTC+00:00']:
-                import pytz
-                taiwan_tz = pytz.timezone('Asia/Taipei')
-                data.index = data.index.tz_convert(taiwan_tz).tz_localize(None)
-            else:
-                data.index = data.index.tz_localize(None)
-
-        return data
+        df = pd.DataFrame([{
+            'Open': k.open, 'High': k.high, 'Low': k.low,
+            'Close': k.close, 'Volume': k.volume,
+        } for k in bars], index=[k.timestamp for k in bars])
+        self.historical_data[symbol] = {'data': df, 'timestamps': df.index.to_numpy()}
+        log.info("@%s %s loaded n=%d bars through %s (source=%s)",
+                 f"{self.start_date:%Y-%m-%d %H:%M}", symbol, len(df),
+                 end_date.date(), self.source.name)
 
     def _store_empty_data(self, symbol: str, reason: str):
         """Store empty data placeholder with consistent structure."""
-        print(f"Using empty data for {symbol}: {reason}")
+        log.warning("using empty data for %s: %s", symbol, reason)
         self.historical_data[symbol] = {
             'data': pd.DataFrame(),
             'timestamps': None
@@ -571,8 +386,15 @@ class ArenaX_Market:
 # Basically this class is just for compatibility
 # to provide `is_market_open()` and `get_market_time()`
 class ArenaX_RealMarket:
-    def __init__(self, real_account: AccountClient):
-        self.real_account = real_account
+    """The wall clock and the trading calendar, for backends that trade live.
+
+    Parameters
+    ----------
+    real_account : AccountClient, optional
+        Ignored; kept so existing callers keep working.
+    """
+
+    def __init__(self, real_account: Optional[AccountClient] = None):
         self.calendar = TradingCalendar()
         self.playback_speed = 1.0  # Real market doesn't use playback speed, but we keep the attribute for interface consistency
         self.manual_time_offset = timedelta(0)  # Manual time adjustment for time jumps
@@ -580,7 +402,8 @@ class ArenaX_RealMarket:
         self.real_init_time = datetime.now()  # Real market time baseline
 
     def is_market_open(self) -> bool:
-        return self.real_account.is_market_open()
+        """Whether the regular session is open now, by the trading calendar."""
+        return self.calendar.is_open(OrderLot.Common, datetime.now())
 
     def get_market_time(self):
         return {

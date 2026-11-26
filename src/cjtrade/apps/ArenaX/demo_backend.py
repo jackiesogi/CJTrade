@@ -7,6 +7,10 @@ from typing import Optional
 from cjtrade.apps.ArenaX.base_backend import ArenaX_BackendBase
 from cjtrade.apps.ArenaX.market_data import ArenaX_Market
 from cjtrade.pkgs.brokers.account_client import AccountClient
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import kv
+
+log = get_logger("ArenaX.backend.demo")
 
 
 # Upper bound on how far back the simulated "now" is placed. Roughly the 1m
@@ -32,7 +36,7 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 			skip_data_preload=skip_data_preload,
 			**kwargs
 		)
-		self.market = ArenaX_Market(real_account=None, price_db_path=self.price_db_path)
+		self.market = ArenaX_Market(market_data=self.market_data, data=self.data)
 		if hasattr(self.market, "set_playback_speed"):
 			self.market.set_playback_speed(playback_speed)
 		self._initialize_market_time()
@@ -69,11 +73,11 @@ class ArenaX_Backend_None(ArenaX_BackendBase):
 			dt = datetime.now() - timedelta(days=days_back)
 
 		if attempt >= max_attempts:
-			print("Not able to fetch historical data within max_attempts. Please try again")
+			log.error("no fetchable history found in %d attempts, try again", max_attempts)
 			return
 		self.market.set_historical_time(datetime.now(), days_back=days_back)
-		print(self.market.get_market_time())
+		log.info("market time: %s", kv(self.market.get_market_time()))
         # Pause immediately so client initialisation lag does not consume mock time.
         # Client must call PATCH /api/v1/clock {"paused": false} once ready.
 		# self.market.pause_time_progress()
-		# print("[ArenaX] Market time paused – waiting for client to call resume.")
+		# log.info("market time paused, waiting for client resume")

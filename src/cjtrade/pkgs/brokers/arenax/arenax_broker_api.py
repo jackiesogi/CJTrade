@@ -26,6 +26,7 @@ from cjtrade.pkgs.brokers.arenax.arenax_middleware import ArenaXMiddleWare
 from cjtrade.pkgs.brokers.base_broker_api import BrokerAPIBase
 from cjtrade.pkgs.db.db_api import *
 from cjtrade.pkgs.db.sqlite import *
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.event import *
 from cjtrade.pkgs.models.kbar import *
 from cjtrade.pkgs.models.order import *
@@ -34,6 +35,9 @@ from cjtrade.pkgs.models.product import *
 from cjtrade.pkgs.models.quote import *
 from cjtrade.pkgs.models.rank_type import RankType
 from cjtrade.pkgs.models.trade import *
+
+log = get_logger("brokers.arenax")
+
 
 
 class ArenaXBrokerAPI_v2(BrokerAPIBase):
@@ -87,10 +91,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
             self._connected = True
             self.db = connect_sqlite(database=self.db_path)
             prepare_cjtrade_tables(conn=self.db)
-            print("ArenaXBroker connected successfully")
+            log.info("connected")
             return True
         except Exception as e:
-            print(f"ArenaXBroker connection failed: {e}")
+            log.error("connect failed: %s", e)
             self._connected = False
             return False
 
@@ -105,10 +109,10 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
         if self._connected:
             try:
                 self.middleware.logout()
-                print("ArenaXBroker disconnected")
+                log.info("disconnected")
                 self.db.close()
             except Exception as e:
-                print(f"Error during disconnect: {e}")
+                log.warning("disconnect err: %s", e)
             finally:
                 self._connected = False
 
@@ -149,6 +153,16 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
                 f"GET /api/v1/account")
         return summary
 
+
+    def market_data(self):
+        """Return an ArenaXMarketData that shares this session.
+
+        Returns
+        -------
+        ArenaXMarketData
+        """
+        from cjtrade.pkgs.marketdata.arenax import ArenaXMarketData
+        return ArenaXMarketData(self)
 
     def get_positions(self) -> List[Position]:
         """Return current positions from the server.
@@ -299,7 +313,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
 
         supported_intervals = ["1m", "5m", "1h", "1d"]
         if interval not in supported_intervals:
-            print(f"Interval '{interval}' not supported by backend broker API, using '1m'")
+            log.warning("interval %r not supported by backend, using '1m'", interval)
             interval = "1m"
 
         # Server selects the data source automatically (price_db → real broker → yfinance).
@@ -469,7 +483,7 @@ class ArenaXBrokerAPI_v2(BrokerAPIBase):
                     update_order_status_to_db(conn=self.db, oid=order_id, status=refreshed.status.value, updated_at=update_at)
                     res.append(refreshed)
             except Exception as e:
-                print(f"Error refreshing order {order_id}: {e}")
+                log.warning("refresh order %s failed: %s", order_id, e)
         return res
 
 

@@ -31,7 +31,11 @@ class Kbar:
 
     @classmethod
     def from_snapshot(cls, snapshot) -> "Kbar":
-        """Treat a Snapshot as one closed bar. Used by live/replay runners.
+        """Treat a Snapshot as one closed bar.
+
+        No runner uses this any more: the trading engine publishes the
+        broker's own 1m bars (MarketData.get_kbars). Kept for callers that
+        only have a quote.
 
         `close` and `timestamp` carry over exactly. `open`, `high`, `low` and
         `volume` do NOT describe this bar: a Snapshot reports the figures for

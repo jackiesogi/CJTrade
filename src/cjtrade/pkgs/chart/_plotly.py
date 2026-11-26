@@ -4,8 +4,11 @@ from typing import List
 import plotly.graph_objects as go
 from cjtrade.pkgs.chart._chart_base import KbarChartBase
 from cjtrade.pkgs.chart.models.kbar_data import KbarData
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.product import Product
 from plotly.subplots import make_subplots
+
+log = get_logger("chart")
 
 # Theme configurations moved outside the class
 CHART_THEMES = {
@@ -172,7 +175,7 @@ class PlotlyKbarChart(KbarChartBase):
             self.output_filename = f"kbar_{self.product.symbol}_{timestamp}.html"
 
     def append_kbar(self, kbar: KbarData) -> None:
-        """Append one bar, print it, and update the figure.
+        """Append one bar, log it at DEBUG, and update the figure.
 
         Parameters
         ----------
@@ -188,7 +191,8 @@ class PlotlyKbarChart(KbarChartBase):
             self.kbar_data = []
 
         self.kbar_data.append(kbar)
-        print(f"ts: {kbar.timestamp}, open: {kbar.open}, high: {kbar.high}, low: {kbar.low}, close: {kbar.close}, volume: {kbar.volume}")
+        log.debug("@%s o=%s h=%s l=%s c=%s v=%s", kbar.timestamp, kbar.open, kbar.high,
+                  kbar.low, kbar.close, kbar.volume)
 
         # Create chart if this is the first data
         if len(self.kbar_data) == 1:

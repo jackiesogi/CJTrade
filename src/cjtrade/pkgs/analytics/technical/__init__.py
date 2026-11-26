@@ -13,7 +13,11 @@ __all__ = ['ta', 'TALibWrapper']
 if __name__ == "__main__":
     import numpy as np
     from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
+    from cjtrade.pkgs.logger import get_console
+    from cjtrade.pkgs.logger import setup_logging
     from cjtrade.pkgs.models.product import Product
+    setup_logging()
+    out = get_console("analytics.technical")
     # closes = np.array([1, 2, 3, 4, 5], dtype=float)
 
     # market.ohlcv() -> what API an user may want to use
@@ -24,10 +28,9 @@ if __name__ == "__main__":
 
     closes = market.get_kbars(product=Product("0050"), start="2023-01-01", end="2023-12-31", interval="1d")
     closes = np.array([kbar.close for kbar in closes], dtype=float)  # sys
-    # print(type(close), close)
 
-    print("SMA:", ta.sma(closes, timeperiod=3))
-    print("EMA:", ta.ema(closes, timeperiod=3))
+    out.info("SMA: %s", ta.sma(closes, timeperiod=3))
+    out.info("EMA: %s", ta.ema(closes, timeperiod=3))
 
     #######   USER CODE ENDS HERE   #######
     market.disconnect()             # sys

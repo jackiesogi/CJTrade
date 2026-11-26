@@ -17,7 +17,11 @@ Code quality check:
 from datetime import time as dt_time
 
 import requests
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models import *
+
+log = get_logger("brokers.arenax")
+
 
 
 class ArenaXMiddleWare:
@@ -32,7 +36,7 @@ class ArenaXMiddleWare:
 
     Warnings
     --------
-    Every method makes a plain-HTTP request. Transport failures are printed
+    Every method makes a plain-HTTP request. Transport failures are logged
     and returned as None, not raised.
     """
     def __init__(self, host: str = "localhost", port: int = 8801):
@@ -47,7 +51,7 @@ class ArenaXMiddleWare:
             res.raise_for_status()
             return res.json()
         except requests.exceptions.RequestException as e:
-            print(f"[ArenaX] Request failed: {e}")
+            log.error("req failed: %s", e)
             return None
 
     def _send(self, method: str, path: str, data: dict = None,
@@ -87,7 +91,7 @@ class ArenaXMiddleWare:
 
         except requests.exceptions.RequestException as e:
             # Timeout, Connection Refused
-            print(f"[ArenaX] Request failed: {e}")
+            log.error("req failed: %s", e)
             return None
 
     def _post(self, path: str, data: dict = None, headers: dict | None = None):
@@ -134,8 +138,32 @@ class ArenaXMiddleWare:
         if t:
             return t
         else:
-            print("Failed to get market time: No response")
+            log.error("get market time failed: no resp")
             return None
+
+    def get_timeline(self, symbols, start: str, end: str, interval: str = "1m") -> list:
+        """The bar timestamps a replay of `symbols` over ``[start, end)`` steps through.
+
+        Not limited by the server clock, unlike get_kbars: a replay driver
+        needs them before the clock gets there. Carries no prices.
+
+        Returns
+        -------
+        list of datetime
+            Sorted union across `symbols`. Empty if the request failed.
+
+        Warnings
+        --------
+        Sends an HTTP request to the ArenaX server.
+        """
+        from datetime import datetime
+        res = self._get(f"api/v1/clock/timeline?symbols={','.join(symbols)}"
+                        f"&start={start}&end={end}&interval={interval}")
+        if res and res.get("ok"):
+            return [datetime.fromisoformat(t) for t in res.get("result", [])]
+        log.error("get timeline for %s failed: %s", symbols,
+                  res.get('error') if res else 'no resp')
+        return []
 
     def get_system_time(self, **kwargs) -> dict:
         """Deprecated alias for get_market_time()."""
@@ -431,7 +459,7 @@ class ArenaXMiddleWare:
         if res and res.get("ok"):
             return res.get("price")  # return Snapshot object
         else:
-            print(f"Failed to get snapshot for {symbol}: {res.get('error') if res else 'No response'}")
+            log.error("get snapshot %s failed: %s", symbol, res.get('error') if res else 'no resp')
             return None
 
     def get_kbars(self, symbol: str, start: str, end: str,
@@ -469,7 +497,7 @@ class ArenaXMiddleWare:
         if res and res.get("ok"):
             return res.get("result", [])
         err = res.get("error") if res else "No response"
-        print(f"Failed to get kbars for {symbol}: {err}")
+        log.error("get kbars %s failed: %s", symbol, err)
         return []
 
     def data_availability(self, **kwargs) -> dict:
@@ -645,30 +673,34 @@ class ArenaXMiddleWare:
 
 if __name__ == "__main__":
     import time
+    from cjtrade.pkgs.logger import get_console
+    from cjtrade.pkgs.logger import setup_logging
+    setup_logging()
+    out = get_console()
     a = ArenaXMiddleWare()
     # test is_market_open()
     # 2021-10-01 09:30:00+08:00 in RFC 1123 format
     dt = datetime(2021, 10, 1, 9, 30, tzinfo=ZoneInfo("Asia/Taipei"))
     iso_time = dt.isoformat()
-    print(f"Testing is_market_open() with mock time {iso_time}...")
-    print(a.set_timeline_origin(iso_time))
-    print(f"Market open status: {a.is_market_open()}")
+    out.info(f"Testing is_market_open() with mock time {iso_time}...")
+    out.info("%s", a.set_timeline_origin(iso_time))
+    out.info(f"Market open status: {a.is_market_open()}")
 
     exit(0)
-    print(a.start_backend())
-    print(a.check_health())
-    print(a.stop_backend())
-    print(a.start_backend())
-    print(a.get_config())
-    print("pausing time progress...")
-    print(a.pause_time_progress())
-    print(a.get_time())
-    print("sleep 5 seconds and get time again...")
+    out.info("%s", a.start_backend())
+    out.info("%s", a.check_health())
+    out.info("%s", a.stop_backend())
+    out.info("%s", a.start_backend())
+    out.info("%s", a.get_config())
+    out.info("pausing time progress...")
+    out.info("%s", a.pause_time_progress())
+    out.info("%s", a.get_time())
+    out.info("sleep 5 seconds and get time again...")
     time.sleep(5)
-    print(a.get_market_time())
+    out.info("%s", a.get_market_time())
     time.sleep(5)
-    print("Try to resume time progress...")
-    print(a.resume_time_progress())
-    print("Wait 5 seconds and get time again...")
+    out.info("Try to resume time progress...")
+    out.info("%s", a.resume_time_progress())
+    out.info("Wait 5 seconds and get time again...")
     time.sleep(5)
-    print(a.get_time())
+    out.info("%s", a.get_time())

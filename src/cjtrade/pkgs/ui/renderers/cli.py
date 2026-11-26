@@ -1,13 +1,29 @@
 """CLI renderer — interactive field-by-field prompts in the terminal."""
 from __future__ import annotations
 
+import logging
 import re
 import sys
 from typing import Any
 
+from cjtrade.pkgs.logger import get_console
+
 from ..base_renderer import FormRenderer
 from ..schema import FormField
 from ..schema import FormSchema
+
+
+def form_console() -> logging.Logger:
+    """The console for form UI text: bare messages on stderr.
+
+    The form's text is program output, but it cannot go to stdout like other
+    console output: stdout carries the export lines that ``eval "$(...)"``
+    captures. So this child of the console has its own stderr handler.
+    """
+    return get_console("form", stream="stderr")
+
+
+_out = form_console()
 
 # ANSI helpers (degrade gracefully when not a tty)
 # UI output goes to stderr (stdout is captured by eval "$(...)")
@@ -104,10 +120,10 @@ class CLIRenderer(FormRenderer):
         dict
             ``{field_name: value}``, without display-only fields.
         """
-        print(f"\n{_BOLD}{_CYAN}{_hr('═')}{_RESET}", file=sys.stderr)
-        print(f"{_BOLD}{_CYAN}  {schema.title}{_RESET}", file=sys.stderr)
-        print(f"{_BOLD}{_CYAN}{_hr('═')}{_RESET}", file=sys.stderr)
-        print(f"{_DIM}  Ctrl-C to abort.{_RESET}\n", file=sys.stderr)
+        _out.info(f"\n{_BOLD}{_CYAN}{_hr('═')}{_RESET}")
+        _out.info(f"{_BOLD}{_CYAN}  {schema.title}{_RESET}")
+        _out.info(f"{_BOLD}{_CYAN}{_hr('═')}{_RESET}")
+        _out.info(f"{_DIM}  Ctrl-C to abort.{_RESET}\n")
 
         results: dict[str, Any] = {}
         for f in schema.fields:
@@ -115,12 +131,12 @@ class CLIRenderer(FormRenderer):
             if f.type != "display":
                 results[f.name] = val
 
-        print(f"\n{_GREEN}✓ All fields collected.{_RESET}\n", file=sys.stderr)
+        _out.info(f"\n{_GREEN}✓ All fields collected.{_RESET}\n")
         return results
 
     # ------------------------------------------------------------------
     def _prompt_field(self, f: FormField) -> Any:
-        # Display-only fields: just print content, no prompt infrastructure.
+        # Display-only fields: just show content, no prompt infrastructure.
         if f.type == "display":
             return self._render_display(f)
 
@@ -135,7 +151,7 @@ class CLIRenderer(FormRenderer):
         required_marker = "" if f.optional else f"{_RED}*{_RESET}"
         hints = self._build_hints(f, default)
         hint_str = f"  {_DIM}{hints}{_RESET}" if hints else ""
-        print(f"  {_BOLD}{f.label}{required_marker}{_RESET}{hint_str}", file=sys.stderr)
+        _out.info(f"  {_BOLD}{f.label}{required_marker}{_RESET}{hint_str}")
 
         # ── dispatch ──────────────────────────────────────────────────
         if f.type == "select":
@@ -176,7 +192,7 @@ class CLIRenderer(FormRenderer):
         default_idx: int | None = None
         for i, opt in enumerate(options, 1):
             marker = f" {_GREEN}←{_RESET}" if str(opt) == default_str else ""
-            print(f"    {_DIM}{i}){_RESET} {opt}{marker}", file=sys.stderr)
+            _out.info(f"    {_DIM}{i}){_RESET} {opt}{marker}")
             if str(opt) == default_str:
                 default_idx = i
 
@@ -197,7 +213,7 @@ class CLIRenderer(FormRenderer):
             except ValueError:
                 if raw in options:
                     return raw
-            print(f"  {_DIM}  Enter a number 1–{len(options)}.{_RESET}", file=sys.stderr)
+            _out.info(f"  {_DIM}  Enter a number 1–{len(options)}.{_RESET}")
 
     # ------------------------------------------------------------------
     def _prompt_checkbox(self, f: FormField, default: Any) -> bool:
@@ -216,7 +232,7 @@ class CLIRenderer(FormRenderer):
                 return True
             if raw in ("n", "no", "false", "0"):
                 return False
-            print(f"  {_DIM}  Please enter y or n.{_RESET}", file=sys.stderr)
+            _out.info(f"  {_DIM}  Please enter y or n.{_RESET}")
 
     # ------------------------------------------------------------------
     def _prompt_multiselect(self, f: FormField, default: Any) -> list[str]:
@@ -224,8 +240,8 @@ class CLIRenderer(FormRenderer):
         selected = {str(o) for o in default} if isinstance(default, list) else set()
         for i, opt in enumerate(options, 1):
             marker = f" {_GREEN}←{_RESET}" if str(opt) in selected else ""
-            print(f"    {_DIM}{i}){_RESET} {opt}{marker}", file=sys.stderr)
-        print(f"  {_DIM}  Space or comma-separated numbers (e.g. 1 3){_RESET}", file=sys.stderr)
+            _out.info(f"    {_DIM}{i}){_RESET} {opt}{marker}")
+        _out.info(f"  {_DIM}  Space or comma-separated numbers (e.g. 1 3){_RESET}")
         default_hint = ",".join(
             str(i) for i, o in enumerate(options, 1) if str(o) in selected
         )
@@ -242,7 +258,7 @@ class CLIRenderer(FormRenderer):
             if not raw:
                 if f.optional:
                     return []
-                print(f"  {_DIM}  At least one selection required.{_RESET}", file=sys.stderr)
+                _out.info(f"  {_DIM}  At least one selection required.{_RESET}")
                 continue
             tokens = [t for t in raw.replace(",", " ").split() if t]
             result: list[str] = []
@@ -253,14 +269,14 @@ class CLIRenderer(FormRenderer):
                     if 1 <= idx <= len(options):
                         result.append(str(options[idx - 1]))
                     else:
-                        print(f"  {_DIM}  {idx} is out of range 1–{len(options)}.{_RESET}", file=sys.stderr)
+                        _out.info(f"  {_DIM}  {idx} is out of range 1–{len(options)}.{_RESET}")
                         valid = False
                         break
                 except ValueError:
                     if str(token) in [str(o) for o in options]:
                         result.append(str(token))
                     else:
-                        print(f"  {_DIM}  '{token}' is not a valid option.{_RESET}", file=sys.stderr)
+                        _out.info(f"  {_DIM}  '{token}' is not a valid option.{_RESET}")
                         valid = False
                         break
             if valid and result:
@@ -282,7 +298,7 @@ class CLIRenderer(FormRenderer):
                 return default
             if _DATE_RE.match(raw):
                 return raw
-            print(f"  {_RED}  ✗ Expected YYYY-MM-DD (e.g. 2026-01-15).{_RESET}", file=sys.stderr)
+            _out.info(f"  {_RED}  ✗ Expected YYYY-MM-DD (e.g. 2026-01-15).{_RESET}")
 
     # ------------------------------------------------------------------
     # Use when you want to display some info without expecting user input.
@@ -290,10 +306,10 @@ class CLIRenderer(FormRenderer):
         heading = f.config.get("heading", f.label)
         body = f.config.get("body", "")
         if heading:
-            print(f"  {_BOLD}{heading}{_RESET}", file=sys.stderr)
+            _out.info(f"  {_BOLD}{heading}{_RESET}")
         if body:
-            print(f"  {_DIM}{body}{_RESET}", file=sys.stderr)
-        print(file=sys.stderr)
+            _out.info(f"  {_DIM}{body}{_RESET}")
+        _out.info("")
 
     # ------------------------------------------------------------------
     def _prompt_text(self, f: FormField, default: Any) -> Any:
@@ -312,7 +328,7 @@ class CLIRenderer(FormRenderer):
 
             if raw == "":
                 if not f.optional and default is None:
-                    print(f"  {_DIM}  This field is required.{_RESET}", file=sys.stderr)
+                    _out.info(f"  {_DIM}  This field is required.{_RESET}")
                     continue
                 return default
 
@@ -320,13 +336,13 @@ class CLIRenderer(FormRenderer):
                 try:
                     val = int(raw) if "." not in raw else float(raw)
                 except ValueError:
-                    print(f"  {_DIM}  Please enter a valid number.{_RESET}", file=sys.stderr)
+                    _out.info(f"  {_DIM}  Please enter a valid number.{_RESET}")
                     continue
                 if f.eff_min is not None and val < f.eff_min:
-                    print(f"  {_DIM}  Minimum value is {f.eff_min:g}.{_RESET}", file=sys.stderr)
+                    _out.info(f"  {_DIM}  Minimum value is {f.eff_min:g}.{_RESET}")
                     continue
                 if f.eff_max is not None and val > f.eff_max:
-                    print(f"  {_DIM}  Maximum value is {f.eff_max:g}.{_RESET}", file=sys.stderr)
+                    _out.info(f"  {_DIM}  Maximum value is {f.eff_max:g}.{_RESET}")
                     continue
                 return val
 

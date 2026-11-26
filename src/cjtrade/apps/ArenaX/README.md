@@ -12,8 +12,8 @@ same `AccountClient` code talks to both.
 ArenaX provides:
 
 - **Market data**
-  Prices come from either a real broker API or yfinance, and are cached locally
-  so a repeated run does not refetch them.
+  Prices come from any `MarketData` source (Sinopac, FinMind, yfinance, or one
+  you write), and are cached locally so a repeated run does not refetch them.
 
 - **Price data playback**
   Time in the virtual market is under your control. You set where the timeline
@@ -39,16 +39,45 @@ There are 3 modes in ArenaX, categorised by their price data source and use
 case. Each one ships its own `configs/<mode>.cjsys` and listens on its own port,
 so two modes can run side by side without fighting over one.
 
-| Mode | Price Data Source | Default port | Typical Use Case |
-| ---- | ----------------- | ------------ | ---------------- |
+| Mode | Default price sources | Default port | Typical Use Case |
+| ---- | --------------------- | ------------ | ---------------- |
 | `demo` (default) | `yfinance` | 8801 | Lightweight simulation **WITHOUT** needing a broker account |
-| `backtest` | Custom broker API | 8802 | Historical market replay for backtesting |
-| `paper` | Custom broker API | 8803 | Paper trading with real-time market data |
+| `backtest` | `sinopac,yfinance` | 8802 | Historical market replay for backtesting |
+| `paper` | `sinopac` | 8803 | Paper trading with real-time market data |
 
 <!-- cjcheck: static -->
 ```sh
 uv run arenaxd --backend=backtest        # or demo / paper / real
 ```
+
+`--data` (or `AX_DATA_SOURCES`) chooses the price sources, tried in order:
+`sinopac`, `finmind`, `yfinance`, `cache`, `offline`. Sinopac is logged in to only when a
+source or the backend needs it, so a backtest can run with no broker account:
+
+<!-- cjcheck: static -->
+```sh
+uv run arenaxd --backend=backtest --data=finmind,yfinance
+```
+
+FinMind reads `FINMIND_TOKEN` from your `.cjconf` and serves daily bars on a
+free account; a 1m replay still needs a source of 1m bars for its window
+(yfinance keeps only the last 30 days). From Python, pass any `MarketData` as
+`ArenaX_BrokerSideServer(market_data=...)`.
+
+Every source sits behind a price cache file. `--price-db` (or
+`AX_PRICE_DB_PATH`) chooses the file; the default is the shared cache in the
+platform cache directory. To run with no network at all, preload a file and
+start with `--data=offline`, which serves only what the file holds:
+
+<!-- cjcheck: static -->
+```sh
+uv run preload-prices --price-db exp.db --symbols 2330,2317 --start 2026-10-26
+CJTRADE_OFFLINE=1 uv run arenaxd --backend=demo --data=offline --price-db=exp.db
+```
+
+`GET /api/v1/market/<symbol>/kbars` returns only bars that have closed on the
+simulated clock. `start` and `end` take whole dates (`end` inclusive) or ISO
+datetimes (a half-open window).
 
 :warning: `arenaxd` reads `AX_*` environment variables before its config file,
 and `load_dotenv(override=False)` means whatever is already exported wins. A
@@ -137,6 +166,16 @@ curl -X PUT -H "Content-Type: application/json" \
   http://127.0.0.1:8801/api/v1/clock/origin
 ```
 
+7. List the bar timestamps a replay will step through. This is how a replay
+driver (the trading engine's `ReplayClock`) finds its timeline: the kbars
+route only returns bars the clock has already reached, while this returns
+timestamps for the whole window, with no prices.
+
+<!-- cjcheck: static -->
+```sh
+curl "http://127.0.0.1:8801/api/v1/clock/timeline?symbols=2330,2317&start=2026-03-02&end=2026-03-07"
+```
+
 ### Trading
 
 A client opens a session first (`POST /api/v1/session`), and then uses:
@@ -150,7 +189,7 @@ A client opens a session first (`POST /api/v1/session`), and then uses:
 | `GET /api/v1/orders/<id>` | One order's status |
 | `DELETE /api/v1/orders/<id>` | Cancel it |
 | `GET /api/v1/market/<symbol>/snapshot` | A quote: price, bid/ask, the day's range so far |
-| `GET /api/v1/market/<symbol>/kbars` | Historical K-bars over a date range |
+| `GET /api/v1/market/<symbol>/kbars` | Closed K-bars over a date range, up to the simulated clock |
 | `GET /api/v1/market/data-availability` | Which symbols and windows are actually on disk |
 
 The full interactive spec is served by the process itself — open

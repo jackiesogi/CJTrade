@@ -38,6 +38,9 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import setup_logging
+
 # A regular TWSE session is 09:00-13:30, so 270 one-minute bars. Taken from the
 # calendar rather than a literal so the two cannot drift apart.
 try:
@@ -52,6 +55,9 @@ except Exception:                                    # pragma: no cover
     BARS_PER_DAY = 270
 
 FULL, PARTIAL, EMPTY = "█", "▒", " "
+
+# The whole report is program output; nothing here is a diagnostic.
+out = get_console("scripts.price_db_report")
 
 
 def _default_db() -> str:
@@ -196,7 +202,7 @@ def timeline(axis: list[date], have: dict[date, int], args,
              label: str = "", width: int | None = None,
              show_breaks: bool = True) -> None:
     if not axis:
-        print("  (no data in range)")
+        out.info("  (no data in range)")
         return
     width = width or args.width
     bar, breaks = _cells(axis, have, width, args.min_bars)
@@ -204,7 +210,7 @@ def timeline(axis: list[date], have: dict[date, int], args,
     last = max(have) if have else axis[-1]
 
     pad = f"{label:<8}" if label else ""
-    print(f"  {pad}{first:%Y-%m-%d} |{bar}| {last:%Y-%m-%d}")
+    out.info(f"  {pad}{first:%Y-%m-%d} |{bar}| {last:%Y-%m-%d}")
 
     if not show_breaks or not breaks:
         return
@@ -221,7 +227,7 @@ def timeline(axis: list[date], have: dict[date, int], args,
     # bar position p lands under the cell it describes.
     offset = 2 + len(pad) + len("YYYY-MM-DD") + 2
     for line in _stack_labels(marks, width):
-        print(" " * offset + line)
+        out.info(" " * offset + line)
 
 
 # ── overview ─────────────────────────────────────────────────────────────────
@@ -229,7 +235,7 @@ def timeline(axis: list[date], have: dict[date, int], args,
 def overview(con, args) -> None:
     axis = market_days(con, args)
     if not axis:
-        print("no bars in that range")
+        out.info("no bars in that range")
         return
     clause, params = _ts_clause(args)
     syms = [s for (s,) in con.execute(
@@ -237,23 +243,23 @@ def overview(con, args) -> None:
         " GROUP BY symbol ORDER BY COUNT(*) DESC", [args.timeframe] + params)]
 
     width = max(20, args.width - 10)
-    print(f"axis: {len(axis)} market days, {axis[0]} .. {axis[-1]}  "
-          f"(1 cell = {len(axis)/width:.1f} days)\n")
+    out.info(f"axis: {len(axis)} market days, {axis[0]} .. {axis[-1]}  "
+             f"(1 cell = {len(axis)/width:.1f} days)\n")
     for sym in syms:
         have = symbol_days(con, args, sym)
         timeline(axis, have, args, label=sym, width=width, show_breaks=False)
 
-    print(f"\n  {FULL} complete   {PARTIAL} some days missing or short   "
-          f"'{EMPTY}' no data")
-    print("  Rows share one axis, so a break under another row's solid run is "
-          "this symbol's\n  gap, not a market holiday. -s <symbol> dates every "
-          "break and audits coverage.")
+    out.info(f"\n  {FULL} complete   {PARTIAL} some days missing or short   "
+             f"'{EMPTY}' no data")
+    out.info("  Rows share one axis, so a break under another row's solid run is "
+             "this symbol's\n  gap, not a market holiday. -s <symbol> dates every "
+             "break and audits coverage.")
 
 
 # ── per-symbol detail ────────────────────────────────────────────────────────
 
 def monthly(have: dict[date, int], axis: list[date]) -> None:
-    print("\n-- bars per month " + "-" * 56)
+    out.info("\n-- bars per month " + "-" * 56)
     open_per_month: dict[str, int] = {}
     for d in axis:
         open_per_month[f"{d.year:04d}-{d.month:02d}"] = \
@@ -262,7 +268,7 @@ def monthly(have: dict[date, int], axis: list[date]) -> None:
     for d, n in have.items():
         got_per_month.setdefault(f"{d.year:04d}-{d.month:02d}", []).append(n)
 
-    print(f"  {'month':<9}{'bars':>9} {'days':>8}  of the market's open days")
+    out.info(f"  {'month':<9}{'bars':>9} {'days':>8}  of the market's open days")
     for key in sorted(open_per_month):
         counts = got_per_month.get(key, [])
         expected = open_per_month[key]
@@ -270,27 +276,27 @@ def monthly(have: dict[date, int], axis: list[date]) -> None:
         w = 30
         filled = round(got / expected * w) if expected else 0
         note = "  MISSING" if got == 0 else ""
-        print(f"  {key:<9}{sum(counts):>9,} {got:>3}/{expected:<4} "
-              f"{FULL * filled}{'.' * (w - filled)}{note}")
+        out.info(f"  {key:<9}{sum(counts):>9,} {got:>3}/{expected:<4} "
+                 f"{FULL * filled}{'.' * (w - filled)}{note}")
 
 
 def thin_days(have: dict[date, int], args) -> None:
     if args.timeframe != "1m":
         return
     thin = sorted((n, d) for d, n in have.items() if n < args.min_bars)
-    print(f"\n-- short sessions (under {args.min_bars} of {BARS_PER_DAY} bars) "
-          + "-" * 22)
+    out.info(f"\n-- short sessions (under {args.min_bars} of {BARS_PER_DAY} bars) "
+             + "-" * 22)
     if not thin:
-        print("  none")
+        out.info("  none")
         return
-    print(f"  {len(thin)} day(s). These sit inside the bar as {PARTIAL}, not a "
-          f"break:")
+    out.info(f"  {len(thin)} day(s). These sit inside the bar as {PARTIAL}, not a "
+             f"break:")
     for n, d in thin[:12]:
         w = 30
         filled = round(n / BARS_PER_DAY * w)
-        print(f"    {d}  {n:>4}  {FULL * filled}{'.' * (w - filled)}")
+        out.info(f"    {d}  {n:>4}  {FULL * filled}{'.' * (w - filled)}")
     if len(thin) > 12:
-        print(f"    ... and {len(thin) - 12} more")
+        out.info(f"    ... and {len(thin) - 12} more")
 
 
 def sources(con, args) -> None:
@@ -300,26 +306,26 @@ def sources(con, args) -> None:
         "WHERE symbol=? AND timeframe=?" + clause +
         " GROUP BY source ORDER BY 2 DESC", [args.symbol, args.timeframe] + params))
     total = sum(n for _, n in rows) or 1
-    print("\n-- where the bars came from " + "-" * 45)
+    out.info("\n-- where the bars came from " + "-" * 45)
     for src, n in rows:
-        print(f"  {src or '(unset)':<14}{n:>9,}  {n/total*100:>5.1f}%")
+        out.info(f"  {src or '(unset)':<14}{n:>9,}  {n/total*100:>5.1f}%")
     if len(rows) > 1:
-        print("  Sources are not interchangeable: yfinance keeps roughly a "
-              "month of 1m\n  history, so an old range filled from it is "
-              "unlikely to be complete.")
+        out.info("  Sources are not interchangeable: yfinance keeps roughly a "
+                 "month of 1m\n  history, so an old range filled from it is "
+                 "unlikely to be complete.")
 
 
 def coverage_audit(con, args) -> None:
-    print("\n-- coverage audit " + "-" * 55)
+    out.info("\n-- coverage audit " + "-" * 55)
     rows = list(con.execute(
         "SELECT start_ts, end_ts, source FROM arenax_symbol_coverage "
         "WHERE symbol=? AND timeframe=? ORDER BY start_ts",
         [args.symbol, args.timeframe]))
     if not rows:
-        print("  no coverage rows — every fetch will re-ask the broker")
+        out.info("  no coverage rows — every fetch will re-ask the broker")
         return
 
-    print(f"  {'claimed range':<25}{'days':>5}{'bars':>9}{'expected':>10}  status")
+    out.info(f"  {'claimed range':<25}{'days':>5}{'bars':>9}{'expected':>10}  status")
     suspect = []
     for s, e, _src in rows:
         a, b = datetime.fromtimestamp(s).date(), datetime.fromtimestamp(e).date()
@@ -338,41 +344,41 @@ def coverage_audit(con, args) -> None:
             suspect.append((s, a, b))
         else:
             status = "ok"
-        print(f"  {a}..{b}  {td:>5}{n:>9,}{expected:>10,}  {status}")
+        out.info(f"  {a}..{b}  {td:>5}{n:>9,}{expected:>10,}  {status}")
 
     if suspect:
-        print(f"\n  {len(suspect)} suspect row(s). compute_missing_ranges() reads "
-              f"this table,\n  not the bars, so these ranges will never be "
-              f"refetched. To let the next\n  fetch fill them, drop the row:")
+        out.info(f"\n  {len(suspect)} suspect row(s). compute_missing_ranges() reads "
+                 f"this table,\n  not the bars, so these ranges will never be "
+                 f"refetched. To let the next\n  fetch fill them, drop the row:")
         for s, a, b in suspect:
-            print(f"    DELETE FROM arenax_symbol_coverage WHERE symbol="
-                  f"'{args.symbol}' AND start_ts={s};   -- {a}..{b}")
+            out.info(f"    DELETE FROM arenax_symbol_coverage WHERE symbol="
+                     f"'{args.symbol}' AND start_ts={s};   -- {a}..{b}")
 
 
 def detail(con, args) -> None:
     axis = market_days(con, args)
     have = symbol_days(con, args, args.symbol)
     if not have:
-        print(f"\n{args.symbol}: no {args.timeframe} bars in range")
+        out.info(f"\n{args.symbol}: no {args.timeframe} bars in range")
         return
 
     total = sum(have.values())
     runs = _gap_runs(axis, have)
     missing = sum(c for _, _, c in runs)
-    print(f"\n{args.symbol}  {args.timeframe}   {total:,} bars over "
-          f"{len(have)} of the market's {len(axis)} open days"
-          f"   ({len(have)/len(axis)*100:.1f}% covered)\n")
+    out.info(f"\n{args.symbol}  {args.timeframe}   {total:,} bars over "
+             f"{len(have)} of the market's {len(axis)} open days"
+             f"   ({len(have)/len(axis)*100:.1f}% covered)\n")
 
     timeline(axis, have, args)
 
-    print(f"\n  1 cell = {len(axis)/args.width:.1f} market days.   "
-          f"{FULL} complete   {PARTIAL} missing or short   '{EMPTY}' no data")
+    out.info(f"\n  1 cell = {len(axis)/args.width:.1f} market days.   "
+             f"{FULL} complete   {PARTIAL} missing or short   '{EMPTY}' no data")
     if missing:
-        print(f"  {missing} open day(s) missing in {len(runs)} run(s). "
-              f"Weekends and holidays are off the axis,\n  so every break "
-              f"above is data this symbol lacks while others have it.")
+        out.info(f"  {missing} open day(s) missing in {len(runs)} run(s). "
+                 f"Weekends and holidays are off the axis,\n  so every break "
+                 f"above is data this symbol lacks while others have it.")
     else:
-        print("  No breaks: every day the market was open is present.")
+        out.info("  No breaks: every day the market was open is present.")
 
     thin_days(have, args)
     sources(con, args)
@@ -381,12 +387,12 @@ def detail(con, args) -> None:
     if args.months:
         monthly(have, axis)
     if args.days:
-        print("\n-- every day " + "-" * 60)
+        out.info("\n-- every day " + "-" * 60)
         for d in sorted(have):
             n = have[d]
             w = 40
             filled = round(n / BARS_PER_DAY * w)
-            print(f"  {d}  {n:>4}  {FULL * filled}{'.' * (w - filled)}")
+            out.info(f"  {d}  {n:>4}  {FULL * filled}{'.' * (w - filled)}")
 
 
 def main() -> None:
@@ -407,16 +413,17 @@ def main() -> None:
                         f"{int(BARS_PER_DAY * 0.9)} of {BARS_PER_DAY})")
     p.add_argument("--db", default=None, help="override the database path")
     args = p.parse_args()
+    setup_logging()
 
     path = args.db or _default_db()
     con = _connect(path)
-    print(f"price cache: {path}")
-    print(f"1m session  : {BARS_PER_DAY} bars/day "
-          f"({'from TradingCalendar' if _CAL else 'assumed'})")
+    out.info(f"price cache: {path}")
+    out.info(f"1m session  : {BARS_PER_DAY} bars/day "
+             f"({'from TradingCalendar' if _CAL else 'assumed'})")
     if args.symbol:
         detail(con, args)
     else:
-        print()
+        out.info("")
         overview(con, args)
 
 

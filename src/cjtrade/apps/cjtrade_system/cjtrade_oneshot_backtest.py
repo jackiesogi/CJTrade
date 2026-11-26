@@ -50,11 +50,14 @@ from typing import List
 from typing import Optional
 from typing import Union
 
+from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
 from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
-from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models.cost import CostModel
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
@@ -67,7 +70,9 @@ from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
 from cjtrade.pkgs.strategy.snr import SupportResistanceStrategy
 from dotenv import load_dotenv
 
-log = logging.getLogger(__name__)
+log = get_logger("cjtrade_system.oneshot")
+clog = log.getChild("compare")
+out = get_console("cjtrade_system.oneshot")
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -114,7 +119,7 @@ def run_oneshot(
     start_str = start_dt.isoformat()
     end_str = end_dt.isoformat()
 
-    log.info(f"[OneShot] Time Range: {start_str} to {end_str} ({duration_days} days)")
+    log.info("range %s to %s (%d days)", start_str, end_str, duration_days)
 
     # Load parameters using ParameterManager
     strategy = strategy or BollingerStrategy()
@@ -126,7 +131,8 @@ def run_oneshot(
         user_overrides=params
     )
 
-    log.info(f"[OneShot] Parameters: {param_config.params_hash} (interval={interval}, strategy={strategy_name})")
+    log.info("params %s (interval=%s, strategy=%s)",
+             param_config.params_hash, interval, strategy_name)
     merged_params = param_config.params
 
     sym_label = ",".join(symbols)
@@ -138,7 +144,7 @@ def run_oneshot(
     for sym in symbols:
         kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
         if not kbars:
-            log.warning(f"[OneShot] No kbars for {sym} [{start_str} - {end_str}], skipping.")
+            log.warning("no kbars for %s [%s, %s], skipping", sym, start_str, end_str)
             continue
 
         all_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
@@ -221,26 +227,26 @@ def run_oneshot(
     # cost the run its data.
     try:
         result.save(pkl_path)
-        log.info(f"[OneShot] result saved → {pkl_path}")
+        log.info("result saved: %s", pkl_path)
     except Exception as exc:
-        log.warning(f"[OneShot] could not save the result: {exc}")
+        log.warning("save result failed: %s", exc)
         pkl_path = None
 
     try:
         report.full_report(path=html_path, open_browser=open_browser,
                            title=f"Backtest Report: {strategy_title}")
     except Exception as exc:
-        log.warning(f"[OneShot] no HTML tearsheet ({exc})")
+        log.warning("no HTML tearsheet: %s", exc)
         html_path = None
 
     # Said on stdout, last, because this is what a caller needs next.
-    print()
+    out.info("")
     if pkl_path:
-        print(f"  result  {pkl_path}")
+        out.info(f"  result  {pkl_path}")
     if html_path:
-        print(f"  report  {html_path}")
+        out.info(f"  report  {html_path}")
     if pkl_path:
-        print(f"\n  Structured report:  insight {session_id[:8]}")
+        out.info(f"\n  Structured report:  insight {session_id[:8]}")
 
 def run_compare_strategies(
     symbol: Union[str, List[str], None] = None,
@@ -307,7 +313,7 @@ def run_compare_strategies(
     start_str = start_dt.isoformat()
     end_str = end_dt.isoformat()
 
-    log.info(f"[CompareStrategies] Time Range: {start_str} to {end_str} ({duration_days} days)")
+    clog.info("range %s to %s (%d days)", start_str, end_str, duration_days)
 
     if not strategies:
         strategies = {
@@ -324,7 +330,7 @@ def run_compare_strategies(
     for strat_name, strat_instance in strategies.items():
         if "baseline" in strat_name.lower():
             baseline_strategy = strat_instance
-            log.info(f"[CompareStrategies] Identified baseline strategy: {strat_name}")
+            clog.info("baseline strategy: %s", strat_name)
         else:
             test_strategies[strat_name] = strat_instance
 
@@ -336,7 +342,7 @@ def run_compare_strategies(
     for sym in test_symbols:
         kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
         if not kbars:
-            log.warning(f"[CompareStrategies] No kbars for {sym} [{start_str} - {end_str}], skipping.")
+            clog.warning("no kbars for %s [%s, %s], skipping", sym, start_str, end_str)
             continue
 
         test_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
@@ -347,9 +353,9 @@ def run_compare_strategies(
         kbars = api.get_kbars(Product(symbol=baseline_symbol), start_str, end_str, interval)
         if kbars:
             baseline_kbars = kbars
-            log.info(f"[CompareStrategies] Fetched {len(baseline_kbars)} kbars for baseline symbol {baseline_symbol}")
+            clog.info("fetched %d kbars for baseline %s", len(baseline_kbars), baseline_symbol)
         else:
-            log.warning(f"[CompareStrategies] No kbars for baseline {baseline_symbol}, skipping baseline strategy")
+            clog.warning("no kbars for baseline %s, skipping baseline strategy", baseline_symbol)
             baseline_strategy = None
 
     # Merge all kbars
@@ -377,7 +383,7 @@ def run_compare_strategies(
         user_overrides=params
     )
 
-    log.info(f"[CompareStrategies] Parameters: {param_config.params_hash} (interval={interval})")
+    clog.info("params %s (interval=%s)", param_config.params_hash, interval)
     final_params = param_config.params
 
     # Run comparison
@@ -406,9 +412,9 @@ def run_compare_strategies(
     multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=False)
 
     # Generate individual quantstats full_report for each strategy
-    print("\n" + "=" * 80)
-    print("  Generating individual quantstats reports for each strategy...")
-    print("=" * 80)
+    out.info("\n" + "=" * 80)
+    out.info("  Generating individual quantstats reports for each strategy...")
+    out.info("=" * 80)
 
     for strat_name, result in multi_report._results.items():
         report = BacktestReport(result)
@@ -417,7 +423,7 @@ def run_compare_strategies(
         report.summary()
         report.full_report(path=individual_html, open_browser=open_browser, title=f"Backtest Report: {strat_name}")
 
-    print("=" * 80)
+    out.info("=" * 80)
     multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=open_browser)
 
 
@@ -426,7 +432,7 @@ def run_compare_strategies(
 # ---------------------------------------------------------------------------
 def main():
     import argparse
-    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)-7s : %(message)s")
+    setup_logging(logging.INFO)
 
     ap = argparse.ArgumentParser(description="CJTrade one-shot backtest")
     ap.add_argument("--symbol",       default=None, help="Ticker(s), e.g. 2330 or 2330,0050")
@@ -448,7 +454,7 @@ def main():
 
     # Handle --show-params
     if args.show_params:
-        print(ParameterManager.show_params(
+        out.info(ParameterManager.show_params(
             interval=args.interval,
             strategy_name="BollingerBands",  # Default, can be overridden
             user_overrides=args.params

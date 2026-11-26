@@ -6,9 +6,10 @@ Regime-switching strategy: Donchian breakout in trends + SNR in consolidation.
 What measures the trend
 -----------------------
 An efficiency ratio on a 0-100 scale (net displacement / total path travelled
-over `adx__period` closes), NOT the Wilder ADX -- this feed carries no per-bar
-high and low to compute one from. See _calculate_adx, which also records what
-it replaced and why the 40/20 thresholds still mean something.
+over `adx__period` closes), NOT the Wilder ADX, which needs a history of each
+bar's high and low that this strategy does not keep. See _calculate_adx, which
+also records what it replaced and why the 40/20 thresholds still mean
+something.
 
 Behavior
 --------
@@ -42,18 +43,18 @@ run_oneshot(symbol="2330", start="2023-01-01", strategy=strategy)
 """
 from __future__ import annotations
 
-import logging
 import math
 from typing import Any
 from typing import Dict
 from typing import List
 
+from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import Signal
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
 
-log = logging.getLogger(__name__)
+log = get_logger("strategy.adx")
 
 
 class ADXAdaptiveStrategy(BaseStrategy):
@@ -175,7 +176,7 @@ class ADXAdaptiveStrategy(BaseStrategy):
         self._last_reason = "no bars yet"
 
         log.info(
-            f"[{self.name}] ADX_period={self._adx_period} "
+            f"ADX_period={self._adx_period} "
             f"strong_threshold={self._adx_strong_threshold} "
             f"weak_threshold={self._adx_weak_threshold} "
             f"donchian_period={self._donchian_period} "
@@ -315,9 +316,11 @@ class ADXAdaptiveStrategy(BaseStrategy):
         This is an efficiency ratio -- net displacement over total path
         travelled -- and NOT the Wilder ADX, which needs each bar's own high
         and low. StrategyContext carries price_history as closes and nothing
-        else, and the Snapshot this feed delivers reports the trading DAY's
-        high and low rather than the bar's (see main2's _snapshot_real), so
-        there is no per-bar range available to compute a real ADX from.
+        else. When this was written the trading engine's bars were snapshots,
+        whose high and low are the trading DAY's, so no per-bar range existed
+        at all. The engine now delivers real 1m bars, but switching to a real
+        ADX would change every result this strategy has produced, so it is
+        left as a separate decision.
 
         It replaced `mean(|1-bar return|) * 100`, which was not on a 0-100
         scale at all: that figure is a percent-per-bar, so over 1,063,349 real
@@ -470,8 +473,8 @@ class ADXAdaptiveStrategy(BaseStrategy):
 
     def on_fill(self, fill: Fill, ctx: StrategyContext) -> None:
         """Called after a fill is executed."""
-        log.info(f"[{self.name}] {fill.action} {fill.quantity} @ {fill.price} ({fill.symbol})")
+        log.info(f"@{fill.timestamp:%Y-%m-%d %H:%M} {fill.action} filled {fill.symbol} qty={fill.quantity} px={fill.price}")
 
     def on_end(self, ctx: StrategyContext) -> None:
         """Called at end of backtest."""
-        log.info(f"[{self.name}] Backtest completed")
+        log.info("backtest done")
