@@ -143,12 +143,38 @@ jobs:
           path: LAST_CJTRADE_INTEGRATION_TEST.log
           if-no-files-found: ignore
 
-  sinopac-shell:
-    name: shell test (Sinopac, simulation)
+  # Whether the Sinopac secrets are set, so the job below can be skipped by
+  # GitHub (shown as skipped) instead of running and passing without testing
+  # anything. A job's `if:` cannot read secrets, hence a job of its own.
+  sinopac-secrets:
+    name: Sinopac secrets present?
     # Pull requests from forks get no secrets.
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - id: check
+        env:
+          API_KEY: ${{ secrets.SINOPAC_API_KEY }}
+          SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
+          CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
+          CA_CERT_BASE64: ${{ secrets.SINOPAC_CA_CERT_BASE64 }}
+        run: |
+          if [ -n "$API_KEY" ] && [ -n "$SECRET_KEY" ] && [ -n "$CA_PASSWORD" ] && [ -n "$CA_CERT_BASE64" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Sinopac secrets are not set; the Sinopac shell test is skipped."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sinopac-shell:
+    name: shell test (Sinopac, simulation)
+    needs: sinopac-secrets
+    if: needs.sinopac-secrets.outputs.present == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # One Sinopac login at a time across all branches.
@@ -162,39 +188,20 @@ jobs:
     # The secrets are handed only to the steps that read them, so checkout,
     # setup-uv and `uv sync` (third-party code) never see them.
     steps:
-      - name: Check the Sinopac secrets are set
-        id: secrets
-        env:
-          API_KEY: ${{ secrets.SINOPAC_API_KEY }}
-          SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
-          CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
-          CA_CERT_BASE64: ${{ secrets.SINOPAC_CA_CERT_BASE64 }}
-        run: |
-          if [ -n "$API_KEY" ] && [ -n "$SECRET_KEY" ] && [ -n "$CA_PASSWORD" ] && [ -n "$CA_CERT_BASE64" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Sinopac secrets are not set; skipping the Sinopac shell test."
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
-        if: steps.secrets.outputs.present == 'true'
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        if: steps.secrets.outputs.present == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
-      - if: steps.secrets.outputs.present == 'true'
-        run: uv sync
+      - run: uv sync
       - name: Write the CA certificate
-        if: steps.secrets.outputs.present == 'true'
         env:
           CA_CERT_BASE64: ${{ secrets.SINOPAC_CA_CERT_BASE64 }}
         run: |
           umask 077
           printf '%s' "$CA_CERT_BASE64" | base64 -d > "$RUNNER_TEMP/Sinopac.pfx"
           echo "CA_CERT_PATH=$RUNNER_TEMP/Sinopac.pfx" >> "$GITHUB_ENV"
-      - if: steps.secrets.outputs.present == 'true'
-        env:
+      - env:
           API_KEY: ${{ secrets.SINOPAC_API_KEY }}
           SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
           CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
@@ -202,5 +209,5 @@ jobs:
       # No log artifact here: the shell prints account details, and artifacts
       # of a public repository can be downloaded by anyone.
       - name: Remove the CA certificate
-        if: always() && steps.secrets.outputs.present == 'true'
+        if: always()
         run: rm -f "$RUNNER_TEMP/Sinopac.pfx"
