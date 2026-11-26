@@ -91,6 +91,7 @@ src/cjtrade/
     ArenaX/         the simulated broker (server + 4 backends + market clock + price db)
     CJShell/        interactive shell (`cjshell`), CommandBase subclass per command
     CJTrade/        the trading app (`cjtrade`): engine, bots, status API
+    FinHub/         web UI for the trading app (`finhub`, FastAPI, 127.0.0.1 only)
     CJEdit/ CJNews/ smaller apps
 poc/                scratch space: form-driven backtest script, experiments/
 tests/              unit / integration / manual

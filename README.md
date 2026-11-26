@@ -26,6 +26,8 @@ changing it.
   (`on_bar`, `buy`, `sell`, `ta.*`, `param.*`), checked before it runs.
 - **Risk controls.** Per-strategy capital limits, order-rate limits,
   duplicate-order detection and a loss kill switch.
+- **FinHub, a web UI.** Start runs, watch each bot, and trade by hand from
+  the browser.
 - **Analytics.** Technical indicators (TA-Lib), TWSE fundamentals, news,
   LLM clients, quantstats reports and run diagnostics.
 
@@ -185,6 +187,19 @@ report:
 uv run insight            # the most recent run
 uv run insight --list     # every run on this machine
 ```
+
+### FinHub
+
+The web UI for the trading app. It starts the broker and the engine itself,
+shows each bot while it runs, and keeps a record of every run:
+
+<!-- cjcheck: static -->
+```sh
+uv run finhub             # http://127.0.0.1:8000, loopback only
+```
+
+See [`src/cjtrade/apps/FinHub/README.md`](./src/cjtrade/apps/FinHub/README.md)
+for its settings.
 
 ## Writing a strategy
 

@@ -45,6 +45,9 @@
 - name: "area: engine"
   color: 5319e7
   description: "The CJTrade app: trading engine and bots (apps/CJTrade)"
+- name: "area: finhub"
+  color: 5319e7
+  description: "FinHub web UI (apps/FinHub)"
 - name: "area: strategy"
   color: 5319e7
   description: "Strategies, strategy authoring, strategy-tool, CJEdit"

@@ -114,6 +114,7 @@ COVERED = [
     "src/cjtrade/apps/CJNews/README.md",
     "src/cjtrade/apps/CJShell/README.md",
     "src/cjtrade/apps/CJTrade/README.md",
+    "src/cjtrade/apps/FinHub/README.md",
     "src/cjtrade/pkgs/brokers/README.md",
 ]
 

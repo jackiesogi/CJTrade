@@ -63,6 +63,12 @@ documentation:
           - 'src/cjtrade/apps/CJTrade/**'
           - 'tests/unit/apps/CJTrade/**'
 
+'area: finhub':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src/cjtrade/apps/FinHub/**'
+          - 'tests/unit/apps/FinHub/**'
+
 'area: strategy':
   - changed-files:
       - any-glob-to-any-file:

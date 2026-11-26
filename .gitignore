@@ -36,6 +36,9 @@ htmlcov/
 # mkdocs build output
 site/
 
+# FinHub's editor bundle is built from tools/editor with npm
+src/cjtrade/apps/FinHub/tools/editor/node_modules/
+
 # What poc/experiments/bin writes as it runs
 poc/experiments/runs.csv
 poc/experiments/runs/

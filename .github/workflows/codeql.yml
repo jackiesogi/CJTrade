@@ -34,13 +34,14 @@ jobs:
       matrix:
         # python: the code. actions: the workflows themselves, e.g. a secret
         # or an untrusted PR title reaching a `run:` script.
-        language: [python, actions]
+        # javascript-typescript: FinHub's pages, which handle a session token.
+        language: [python, actions, javascript-typescript]
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # Neither language needs a build. CodeQL reads Python source
+          # None of them needs a build. CodeQL reads Python source
           # without installing the dependencies.
           build-mode: none
           # security-extended adds lower-precision security queries to the
@@ -49,9 +50,11 @@ jobs:
           queries: security-extended
           config: |
             paths-ignore:
-              - exp
+              - poc/experiments
               - ref
               - tests
+              # Third-party CodeMirror, bundled; not our code to fix.
+              - src/cjtrade/apps/FinHub/static/vendor
       - uses: github/codeql-action/analyze@v3
         with:
           category: /language:${{ matrix.language }}
