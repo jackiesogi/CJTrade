@@ -55,12 +55,11 @@ news = ["newsapi-python>=0.2.7"]
 all = ["cjtrade[sinopac,llm,news]"]
 
 [project.scripts]
+cjtrade = "cjtrade.apps.CJTrade.main:cli"
 cjshell = "cjtrade.apps.CJShell.cjshell:main"
 arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
 aresh = "cjtrade.apps.ArenaX.brokerside_server_admin_shell:main"
-system = "cjtrade.apps.cjtrade_system.system_launcher:main"
-backtest = "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest:main"
-_system_direct = "cjtrade.apps.cjtrade_system.cjtrade_system_arenax:main_system"
+backtest = "cjtrade.apps.oneshot_backtest:main"
 strategy-tool = "cjtrade.apps.strategy_tool:main"
 insight = "cjtrade.apps.insight:main"
 preload-prices = "cjtrade.apps.preload_prices:main"

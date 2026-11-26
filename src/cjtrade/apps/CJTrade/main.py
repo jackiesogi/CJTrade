@@ -1,6 +1,6 @@
 """
-poc/trading_engine/main.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/main.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The trading engine's master: one broker session, a price feed to N bot
 processes, and the only place orders are placed.
 
@@ -58,9 +58,12 @@ from pathlib import Path
 from typing import Awaitable
 from typing import Callable
 
-import protocol
-import status_api
 import zmq.asyncio
+from cjtrade.apps.CJTrade import protocol
+from cjtrade.apps.CJTrade import status_api
+from cjtrade.apps.CJTrade.protocol import OrderIntent
+from cjtrade.apps.CJTrade.protocol import OrderReport
+from cjtrade.apps.CJTrade.protocol import PriceUpdate
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 from cjtrade.pkgs.brokers.account_client import AccountClient
@@ -77,9 +80,6 @@ from cjtrade.pkgs.models.position import Position
 from cjtrade.pkgs.risk import RiskGate
 from cjtrade.pkgs.risk import RiskLimits
 from cjtrade.pkgs.ui.engine import FormEngine
-from protocol import OrderIntent
-from protocol import OrderReport
-from protocol import PriceUpdate
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Two independent knobs, because the two kinds of noise have nothing to do with
@@ -206,10 +206,9 @@ def roster_from_argv(argv: list[str] | None = None) -> list[tuple] | None:
 ARENAX_PORT = 8802
 BAR_INTERVAL_SEC = 60        # market seconds between polls == 1m bars
 
-# The same form cjtrade_system is launched with (poc/backtest_full_simulation.sh
-# evals it). Sharing the file means the two apps ask the identical questions and
-# share one persisted answer set, instead of drifting into two copies.
-FORM_SCHEMA = Path(__file__).resolve().parents[1] / "backtest_full_simulation.toml"
+# The questions `cjtrade` asks before a run, beside this module so an installed
+# package finds it from any directory.
+FORM_SCHEMA = Path(__file__).resolve().parent / "form.toml"
 
 # Which clock implementation to exercise. Deliberately NOT a form field: the
 # form asks which ArenaX backend to run against (backtest / paper / demo), which
@@ -1180,8 +1179,8 @@ class RunRecorder:
     def observe(self, as_of: datetime | None, equity: float) -> None:
         """Record one equity sample, at most one per minute of market time.
 
-        Deduped by minute to match how cjtrade_system and BacktestEngine record
-        theirs, so the resampling in BacktestResult.to_returns() sees the same
+        Deduped by minute to match how BacktestEngine records
+        its own, so the resampling in BacktestResult.to_returns() sees the same
         resolution whichever engine produced the curve.
         """
         stamp = as_of or datetime.now()
@@ -1258,9 +1257,8 @@ class RunRecorder:
             fill_history=raw["fill_history"],
             session_id=self.session_id,
             start_time=self.start_time,
-            # cjtrade_system leaves this unset, which makes its summary report
-            # uPnL as 0 and understate the total whenever the run ends holding
-            # a position. Set it.
+            # Left unset, the summary reports uPnL as 0 and understates the
+            # total whenever the run ends holding a position. Set it.
             final_equity=final_equity,
         )
 
@@ -1269,7 +1267,7 @@ def print_run_report(result: BacktestResult, open_browser: bool = True) -> None:
     """Print the summary and the round-trip table, then write the tearsheet.
 
     All of it comes from pkgs/analytics/evaluation/quantstats.py -- the same
-    reporting layer cjtrade_system and the oneshot backtester use. Sharing it
+    reporting layer the oneshot backtester uses. Sharing it
     rather than hand-rolling a summary here is the only way a run through this
     engine and a run through those are comparable: one definition of realised
     P&L, one FIFO round-trip matcher, one annualisation factor.
@@ -1544,7 +1542,7 @@ def load_config(schema: Path = FORM_SCHEMA) -> EngineConfig:
     drops them from the schema), so this is interactive by default and scriptable
     on demand:
 
-        uv run python poc/trading_engine/main.py \\
+        uv run cjtrade \\
             --broker=arenax --mode=backtest --watch-list=0050,2317 \\
             --speed=60 --days=30 --fund=1000000 --start-date=2025-09-01
     """
@@ -1713,8 +1711,10 @@ async def main():
                       "(%s), it would never get a bar", bot_id, symbol,
                       ",".join(cfg.symbols))
             continue
+        # As a module, so the bot imports this package the same way the
+        # engine does, from a checkout or an installed wheel alike.
         procs.append(await asyncio.create_subprocess_exec(
-            sys.executable, '-u', str(BOT_DIR / script),
+            sys.executable, '-u', '-m', f"{__package__}.{Path(script).stem}",
             bot_id, str(bot_balance), session_id, symbol, *extra))
         bots.append(bot_id)
         bot_symbols[bot_id] = symbol
@@ -2040,5 +2040,10 @@ async def main():
         account_client.disconnect()
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """The ``cjtrade`` command."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()

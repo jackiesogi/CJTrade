@@ -1,6 +1,6 @@
 """
-poc/trading_engine/bot_runner.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/bot_runner.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The part of a bot that is the same for every bot.
 
 This was the body of bot_c.py. It moved here because a second and third bot
@@ -43,8 +43,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
-import protocol
 import zmq
+from cjtrade.apps.CJTrade import protocol
+from cjtrade.apps.CJTrade.protocol import BotCommand
+from cjtrade.apps.CJTrade.protocol import BotStatus
+from cjtrade.apps.CJTrade.protocol import FeedStatus
+from cjtrade.apps.CJTrade.protocol import OrderIntent
+from cjtrade.apps.CJTrade.protocol import OrderReport
+from cjtrade.apps.CJTrade.protocol import PriceUpdate
 from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models.kbar import Kbar
@@ -58,12 +64,6 @@ from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
 from cjtrade.pkgs.strategy.base_strategy import Fill
 from cjtrade.pkgs.strategy.base_strategy import StrategyContext
-from protocol import BotCommand
-from protocol import BotStatus
-from protocol import FeedStatus
-from protocol import OrderIntent
-from protocol import OrderReport
-from protocol import PriceUpdate
 
 # Before bot_id is known. run_bot replaces it with "bot.<bot_id>".
 log = get_logger("bot")

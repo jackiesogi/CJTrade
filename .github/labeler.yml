@@ -60,8 +60,8 @@ documentation:
 'area: engine':
   - changed-files:
       - any-glob-to-any-file:
-          - 'poc/trading_engine/**'
-          - 'tests/unit/poc/**'
+          - 'src/cjtrade/apps/CJTrade/**'
+          - 'tests/unit/apps/CJTrade/**'
 
 'area: strategy':
   - changed-files:
@@ -76,7 +76,7 @@ documentation:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/analytics/backtest/**'
           - 'src/cjtrade/pkgs/analytics/evaluation/**'
-          - 'src/cjtrade/apps/cjtrade_system/cjtrade_oneshot_backtest.py'
+          - 'src/cjtrade/apps/oneshot_backtest.py'
           - 'src/cjtrade/apps/insight.py'
           - 'poc/backtest*'
 
@@ -85,11 +85,6 @@ documentation:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/risk/**'
           - 'tests/unit/pkgs/risk/**'
-
-'area: system':
-  - changed-files:
-      - any-glob-to-any-file:
-          - 'src/cjtrade/apps/cjtrade_system/**'
 
 'area: shell':
   - changed-files:
@@ -144,5 +139,5 @@ real-money:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/brokers/sinopac/**'
           - 'src/cjtrade/apps/ArenaX/real_backend.py'
-          - 'src/cjtrade/apps/cjtrade_system/**'
+          - 'src/cjtrade/apps/CJTrade/**'
           - 'tests/test_cjtrade_integration.sh'

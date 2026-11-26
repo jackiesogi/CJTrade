@@ -277,7 +277,7 @@ echo ready
 
 ```bash
 # 內建策略單次回測
-ARENAX_PORT=8802 uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+ARENAX_PORT=8802 uv run python -m cjtrade.apps.oneshot_backtest \
   --symbol 2317 --start 2021-01-01 --duration 1461 --interval 1m \
   --balance 1000000 --strategy DonchianBreakoutStrategy \
   --params 'donchian__period:100,risk__max_position_pct:0.5' --no-browser
@@ -359,7 +359,7 @@ uv run strategy-tool template --kind bb --name MyStrat --symbol 2317 | jq -r .so
 |---|---|
 | 為了找 root cause 去讀框架 source code | 你的角色是使用者。發現怪異行為就記錄（第 8.4 節），不要追進去 |
 | 連網查價格、新聞、財報 | 資料已全部預熱在本機，不需要連網。這是實驗設計的一部分 |
-| 用 trading engine（`poc/trading_engine/main.py`） | 太慢。一次最多 300 天、只支援 1m、每次數分鐘。這個實驗不需要它 |
+| 用 trading engine（`src/cjtrade/apps/CJTrade/main.py`） | 太慢。一次最多 300 天、只支援 1m、每次數分鐘。這個實驗不需要它 |
 | 碰 OOS 區間（2025-01-01 之後）做調參 | 那是驗收資料。只能在 P5 碰一次 |
 | 用 `DCA_Monthly` / `BaselineStrategy` 當答案 | 違反低曝險目標。只能當基準對照 |
 | 改 `poc/experiments/bin/windows.sh` 的清單 | 預先登錄的意義就在於不能改 |

@@ -13,10 +13,10 @@ Arguments: $ARGUMENTS (symbols, start date, number of days).
    `curl -s localhost:8802/health` reports `"running":true`:
    `CJTRADE_OFFLINE=1 AX_BACKTEST_DURATION_DAYS=<days + 15> uv run arenaxd --backend=backtest --port=8802 --data=offline --price-db=<file> > /tmp/arenax.log 2>&1 &`
 3. Run the engine and keep its log:
-   `uv run python poc/trading_engine/main.py --broker=arenax --mode=backtest --watch-list=<symbols> --fund=1000000 --days=<days> --start-date=<start> --speed=0 > /tmp/engine.log 2>&1`
+   `uv run cjtrade --broker=arenax --mode=backtest --watch-list=<symbols> --fund=1000000 --days=<days> --start-date=<start> --speed=0 > /tmp/engine.log 2>&1`
 4. Stop the server you started (only that process).
 5. Report from /tmp/engine.log: bars replayed, signals per bot, fills, PnL,
    and the round-trip table; and any ERROR/WARNING lines from either log.
 
-The bots trade the symbols in `BOT_ROSTER` in poc/trading_engine/main.py,
+The bots trade the symbols in `BOT_ROSTER` in src/cjtrade/apps/CJTrade/main.py,
 which must be in the watch list.

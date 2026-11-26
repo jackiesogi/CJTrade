@@ -1,6 +1,6 @@
 """
-poc/trading_engine/protocol.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/protocol.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The wire format between the master engine and the bots.
 
 Why this file exists
@@ -388,7 +388,7 @@ def _encode_hook(obj: Any) -> Any:
         if name not in _WIRE_TYPES:
             raise TypeError(
                 f"{name} is not a registered wire type — add it to _WIRE_TYPES "
-                f"in poc/trading_engine/protocol.py, or stop sending it."
+                f"in cjtrade/apps/CJTrade/protocol.py, or stop sending it."
             )
         return {_TAG: name,
                 _VAL: {f.name: getattr(obj, f.name) for f in fields(obj)}}

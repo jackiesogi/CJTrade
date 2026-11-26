@@ -1,6 +1,6 @@
 """
-poc/trading_engine/bot_custom.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/bot_custom.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Runs a hand-written strategy file.
 
     python bot_custom.py <bot_id> <balance> <session_id> <symbol> <path.py>
@@ -24,8 +24,8 @@ its monitors instead.
 import sys
 from pathlib import Path
 
-from bot_runner import bot_argv
-from bot_runner import run_bot
+from cjtrade.apps.CJTrade.bot_runner import bot_argv
+from cjtrade.apps.CJTrade.bot_runner import run_bot
 from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.strategy.user_strategy import load

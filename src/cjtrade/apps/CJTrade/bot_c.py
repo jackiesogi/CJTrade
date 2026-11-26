@@ -1,13 +1,13 @@
 """
-poc/trading_engine/bot_c.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/bot_c.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Bollinger Band mean reversion on a single symbol.
 
 Everything that is not the strategy choice lives in bot_runner.py -- sockets,
 sequence checking, the ledger mirror, the status report. This file is the whole
 of what makes this bot different from bot_a and bot_b.
 """
-from bot_runner import run_bot
+from cjtrade.apps.CJTrade.bot_runner import run_bot
 from cjtrade.pkgs.strategy.bb import BollingerStrategy
 
 SYMBOL = "2317"

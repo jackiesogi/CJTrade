@@ -90,7 +90,7 @@ STATUS_HOST = "127.0.0.1"
 # browser. Absent means there is no control plane -- the write routes refuse,
 # they do not open. See the _authenticated middleware.
 CONTROL_TOKEN_ENV = "CJ_ENGINE_CONTROL_TOKEN"
-# 8801/8802 are ArenaX, 8899 is cjtrade_system's API, 9876 is the form
+# 8801-8803 are ArenaX, 9876 is the form
 # renderer, 5555/5556 are the engine's ZMQ pair. 8898 is clear.
 DEFAULT_STATUS_PORT = 8898
 

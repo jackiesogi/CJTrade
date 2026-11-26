@@ -15,7 +15,7 @@ Two halves:
 | | |
 |---|---|
 | `src/cjtrade/pkgs/` | The SDK. Brokers, models, strategies, analytics, DB, LLM, charts, forms. |
-| `src/cjtrade/apps/` | Applications built on the SDK. ArenaX, CJShell, cjtrade_system, CJEdit, CJNews. |
+| `src/cjtrade/apps/` | Applications built on the SDK. CJTrade (the trading app), ArenaX, CJShell, FinHub, CJEdit, CJNews. |
 
 Brokers: **Sinopac** (永豐金, real) and **ArenaX** (built-in simulated exchange).
 Cathay / Yuanta are stubs.
@@ -52,7 +52,7 @@ uv run pytest tests/unit/ -q              # ~700 tests, ~90s, no network
 uv run pytest tests/integration/arenax/   # needs arenaxd on :8801
 uv run arenaxd --backend=demo --port=8802 # ArenaX broker-side server
 uv run cjshell --broker=arenax            # interactive shell
-uv run system --broker=arenax --mode=backtest   # full-simulation trading system
+uv run cjtrade --broker=arenax --mode=backtest  # the trading app (engine + bots)
 uv run backtest --symbol=2330             # one-shot vectorised backtest
 bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all  # shell smoke test (ArenaX)
 ```
@@ -90,9 +90,9 @@ src/cjtrade/
   apps/
     ArenaX/         the simulated broker (server + 4 backends + market clock + price db)
     CJShell/        interactive shell (`cjshell`), CommandBase subclass per command
-    cjtrade_system/ the automated system; system_launcher.py is the entry point
+    CJTrade/        the trading app (`cjtrade`): engine, bots, status API
     CJEdit/ CJNews/ smaller apps
-poc/                scratch space. trading_engine/ is the multi-bot ZMQ prototype
+poc/                scratch space: form-driven backtest script, experiments/
 tests/              unit / integration / manual
 ref/                design notes and captured logs, not code
 scripts/            config and account-state generators
@@ -148,7 +148,7 @@ belongs in an init/bootstrap step, not in the loop. No clock stepping, no
 `set_market_time`, no `if broker == "arenax"` inside engine logic. The one
 allowed `if` is where the clock or broker is *constructed*.
 
-**The engine feeds bars, not snapshots.** `poc/trading_engine/main.py`
+**The engine feeds bars, not snapshots.** `src/cjtrade/apps/CJTrade/main.py`
 publishes each symbol's closed 1m bars from `client.market.get_kbars` as a
 `Kbar` (`protocol.PriceUpdate.bar`); a minute with no trade publishes nothing
 and a `FeedStatus` says so. A replay's timeline comes from
@@ -442,7 +442,7 @@ schema serves a CLI prompt, a GTK dialog and a web form. Fields with a
 ```python
 from cjtrade.pkgs.ui.engine import FormEngine
 
-answers = FormEngine("poc/backtest_full_simulation.toml", renderer="cli").run()
+answers = FormEngine("src/cjtrade/apps/CJTrade/form.toml", renderer="cli").run()
 # {"broker": "arenax", "mode": "backtest", "watch_list": "2330", "fund": 500000, ...}
 ```
 
@@ -493,10 +493,9 @@ class BalanceCommand(CommandBase):
   account can oversell. Same hole for cash on the buy side.
 - There is **no** config key or endpoint that sets ArenaX's starting balance.
   `initial_balance` exists as a constructor kwarg but nothing passes it. The
-  only working lever is `AX_STATE_FILE` / `CJSYS_STATE_FILE` pointing at a
-  snapshot whose `"balance"` field holds the number — which is what
-  `scripts/gen_init_account.sh` writes and `poc/backtest_full_simulation.sh`
-  wires up. Otherwise you get `DEFAULT_INITIAL_BALANCE = 100_000.0`.
+  only working lever is `AX_STATE_FILE` pointing at a snapshot whose
+  `"balance"` field holds the number — which is what
+  `scripts/gen_init_account.sh` writes. Otherwise you get `DEFAULT_INITIAL_BALANCE = 100_000.0`.
 - `seed_from_live` is never passed by any caller, so paper/real do **not**
   seed from the real account despite what the scripts' comments claim.
 - `db_api.py:386` has a mutable default evaluated at import

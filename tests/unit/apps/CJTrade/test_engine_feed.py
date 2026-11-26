@@ -6,23 +6,13 @@ PUB socket are fakes.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
 from datetime import datetime
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
+from cjtrade.apps.CJTrade import main as engine
+from cjtrade.apps.CJTrade import protocol
 from cjtrade.pkgs.models.kbar import Kbar
-
-ENGINE_DIR = Path(__file__).resolve().parents[3] / "poc" / "trading_engine"
-sys.path.insert(0, str(ENGINE_DIR))
-
-import protocol  # noqa: E402
-
-_spec = importlib.util.spec_from_file_location("engine_main", ENGINE_DIR / "main.py")
-engine = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(engine)
 
 T0 = datetime(2026, 3, 2, 9, 1)
 

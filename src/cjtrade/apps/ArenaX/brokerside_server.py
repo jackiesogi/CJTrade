@@ -627,7 +627,7 @@ class ArenaX_BrokerSideServer:
             without the bracket it sits in.
 
             NOTE: equity_curve is intentionally NOT here. The client
-            (cjtrade_system) records it locally during the run so the server
+            (the CJTrade app) records it locally during the run so the server
             does not accumulate unbounded in-memory data across sessions.
 
             Query (both optional, and omitting both is the old behaviour):
@@ -1083,7 +1083,7 @@ class ArenaX_BrokerSideServer:
                 #       It might be a bit weird but just a trade-off (we don't want to create a specific
                 #       high-frequency background thread just to manage the time skipping.)
                 # Auto-skip non-trading hours (after 13:30 / weekends) for backtest acceleration.
-                # Server manages this internally; cjtrade_system does NOT need to call adjust_time().
+                # Server manages this internally; clients do NOT need to call adjust_time().
                 if self._skip_non_trading_hours:
                     self._skip_to_trading_hours()
 

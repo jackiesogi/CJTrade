@@ -126,8 +126,7 @@ uv run cjshell --broker=sinopac
 | Method | How time moves | Reproducible | Use it for |
 |---|---|---|---|
 | `oneshot` | Walks a pre-fetched bar series | Yes | Parameter sweeps, quick screening |
-| Trading engine | Steps through real bar timestamps | Yes | Results you intend to compare |
-| `full_sim` | Sped-up wall clock | No | Watching the system run end to end |
+| Trading engine (`cjtrade`) | Steps through real bar timestamps | Yes | Results you intend to compare |
 
 Strategy windows are counted in **bars**, so changing `--interval` changes
 the strategy: a 100-bar window is 100 minutes at `1m` and 100 days at `1d`.
@@ -149,7 +148,7 @@ command line. Built-in strategies: `BollingerStrategy`, `ADXAdaptiveStrategy`,
 
 ### Trading engine
 
-Each strategy runs as its own process; only the master process holds the
+`cjtrade` is the trading app. Each strategy runs as its own process; only the master process holds the
 broker session and the risk gate. Every bar, the master publishes each
 symbol's closed 1m bars (`client.market.get_kbars`) to its bots. Before
 stepping to the next bar, it waits for every bot to answer the current one,
@@ -159,13 +158,13 @@ so `--speed=0` and `--speed=60` produce the same bars, orders and fills.
 ```sh
 uv run arenaxd --backend=backtest --port=8802 > /dev/null 2>&1 &
 sleep 15
-ARENAX_PORT=8802 uv run python poc/trading_engine/main.py \
-  --broker=arenax --mode=backtest --watch-list=2357 \
+uv run cjtrade --broker=arenax \
+  --mode=backtest --watch-list=2357 \
   --fund=1000000 --days=30 --start-date=2025-09-01 --speed=0
 ```
 
 The bots that run are listed in `BOT_ROSTER` in
-[`poc/trading_engine/main.py`](./poc/trading_engine/main.py), or in a file
+[`src/cjtrade/apps/CJTrade/main.py`](./src/cjtrade/apps/CJTrade/main.py), or in a file
 passed with `--roster=`. A read-only status page is served on
 `http://127.0.0.1:8898/status` while a run is in progress.
 
@@ -174,7 +173,6 @@ passed with `--roster=`. A read-only status page is served on
 > the `sinopac` extra and credentials; `arenaxd --data=finmind,yfinance`
 > runs it without a broker account, and `--data=offline --price-db=FILE`
 > runs it on bars preloaded with `preload-prices`, with no network at all.
-> The trading engine is a proof of concept under `poc/`.
 
 ### Reading the result
 

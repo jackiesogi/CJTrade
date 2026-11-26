@@ -398,7 +398,7 @@ class ArenaXMiddleWare:
         """Fetch raw backtest data from the server.
 
         Returns a dict with keys: initial_balance, final_balance, fill_history.
-        equity_curve is NOT fetched from the server; the client (cjtrade_system)
+        equity_curve is NOT fetched from the server; the client (the CJTrade app)
         records it locally during the backtest run.
 
         Parameters

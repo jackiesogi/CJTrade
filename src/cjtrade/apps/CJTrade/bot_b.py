@@ -1,6 +1,6 @@
 """
-poc/trading_engine/bot_b.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/bot_b.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ADX-gated regime switching: Donchian breakout while a trend holds, support and
 resistance while the price ranges.
 
@@ -13,7 +13,7 @@ below are the conventional ADX ones and they do transfer, because the
 efficiency ratio is scale-free; see adx.py's _calculate_adx for the
 measurement that establishes that.
 """
-from bot_runner import run_bot
+from cjtrade.apps.CJTrade.bot_runner import run_bot
 from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
 
 SYMBOL = "2357"

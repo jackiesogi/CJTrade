@@ -101,7 +101,5 @@ Then add `--roster=/path/to/roster.json` to the engine command in the
 [README](https://github.com/jackiesogi/CJTrade#trading-engine), with the
 bot's symbol in `--watch-list`.
 
-!!! warning
-    The trading engine lives in `poc/` and is still a proof of concept.
 
 Next: [Backtesting](backtesting.md).

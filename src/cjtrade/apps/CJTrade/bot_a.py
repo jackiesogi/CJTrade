@@ -1,6 +1,6 @@
 """
-poc/trading_engine/bot_a.py
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cjtrade/apps/CJTrade/bot_a.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Monthly dollar-cost averaging on a broad-market ETF.
 
 Buys a fixed NT$ amount on the first bar of each calendar month and never
@@ -8,7 +8,7 @@ sells, so it is the accumulate-and-hold baseline the other two bots are
 measured against. Everything that is not the strategy choice lives in
 bot_runner.py.
 """
-from bot_runner import run_bot
+from cjtrade.apps.CJTrade.bot_runner import run_bot
 from cjtrade.pkgs.strategy.dca import DCA_Monthly
 
 SYMBOL = "0050"

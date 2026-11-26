@@ -103,7 +103,7 @@ log = get_logger("scripts.check_readme_examples")
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The hand-written READMEs. poc/trading_engine/README.md and doc/ are out of
+# The hand-written READMEs. src/cjtrade/apps/CJTrade/README.md and doc/ are out of
 # scope on purpose; add them here when they are ready to be held to this.
 COVERED = [
     "README.md",
@@ -113,7 +113,7 @@ COVERED = [
     "src/cjtrade/apps/CJEdit/README.md",
     "src/cjtrade/apps/CJNews/README.md",
     "src/cjtrade/apps/CJShell/README.md",
-    "src/cjtrade/apps/cjtrade_system/README.md",
+    "src/cjtrade/apps/CJTrade/README.md",
     "src/cjtrade/pkgs/brokers/README.md",
 ]
 
@@ -247,7 +247,7 @@ ROUTE_SOURCES = {
         r'@app\.(?:get|post|put|delete|route)\("([^"]+)"\)',
     ),
     (8898,): (
-        "poc/trading_engine/status_api.py",
+        "src/cjtrade/apps/CJTrade/status_api.py",
         r'add_(?:get|post)\("([^"]+)"',
     ),
 }

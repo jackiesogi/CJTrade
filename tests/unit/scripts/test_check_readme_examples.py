@@ -205,7 +205,7 @@ def test_documented_flags_are_accepted(static):
 def test_flags_are_not_judged_against_another_command(static):
     """Two commands in one block keep their own flag lists."""
     body = ("bash poc/backtest.sh --renderer=cli\n"
-            "bash poc/backtest_full_simulation.sh --speed=60\n")
+            "uv run cjtrade --speed=60\n")
     assert static(body) == []
 
 

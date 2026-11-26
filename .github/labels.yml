@@ -44,7 +44,7 @@
   description: "pkgs/marketdata sources, cache, bar/tick models, preload-prices"
 - name: "area: engine"
   color: 5319e7
-  description: "Trading engine and bots (poc/trading_engine)"
+  description: "The CJTrade app: trading engine and bots (apps/CJTrade)"
 - name: "area: strategy"
   color: 5319e7
   description: "Strategies, strategy authoring, strategy-tool, CJEdit"
@@ -54,9 +54,6 @@
 - name: "area: risk"
   color: b60205
   description: "Pre-trade risk gate"
-- name: "area: system"
-  color: bfd4f2
-  description: "CJTrade System (apps/cjtrade_system)"
 - name: "area: shell"
   color: bfd4f2
   description: "Interactive cjtrade shell"

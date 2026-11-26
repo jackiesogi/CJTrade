@@ -41,7 +41,7 @@ if [[ "$STRAT" == *.py ]]; then
   MOD=(python "$ROOT/poc/experiments/bin/custom_backtest.py" --file "$STRAT")
   ARGS=(--symbol "$SYM" --start "$START" --duration "$DUR" --interval "$IV" --balance "$BAL")
 else
-  MOD=(python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest)
+  MOD=(python -m cjtrade.apps.oneshot_backtest)
   ARGS=(--symbol "$SYM" --start "$START" --duration "$DUR" --interval "$IV"
         --balance "$BAL" --strategy "$STRAT" --no-browser)
 fi

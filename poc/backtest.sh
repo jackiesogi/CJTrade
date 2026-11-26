@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 # ------------------------
 for arg in "$@"; do
     if [[ "$arg" == "--show-params" ]]; then
-        uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+        uv run python -m cjtrade.apps.oneshot_backtest \
           --interval 1d --show-params
         exit 0
     fi
@@ -152,7 +152,7 @@ fi
 trap cleanup EXIT SIGINT SIGTERM
 
 sleep 5
-CMD="uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest \
+CMD="uv run python -m cjtrade.apps.oneshot_backtest \
   --symbol $CJSYS_WATCH_LIST \
   --interval $INTERVAL \
   --balance $INITIAL_FUND \

@@ -1,5 +1,5 @@
 """
-apps/cjtrade_system/cjtrade_oneshot_backtest.py
+apps/oneshot_backtest.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 One-shot (vectorised) backtest runner.
 
@@ -12,10 +12,10 @@ Usage
     # From the repo root:
     CJSYS_STATE_FILE=arenax_CJ.json  \\
     CJSYS_WATCH_LIST=2330             \\
-    uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest
+    uv run python -m cjtrade.apps.oneshot_backtest
 
     # Or from Python:
-    from cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest import run_oneshot
+    from cjtrade.apps.oneshot_backtest import run_oneshot
     run_oneshot(symbol="2330", start="2023-01-01", end="2024-01-01")
 
 Environment / config keys
@@ -70,9 +70,9 @@ from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
 from cjtrade.pkgs.strategy.snr import SupportResistanceStrategy
 from dotenv import load_dotenv
 
-log = get_logger("cjtrade_system.oneshot")
+log = get_logger("oneshot_backtest")
 clog = log.getChild("compare")
-out = get_console("cjtrade_system.oneshot")
+out = get_console("oneshot_backtest")
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def run_oneshot(
     # know which path produced the numbers cannot interpret them.
     result.provenance = {
         "path": "oneshot",
-        "produced_by": "cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest",
+        "produced_by": "cjtrade.apps.oneshot_backtest",
         "strategy": strategy_title,
         "strategy_long_name": strategy_name,
         "symbols": symbols,
