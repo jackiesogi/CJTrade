@@ -6,7 +6,7 @@ of what the SDK can do.
 
 | App | What it is | Launch | Reference |
 |-----|------------|--------|-----------|
-| CJTrade Shell | Interactive shell for trading and poking at the API | `uv run cjtrade --broker=arenax` | [README](./cjtrade_shell/README.md) |
+| CJTrade Shell | Interactive shell for trading and poking at the API | `uv run cjshell --broker=arenax` | [README](./CJShell/README.md) |
 | CJTrade System | Automated trading system (paper / real / replay) | `uv run system --broker=arenax --mode=demo` | [README](./cjtrade_system/README.md) |
 | ArenaX | Simulated broker: market data, matching, portfolio | `uv run arenaxd` | [README](./ArenaX/README.md) |
 | CJNews | Financial news search engine | `uv run python src/cjtrade/apps/CJNews/main.py` | [README](./CJNews/README.md) |

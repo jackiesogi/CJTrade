@@ -1,3 +1,9 @@
+# Interactive shell
+# Supported commands:
+#   help:   Show this help message
+#   lsodr:  List all orders
+#   lspos:  List all positions
+#   exit:   Close interactive shell
 import asyncio
 import os
 import subprocess
@@ -27,12 +33,10 @@ from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.models import *
 from dotenv import load_dotenv
-# from cjtrade.apps.ArenaX.arenax_account_client import *
-# from cjtrade.pkgs.brokers.account_client import *
 # TODO: Simplify the import structure by adding __init__.py to commonly-used modules
 
-log = get_logger("cjtrade_shell")
-out = get_console("cjtrade_shell")  # command replies
+log = get_logger("CJShell")
+out = get_console("CJShell")  # command replies
 
 exit_flag = False
 interactive_mode = False  # Track if running in interactive mode
@@ -47,7 +51,6 @@ class CommandBase(ABC):
         self.params: List[str] = []  # Parameter names
         self.optional_params: List[str] = []  # Optional parameter names
         self.variadic: bool = False  # If True, accepts variable number of arguments
-        self.example: str = ""  # Example usage string
 
     @abstractmethod
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
@@ -73,39 +76,28 @@ class CommandBase(ABC):
             out.info(f"Error: '{self.name}' requires {required_count} arguments: {', '.join(self.params)}")
             if self.optional_params:
                 out.info(f"Optional: {', '.join(self.optional_params)}")
-            if self.example:
-                out.info(f"Example: {self.example}")
             return False
 
         if provided_count > total_count:
             out.info(f"Error: '{self.name}' accepts at most {total_count} arguments")
-            if self.example:
-                out.info(f"Example: {self.example}")
             return False
 
         return True
 
-    def _usage_line(self) -> str:
-        """One-line usage: name <params> [optional] - description"""
+    def get_help(self) -> str:
+        """Return help text for this command"""
         param_str = " ".join([f"<{p}>" for p in self.params])
         optional_str = " ".join([f"[{p}]" for p in self.optional_params])
+
+        # Add variadic indicator
         if self.variadic:
             param_str = f"{param_str} [...]" if param_str else "[...]"
+
         full_params = f"{param_str} {optional_str}".strip()
+
         if full_params:
             return f"{self.name} {full_params} - {self.description}"
         return f"{self.name} - {self.description}"
-
-    def get_help(self) -> str:
-        """Short one-line help (used by 'help' listing)."""
-        return self._usage_line()
-
-    def get_detailed_help(self) -> str:
-        """Full help with example (used by 'help <cmd>' and validation errors)."""
-        lines = [self._usage_line()]
-        if self.example:
-            lines.append(f"  Example: {self.example}")
-        return "\n".join(lines)
 
 
 # ========== Concrete Command Implementations ==========
@@ -117,7 +109,6 @@ class BuyCommand(CommandBase):
         self.description = "Place a buy order"
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
-        self.example = "buy 0050 20.25 80"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -137,7 +128,6 @@ class SellCommand(CommandBase):
         self.description = "Place a sell order"
         self.params = ["symbol", "price", "quantity"]
         self.optional_params = ["intraday_odd"]
-        self.example = "sell 0050 30.65 120"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -157,7 +147,6 @@ class SnapshotCommand(CommandBase):
         self.description = "Get market snapshot for one or more symbols"
         self.params = ["symbol"]  # At least one symbol required
         self.variadic = True  # Accept variable number of symbols
-        self.example = "ohlcv 2330 0050 2317"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         products = [Product(symbol=symbol) for symbol in args]
@@ -184,7 +173,6 @@ class BidAskCommand(CommandBase):
         self.description = "Get bid/ask quote"
         self.params = ["symbol"]
         self.optional_params = ["intraday_odd"]
-        self.example = "bidask 2330"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -203,24 +191,19 @@ class ListOrdersCommand(CommandBase):
     def __init__(self):
         super().__init__()
         self.name = "lsodr"
-        self.optional_params = ["num_result"]
         self.description = "List all orders"
-        self.example = "lsodr 10"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        num_result = int(args[0]) if len(args) > 0 else 5
         out.info("=== Order List ===")
         try:
             orders = client.list_orders()
-            orders.sort(key=lambda o: o.order_datetime, reverse=True)  # Sort by creation time
             out.info(f"Found {len(orders)} orders")
 
             if orders:
-                out.info(f"\nRecent {num_result} orders:")
-                for i, order in enumerate(orders[:num_result]):
+                out.info("\nRecent 5 orders:")
+                for i, order in enumerate(orders[-5:]):
                     out.info(f"\nOrder {i+1}:")
-                    out.info(f"  Order ID: {order.id[:7]}")
-                    out.info(f"  Created At: {order.order_datetime}")
+                    out.info(f"  Order ID: {order.id}")
                     out.info(f"  Symbol: {order.symbol}")
                     out.info(f"  Action: {order.action}")
                     out.info(f"  Quantity: {order.quantity}")
@@ -237,7 +220,6 @@ class ListPositionsCommand(CommandBase):
         super().__init__()
         self.name = "lspos"
         self.description = "List all positions"
-        self.example = "lspos"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         positions = client.get_positions()
@@ -313,7 +295,6 @@ class RunAanalyticsCommand(CommandBase):
         self.name = "start"
         self.description = "Run analytics"
         self.params = ["symbol", "buy_target_price", "sell_target_price", "delay"]
-        self.example = "start 2330 580.0 620.0 5"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -360,7 +341,6 @@ class BalanceCommand(CommandBase):
         super().__init__()
         self.name = "balance"
         self.description = "Show account balance"
-        self.example = "balance"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         balance = client.get_balance()
@@ -373,7 +353,6 @@ class AnnouncementCommand(CommandBase):
         self.name = "news"
         self.description = "Get recent important announcements"
         self.optional_params = ["days"]
-        self.example = "news 7"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         days = int(args[0]) if len(args) > 0 else 3
@@ -398,7 +377,6 @@ class SearchOnlineNewsCommand(CommandBase):
         self.description = "Search online news articles"
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["query"]
-        self.example = "search 台積電"
 
     def execute(self, client: AccountClient, *args, **config) -> None:
         selection = config.get('news_source', 'cnyes').lower()
@@ -437,7 +415,6 @@ class KbarsCommand(CommandBase):
         self.name = "kbars"
         self.params = ["symbol"]
         self.description = "Get K-bars (candlestick data)"
-        self.example = "kbars 2330"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         symbol = args[0]
@@ -452,7 +429,6 @@ class LLMCommand(CommandBase):
         self.name = "llm"
         self.params = ["prompt"]
         self.description = "Generate a response using the LLM."
-        self.example = "llm 分析一下我現在的持倉狀況"
         self._llm = None
 
     @property
@@ -480,8 +456,7 @@ class LLMCommand(CommandBase):
             headelines = news_engine.fetch_headline_news(n=10)
         news = "\n".join([f"{n.title} {n.content}" for n in headelines])
         position_summary = "\n".join([f"{p.symbol}: {p.quantity} shares at avg cost {p.avg_cost}" for p in positions])
-        recent_trades = "\n".join([f"{o.symbol} {o.action} {o.quantity} shares at {o.price} ({o.status})" for o in orders[-15:]])
-        return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}; Recent Trades:\n{recent_trades}"
+        return f"Account Balance: {balance}\nPositions:\n{position_summary}; Recent News:\n{news}"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         prompt = args[0]
@@ -502,7 +477,6 @@ class MoversCommand(CommandBase):
         super().__init__()
         self.name = "rank"
         self.description = "Rank market movers"
-        self.example = "rank"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         movers = client.get_market_movers()
@@ -518,7 +492,6 @@ class CancelAllCommand(CommandBase):
         super().__init__()
         self.name = "cancel"
         self.description = "Cancel all active orders"
-        self.example = "cancel"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         try:
@@ -569,20 +542,10 @@ class HelpCommand(CommandBase):
         super().__init__()
         self.name = "help"
         self.description = "Show this help message"
-        self.optional_params = ["command"]
-        self.example = "help buy"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        if args:
-            cmd_name = args[0]
-            cmd = command_registry.get(cmd_name)
-            if cmd:
-                out.info(cmd.get_detailed_help())
-            else:
-                out.info(f"Unknown command: '{cmd_name}'")
-        else:
-            for cmd in command_registry.values():
-                out.info(f"  {cmd.get_help()}")
+        for cmd in command_registry.values():
+            out.info(f"  {cmd.get_help()}")
 
 
 class CalendarCommand(CommandBase):
@@ -591,7 +554,6 @@ class CalendarCommand(CommandBase):
         self.name = "date"
         self.description = "Show the calendar"
         self.optional_params = ["year"]
-        self.example = "date 2026"
 
         # Get paths to utility scripts
         from pathlib import Path
@@ -608,9 +570,8 @@ class CalendarCommand(CommandBase):
 
             # Check if it's a time adjustment command (+N or -N)
             if arg.startswith(('+', '-')):
-                # startswith, not ==: get_broker_name() returns "arenax (8802)".
-                if not client.get_broker_name().startswith('arenax'):
-                    out.info("Error: Time adjustment only available in ArenaX environment")
+                if client.get_broker_name() != "mock":
+                    out.info("Error: Time adjustment only available in mock environment")
                     return
 
                 try:
@@ -619,16 +580,14 @@ class CalendarCommand(CommandBase):
                     out.info(f"Error: Unable to parse time adjustment '{arg}'")
                     return
 
-                # ArenaX_Market.adjust_time() exists server-side but is not
-                # exposed over HTTP, so there is nothing for the client to call.
-                # The old code here reached for client.broker_api.api.market,
-                # which only the retired MockBroker ever had — ArenaXBrokerAPI_v2
-                # has .middleware, not .api — so this branch could only raise.
-                # Say so plainly until a /control/adjust-time endpoint exists.
-                out.info(f"Error: time adjustment ({hours:+.1f}h) is not supported "
-                         f"by the ArenaX server yet — it needs a /control/adjust-time "
-                         f"endpoint. Restart the server with a different start date "
-                         f"instead.")
+                # Unreachable in practice: the guard above requires broker
+                # "mock", and BrokerType.MOCK can no longer be constructed —
+                # cjtrade.pkgs.brokers.arenax.legacy was removed. Kept honest
+                # rather than left reaching for broker_api.api.market, which
+                # only that retired broker ever had.
+                out.info(f"Error: time adjustment ({hours:+.1f}h) is not supported — "
+                         f"the mock broker it relied on has been removed. Use the "
+                         f"current shell with --broker=arenax instead.")
                 return
             else:
                 # Direct call with date argument
@@ -636,8 +595,7 @@ class CalendarCommand(CommandBase):
                 return
 
         # Get timestamp from broker or system
-        bkr_name = client.get_broker_name()
-        if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
+        if client.get_broker_name() == "mock":
             suffix = " (mock time)"
             ts = client.get_market_time()['mock_current_time']
         else:
@@ -661,7 +619,6 @@ class InfoCommand(CommandBase):
         super().__init__()
         self.name = "info"
         self.description = "Shell info"
-        self.example = "info"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import cjtrade
@@ -689,7 +646,6 @@ class ClearCommand(CommandBase):
         super().__init__()
         self.name = "clear"
         self.description = "Clear the screen"
-        self.example = "clear"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import os
@@ -712,7 +668,6 @@ class SystemCommand(CommandBase):
         self.variadic = True  # Accept variable number of symbols
         self.optional_args = ["cmd"]
         self.description = "Execute OS command"
-        self.example = "system uname -a"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         if len(args) == 0:
@@ -737,7 +692,6 @@ class ExitCommand(CommandBase):
         super().__init__()
         self.name = "exit"
         self.description = "Close interactive shell"
-        self.example = "exit"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         global exit_flag
@@ -752,7 +706,6 @@ class KbarAggregationCommand(CommandBase):
         self.name = "replay"
         self.params = ["symbol", "range", "interval"]  # range means [T-range, T+1)
         self.description = "Replay historical K-bar and do aggregation"
-        self.example = "replay 0050 100 1d"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
         import webbrowser
@@ -943,7 +896,7 @@ def interactive_shell(client: AccountClient, config: dict = None):
             if not cmd:
                 continue
 
-            # readline.add_history(cmd)
+            readline.add_history(cmd)
             process_command(cmd, client, **config)
 
         except (EOFError, KeyboardInterrupt):
@@ -981,8 +934,6 @@ def main():
         'username': os.environ.get('USERNAME', 'user000'),
         'news_source': os.environ.get('NEWS_SOURCE', 'cnyes'),
         # 'mirror_db_path': './data/mock_user000.db',
-        'arenax_host': os.environ.get('ARENAX_HOST', 'localhost'),
-        'arenax_port': int(os.environ.get('ARENAX_PORT', 8801)),
     }
 
 
@@ -990,31 +941,16 @@ def main():
         config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
-        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
-            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
-        else:
-            config["speed"] = 120.0  # 120x speed for mock broker
-            config["state_file"] = f"./mock_{config['username']}.json"
-            config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
-            client = AccountClient(BrokerType.MOCK, **config)
+        config["speed"] = 120.0  # 120x speed for mock broker
+        config["state_file"] = f"./mock_{config['username']}.json"
+        config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
+        client = AccountClient(BrokerType.MOCK, **config)
     elif args.broker == 'realistic':
-        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
-            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
-        else:
-            config["speed"] = 60.0  # 60x speed for mock broker
-            config["state_file"] = f"./realistic_{config['username']}.json"
-            config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
-            real = AccountClient(BrokerType.SINOPAC, **config)
-            client = AccountClient(BrokerType.MOCK, real_account=real, **config)
-    elif args.broker == 'arenax_legacy':
         config["speed"] = 60.0  # 60x speed for mock broker
-        config["mirror_db_path"] = str(paths.mirror_db_path("arenax", config["username"]))
+        config["state_file"] = f"./realistic_{config['username']}.json"
+        config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
         real = AccountClient(BrokerType.SINOPAC, **config)
-        client = AccountClient(BrokerType.ARENAX, real_account=real, **config)
-    elif args.broker == "arenax":
-        # call config setting api to configure the broker server
-        config['api_key'] = 'testkey123'
-        client = AccountClient(BrokerType.ARENAX, **config)
+        client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         out.info(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

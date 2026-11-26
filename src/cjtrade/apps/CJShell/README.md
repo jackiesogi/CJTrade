@@ -15,7 +15,7 @@ arguments and an example.
 
 <!-- cjcheck: static -->
 ```sh
-uv run cjtrade --broker=arenax     # or --broker=sinopac
+uv run cjshell --broker=arenax     # or --broker=sinopac
 ```
 
 ![shell_help](./img/shell_help.png)
@@ -23,7 +23,7 @@ uv run cjtrade --broker=arenax     # or --broker=sinopac
 ## Packages used
 
 Essentially all of the CJTrade SDK. This app was originally written to exercise
-the API, which is also why `uv run atest` drives it to test the brokers: every
+the API, which is also why `tests/test_cjtrade_integration_arenax.sh` drives it to test the brokers: every
 command is a thin wrapper over one SDK call, so a command that works is an API
 that works.
 

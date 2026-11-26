@@ -4,8 +4,8 @@ LLMCommand used to build its Azure OpenAI client at registration, so a core
 install crashed before the prompt appeared. The client is now built the
 first time `llm` runs, and only that command reports the missing extra.
 """
-import cjtrade.apps.cjtrade_shell.cjtrade_shell as shell
-import cjtrade.apps.cjtrade_shell.cjtrade_shell_legacy as legacy
+import cjtrade.apps.CJShell.cjshell as shell
+import cjtrade.apps.CJShell.cjshell_legacy as legacy
 import cjtrade.pkgs.llm.azure_openai as azure
 import pytest
 

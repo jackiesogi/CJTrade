@@ -94,8 +94,8 @@ documentation:
 'area: shell':
   - changed-files:
       - any-glob-to-any-file:
-          - 'src/cjtrade/apps/cjtrade_shell/**'
-          - 'src/cjtrade/test_runner*.py'
+          - 'src/cjtrade/apps/CJShell/**'
+          - 'tests/test_cjtrade_integration*.sh'
           - 'tests/*.sh'
 
 'area: analytics':
@@ -146,4 +146,3 @@ real-money:
           - 'src/cjtrade/apps/ArenaX/real_backend.py'
           - 'src/cjtrade/apps/cjtrade_system/**'
           - 'tests/test_cjtrade_integration.sh'
-          - 'src/cjtrade/test_runner.py'

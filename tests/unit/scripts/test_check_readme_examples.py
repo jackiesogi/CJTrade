@@ -118,7 +118,7 @@ def test_a_traceback_is_reported(cjcheck):
 def test_a_real_broker_is_never_launched(cjcheck):
     """Marking a sinopac command `smoke` must not place an order."""
     problems = cjcheck._launch(
-        _block(cjcheck, "uv run cjtrade --broker=sinopac\n"))
+        _block(cjcheck, "uv run cjshell --broker=sinopac\n"))
     assert problems and "real broker" in problems[0]
 
 
@@ -215,7 +215,7 @@ def test_a_command_whose_flags_are_unknowable_is_skipped(static):
     Skipped rather than rejected: "declares no flags" and "flags not readable
     from here" must not look alike.
     """
-    assert static("uv run atest --broker=arenax --group=all\n") == []
+    assert static("bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all\n") == []
 
 
 def test_a_parameterised_route_is_accepted(static):

@@ -98,7 +98,7 @@ Or explore the same API interactively with the shell:
 <!-- cjcheck: static -->
 ```sh
 bash scripts/gen_config.sh arenax   # writes arenax_system.cjconf
-uv run cjtrade --broker=arenax
+uv run cjshell --broker=arenax
 ```
 
 The [Get started guide](https://jackiesogi.github.io/CJTrade/get-started/connect/)
@@ -113,7 +113,7 @@ and connect:
 <!-- cjcheck: static -->
 ```sh
 bash scripts/gen_config.sh sinopac  # then edit sinopac_system.cjconf
-uv run cjtrade --broker=sinopac
+uv run cjshell --broker=sinopac
 ```
 
 > [!CAUTION]

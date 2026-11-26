@@ -9,7 +9,8 @@ investigate it:
 3. `uv run --group docs mkdocs build --strict -d /tmp/cjtrade-site`
 4. `uv lock --check`
 
-Do not run `uv run test --broker=sinopac` or the `sinopac-shell` pre-commit
+Do not run `bash tests/test_cjtrade_integration.sh --broker=sinopac` or the
+`sinopac-shell` pre-commit
 hook: it logs in to a real Sinopac account and places real odd-lot orders.
 The ArenaX integration tests (`tests/integration/arenax`) start a local
 server on 8801; run them only if nothing else is using that port.

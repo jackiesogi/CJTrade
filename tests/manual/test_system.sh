@@ -19,7 +19,7 @@ state_file="${1}_${USERNAME}.json"
 rm -f "$state_file" > /dev/null 2>&1
 
 # Generate an empty state file
-uv run cjtrade --broker="$1" exit
+uv run cjshell --broker="$1" exit
 
 # Check if state file was created
 if [ ! -f "$state_file" ]; then

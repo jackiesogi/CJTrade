@@ -15,7 +15,7 @@ Two halves:
 | | |
 |---|---|
 | `src/cjtrade/pkgs/` | The SDK. Brokers, models, strategies, analytics, DB, LLM, charts, forms. |
-| `src/cjtrade/apps/` | Applications built on the SDK. ArenaX, cjtrade_shell, cjtrade_system, CJEdit, CJNews. |
+| `src/cjtrade/apps/` | Applications built on the SDK. ArenaX, CJShell, cjtrade_system, CJEdit, CJNews. |
 
 Brokers: **Sinopac** (永豐金, real) and **ArenaX** (built-in simulated exchange).
 Cathay / Yuanta are stubs.
@@ -51,10 +51,10 @@ uv run pytest                            # unit + integration (integration auto-
 uv run pytest tests/unit/ -q              # ~700 tests, ~90s, no network
 uv run pytest tests/integration/arenax/   # needs arenaxd on :8801
 uv run arenaxd --backend=demo --port=8802 # ArenaX broker-side server
-uv run cjtrade --broker=arenax            # interactive shell
+uv run cjshell --broker=arenax            # interactive shell
 uv run system --broker=arenax --mode=backtest   # full-simulation trading system
 uv run backtest --symbol=2330             # one-shot vectorised backtest
-uv run atest --broker=arenax --group=all  # shell smoke test (ArenaX)
+bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all  # shell smoke test (ArenaX)
 ```
 
 `testpaths` is `tests/unit` + `tests/integration`; `tests/manual/` is never
@@ -89,7 +89,7 @@ src/cjtrade/
     chart/          plotly kbar charts
   apps/
     ArenaX/         the simulated broker (server + 4 backends + market clock + price db)
-    cjtrade_shell/  interactive shell, CommandBase subclass per command
+    CJShell/        interactive shell (`cjshell`), CommandBase subclass per command
     cjtrade_system/ the automated system; system_launcher.py is the entry point
     CJEdit/ CJNews/ smaller apps
 poc/                scratch space. trading_engine/ is the multi-bot ZMQ prototype
@@ -453,7 +453,7 @@ Field keys: `name`, `type`, `label`, `default`, `cli_arg`, `env_out`,
 ### Shell commands
 
 One `CommandBase` subclass per command in
-`apps/cjtrade_shell/cjtrade_shell.py`. Set `name`, `description`, `params`,
+`apps/CJShell/cjshell.py`. Set `name`, `description`, `params`,
 `optional_params`, `example` in `__init__`, implement `execute(client, *args,
 **kwargs)`, then add an instance to the list in `register_commands()`.
 `validate_args()` is inherited and derives arity from `params` —

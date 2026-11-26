@@ -2,11 +2,11 @@
 # =============================================================================
 # CJTrade Shell Integration Test Suite
 # ---
-# It basically do the same thing as test_cjtrade_shell_all_cmds.sh
+# Runs every CJShell command against one broker and checks each exits 0.
 # but with better structure, logging, and reporting.
 # =============================================================================
 # Usage:
-#   ./test_cjtrade_shell_all_cmds.sh [options]
+#   bash tests/test_cjtrade_integration_arenax.sh [options]   (from the repo root)
 #
 # Options:
 #   --broker=<name>     Specify broker (mock/sinopac/realistic, default: mock)
@@ -148,7 +148,7 @@ for arg in "$@"; do
 done
 
 # ============= Setup =============
-CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell.py --broker=${BROKER}"
+CMD="uv run python src/cjtrade/apps/CJShell/cjshell.py --broker=${BROKER}"
 
 # Initialize log file
 if [ "$ENABLE_LOGGING" = true ]; then

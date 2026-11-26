@@ -19,7 +19,7 @@ Naming
 ------
 A logger under ``pkgs/`` is named for its path below ``pkgs/``
 (``brokers.sinopac``, ``marketdata.finmind``, ``strategy.adx``). An app's is
-named for its path below ``apps/`` (``ArenaX.server``, ``cjtrade_shell``), and
+named for its path below ``apps/`` (``ArenaX.server``, ``CJShell``), and
 the trading engine's start with ``engine``. A tag that used to open a message
 (``[Clock]``, ``[Risk]``) is the last part of the name instead, so it is not
 repeated in every line. Internally every name sits under ``cjtrade.``, so
@@ -173,7 +173,7 @@ def get_console(name: str = "", *, stream: str = "stdout") -> logging.Logger:
     Parameters
     ----------
     name : str
-        Child name, e.g. ``"cjtrade_shell"``.
+        Child name, e.g. ``"CJShell"``.
     stream : {"stdout", "stderr"}
         ``"stderr"`` is for interactive text from a program whose stdout is
         data, such as a form whose export lines are captured by

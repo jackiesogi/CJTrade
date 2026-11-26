@@ -32,11 +32,11 @@ repos:
         pass_filenames: false
       - id: "arenax-shell"
         name: "Run CJTrade shell test: ArenaX"
-        entry: uv run atest --broker=arenax --group=all
+        entry: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all
         language: system
         pass_filenames: false
       - id: "sinopac-shell"
         name: "Run CJTrade shell test: Sinopac"
-        entry: uv run test --broker=sinopac --group=all
+        entry: bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all
         language: system
         pass_filenames: false

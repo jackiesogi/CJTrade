@@ -206,7 +206,7 @@ uv run aresh set-time 2025-09-01
 
 ## `cjtrade`（與 `main`）：互動式交易 shell
 
-入口：`cjtrade:cli` → `apps/cjtrade_shell/cjtrade_shell.py:main`。`main` 是同一個函式的別名。
+入口：`cjtrade:cli` → `apps/CJShell/cjshell.py:main`。`main` 是同一個函式的別名。
 
 ### 啟動
 
@@ -252,7 +252,7 @@ uv run aresh set-time 2025-09-01
 
 ```sh
 uv run arenaxd &
-uv run cjtrade --broker=arenax
+uv run cjshell --broker=arenax
 uv run cjtrade -B arenax ohlcv 2330 0050
 ```
 
@@ -652,8 +652,8 @@ bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
 | `readme-examples` | `uv run python scripts/check_readme_examples.py`（smoke 模式會啟動範例，需網路） |
 | `unit-tests` | `uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit` |
 | `ArenaX-broker-integration-test` | `bash tests/run_broker_stability_tests.sh --broker=arenax --coverage`（會起 arenaxd，yfinance 需網路） |
-| `arenax-shell` | `uv run atest --broker=arenax --group=all` |
-| `sinopac-shell` | `uv run test --broker=sinopac --group=all`（會登入永豐） |
+| `arenax-shell` | `bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all` |
+| `sinopac-shell` | `bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all`（會登入永豐） |
 
 跳過特定 hook 用 `SKIP`（逗號分隔 hook id）：
 

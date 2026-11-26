@@ -135,7 +135,7 @@ jobs:
       - run: uv sync
       # The shell reads API_KEY etc. from a *.cjconf; ArenaX's needs no secret.
       - run: bash scripts/gen_config.sh arenax
-      - run: uv run atest --broker=arenax --group=all
+      - run: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -205,7 +205,7 @@ jobs:
           API_KEY: ${{ secrets.SINOPAC_API_KEY }}
           SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
           CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
-        run: uv run test --broker=sinopac --group=all
+        run: bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all
       # No log artifact here: the shell prints account details, and artifacts
       # of a public repository can be downloaded by anyone.
       - name: Remove the CA certificate

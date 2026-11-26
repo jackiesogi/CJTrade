@@ -16,7 +16,7 @@
       "Read(./**/*.pfx)",
       "Read(~/Library/Application Support/cjtrade/**/*.cjconf)",
       "Read(~/.config/cjtrade/**/*.cjconf)",
-      "Bash(uv run test --broker=sinopac:*)",
+      "Bash(bash tests/test_cjtrade_integration.sh --broker=sinopac:*)",
       "Bash(uv run arenaxd --backend=real:*)",
       "Bash(uv run arenaxd --backend real:*)",
       "Bash(I_UNDERSTAND_REAL_TRADING_RISKS=y:*)",

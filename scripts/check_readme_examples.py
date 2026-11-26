@@ -112,7 +112,7 @@ COVERED = [
     "src/cjtrade/apps/ArenaX/README.md",
     "src/cjtrade/apps/CJEdit/README.md",
     "src/cjtrade/apps/CJNews/README.md",
-    "src/cjtrade/apps/cjtrade_shell/README.md",
+    "src/cjtrade/apps/CJShell/README.md",
     "src/cjtrade/apps/cjtrade_system/README.md",
     "src/cjtrade/pkgs/brokers/README.md",
 ]

@@ -7,7 +7,7 @@ splits the range for every caller.
 The splitting used to live in two of the callers instead -- ArenaX_BackendBase
 .kbars with 30-day chunks and market_data._fetch_from_real_account with 28-day
 ones -- while real_backend.kbars and every direct client caller passed the
-range straight through. `cjtrade_shell`'s kbars command takes its range from
+range straight through. `cjshell`'s kbars command takes its range from
 the user and the docstring example in pkgs/analytics/technical asks for a whole
 year, so those went to the broker oversized.
 

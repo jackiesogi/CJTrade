@@ -55,10 +55,7 @@ news = ["newsapi-python>=0.2.7"]
 all = ["cjtrade[sinopac,llm,news]"]
 
 [project.scripts]
-cjtrade = "cjtrade:cli"
-main = "cjtrade:cli"
-test = "cjtrade.test_runner:main"
-atest = "cjtrade.test_runner_arenax:main"
+cjshell = "cjtrade.apps.CJShell.cjshell:main"
 arenaxd = "cjtrade.apps.ArenaX.brokerside_server:main"
 aresh = "cjtrade.apps.ArenaX.brokerside_server_admin_shell:main"
 system = "cjtrade.apps.cjtrade_system.system_launcher:main"
