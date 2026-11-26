@@ -1,11 +1,24 @@
 [project]
 name = "cjtrade"
 version = "0.1.0"
-description = "CJ Trading System"
+description = "Taiwan stock trading framework: brokers, market data, a simulated exchange and backtesting"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+authors = [{ name = "Shou-Chi Chen", email = "tuxsogi@gmail.com" }]
+keywords = ["trading", "backtesting", "taiwan", "twse", "sinopac", "shioaji", "quant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Typing :: Typed",
+]
 dependencies = [
     "aiohttp>=3.13.0",
     "apiflask>=2.2.0",
@@ -25,6 +38,12 @@ dependencies = [
     "yfinance>=0.2.66",
     "pyreadline3; platform_system == 'Windows'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jackiesogi/CJTrade"
+Documentation = "https://jackiesogi.github.io/CJTrade/"
+Source = "https://github.com/jackiesogi/CJTrade"
+Issues = "https://github.com/jackiesogi/CJTrade/issues"
 
 # Integrations that bring in a heavy or vendor-specific SDK. A plain
 # `pip install cjtrade` covers ArenaX, backtesting, the shell and reports;
@@ -85,6 +104,11 @@ skip_covered = false
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The screenshots beside each app's README are for reading on GitHub; they
+# were 3.5 MB of a 3.9 MB wheel. ArenaX/tests holds developer scripts.
+wheel-exclude = ["**/img/**", "**/*.png", "cjtrade/apps/ArenaX/tests", "**/*.sh"]
 
 [dependency-groups]
 # Contributors get every extra, so `uv sync` in a checkout can run every test
