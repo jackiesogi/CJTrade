@@ -35,7 +35,6 @@ def get_general_import_str(broker, arenax_backend):
     result = GeneralImport
     if broker == "sinopac":
         result += """
-config["state_file"] = f"./sinopac_{config['username']}.json"
 config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
 
 ######## YOUR STRATEGY STARTS HERE ########

@@ -1,4 +1,5 @@
 # TODO: Add `Lock()`
+import time
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
@@ -195,7 +196,9 @@ def upsert_coverage_range(conn: DatabaseConnection,
     if start_ts > end_ts:
         return
 
-    now = int(datetime.utcnow().timestamp())
+    # time.time(), not utcnow().timestamp(): a naive UTC datetime is read as
+    # local time by .timestamp(), which put these 8 hours in the past.
+    now = int(time.time())
 
     # 1. Insert new range
     conn.execute(
@@ -560,7 +563,8 @@ def insert_new_order_to_db_legacy(conn: SqliteDatabaseConnection = None, order: 
     except Exception as e:
         log.error("@%s insert order %s failed: %s", created_at_str[:16], order.id, e)
 
-def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str, updated_at: datetime = datetime.utcnow() + timedelta(hours=8)):
+def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: str,
+                              updated_at: Optional[datetime] = None):
     """Set ``status`` and ``updated_at`` of order `oid` in the ``orders`` table.
 
     Parameters
@@ -572,16 +576,18 @@ def update_order_status_to_db(conn: SqliteDatabaseConnection, oid: str, status: 
     status : str
         New status.
     updated_at : datetime, optional
-        Stored as ``"%Y-%m-%d %H:%M:%S"``.
+        Stored as ``"%Y-%m-%d %H:%M:%S"``. Defaults to now, Asia/Taipei.
 
     Warnings
     --------
-    The `updated_at` default (``datetime.utcnow() + 8h``) is evaluated once
-    at import time, so every call that omits it stores the module load time.
     Writes and commits; errors are logged, not raised.
     """
     if conn is None:
         return
+    # Evaluated per call. It used to be the parameter's default, which Python
+    # evaluates once at import, so every call stored the module's load time.
+    if updated_at is None:
+        updated_at = datetime.utcnow() + timedelta(hours=8)
 
     updated_at_str = updated_at.strftime("%Y-%m-%d %H:%M:%S")
 

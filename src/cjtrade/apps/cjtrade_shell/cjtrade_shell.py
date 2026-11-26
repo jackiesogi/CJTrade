@@ -664,20 +664,22 @@ class InfoCommand(CommandBase):
         self.example = "info"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
+        import cjtrade
+        # The version of the installed package, plus the commit when it runs
+        # from a checkout. This used to test for src/cjtrade/core/cjtrade_shell.py,
+        # a path that no longer exists and that only made sense from the repo
+        # root, so it never printed anything.
+        version = cjtrade.__version__
         try:
-            subprocess.check_output(
-                ["git", "rev-parse", "--is-inside-work-tree"],
-                stderr=subprocess.DEVNULL
-            )
-        except subprocess.CalledProcessError:
-            return
-
-        if Path("src/cjtrade/core/cjtrade_shell.py").is_file():
             commit = subprocess.check_output(
                 ["git", "rev-parse", "--short", "HEAD"],
-                stderr=subprocess.DEVNULL
+                cwd=Path(cjtrade.__file__).resolve().parent,
+                stderr=subprocess.DEVNULL,
             ).decode().strip()
-            out.info(f"Interactive shell version: {commit}")
+            version += f" ({commit})"
+        except (OSError, subprocess.CalledProcessError):
+            pass
+        out.info(f"Interactive shell version: {version}")
         out.info(f"Connected broker: {client.get_broker_name()}")
         out.info(f"News source: {os.getenv('NEWS_SOURCE', 'cnyes')}")
 
@@ -985,7 +987,6 @@ def main():
 
 
     if args.broker == 'sinopac':
-        config["state_file"] = f"./sinopac_{config['username']}.json"
         config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
     elif args.broker == 'mock':
@@ -1007,7 +1008,6 @@ def main():
             client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker == 'arenax_legacy':
         config["speed"] = 60.0  # 60x speed for mock broker
-        config["state_file"] = f"./arenax_{config['username']}.json"
         config["mirror_db_path"] = str(paths.mirror_db_path("arenax", config["username"]))
         real = AccountClient(BrokerType.SINOPAC, **config)
         client = AccountClient(BrokerType.ARENAX, real_account=real, **config)

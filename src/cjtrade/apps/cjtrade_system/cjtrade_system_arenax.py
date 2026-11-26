@@ -1473,7 +1473,6 @@ async def async_main(cfg: SystemConfig, broker: str):
 
     # Prepare broker client — merge API keys (from config) with connection params (from cfg)
     username = config.get('username', 'user000')
-    config["state_file"] = f"./{broker}_{username}.json"
     config["mirror_db_path"] = str(paths.mirror_db_path(broker, username))
 
     # Create broker client based on type
