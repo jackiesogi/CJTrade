@@ -1,7 +1,7 @@
 """Run a hand-written BaseStrategy subclass through the one-shot backtest engine.
 
-    ARENAX_PORT=8802 uv run python exp/bin/custom_backtest.py \
-        --file exp/strategies/my_strat.py \
+    ARENAX_PORT=8802 uv run python poc/experiments/bin/custom_backtest.py \
+        --file poc/experiments/strategies/my_strat.py \
         --symbol 2317 --start 2021-01-01 --duration 1461 --interval 1m \
         --balance 1000000 --params 'lookback:1350,band:2.5,pos_pct:0.5'
 
@@ -153,7 +153,7 @@ def main() -> int:
     strat_name = getattr(strategy, "name", type(strategy).__name__)
     result.provenance = {
         "path": "custom-oneshot",
-        "produced_by": "exp/bin/custom_backtest.py",
+        "produced_by": "poc/experiments/bin/custom_backtest.py",
         "strategy": strat_name,
         "strategy_long_name": type(strategy).__name__,
         "strategy_file": str(path),

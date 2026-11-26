@@ -74,7 +74,7 @@
 
 ### 0.4 為什麼集中度防護是必要的 — 實測案例
 
-`exp/strategies/example_breakout.py` 在 IS 全期間的數字看起來不錯：
+`poc/experiments/strategies/example_breakout.py` 在 IS 全期間的數字看起來不錯：
 
 ```
 sharpe=0.667907  cagr=+5.89%  mdd=-16.43%  TiM=+30.00%  trips=16
@@ -160,21 +160,21 @@ IS 包含 2022 年空頭，所以不是單向多頭，策略必須真的能處�
 
 ```bash
 # 不重疊分段 —— 獨立證據，用於穩定性驗收。輸出「起始日 天數」
-./exp/bin/windows.sh is-seg       # 8 段 × 182 天，2021-01-01 .. 2024-12-27
-./exp/bin/windows.sh oos-seg      # 4 段 × 170 天，2025-01-01 .. 2026-11-12
-./exp/bin/windows.sh stress-seg   # 1 段 × 182 天，2020-03-02 起
+./poc/experiments/bin/windows.sh is-seg       # 8 段 × 182 天，2021-01-01 .. 2024-12-27
+./poc/experiments/bin/windows.sh oos-seg      # 4 段 × 170 天，2025-01-01 .. 2026-11-12
+./poc/experiments/bin/windows.sh stress-seg   # 1 段 × 182 天，2020-03-02 起
 
 # 重疊滾動視窗 —— 完整分布與最差情況。輸出起始日，每個 182 天
-./exp/bin/windows.sh is           # 43 個，2021-01-01 .. 2024-07-01
-./exp/bin/windows.sh oos          # 17 個，2025-01-01 .. 2026-05-01
-./exp/bin/windows.sh stress       #  5 個，2020-03-01 .. 2020-07-01
+./poc/experiments/bin/windows.sh is           # 43 個，2021-01-01 .. 2024-07-01
+./poc/experiments/bin/windows.sh oos          # 17 個，2025-01-01 .. 2026-05-01
+./poc/experiments/bin/windows.sh stress       #  5 個，2020-03-01 .. 2020-07-01
 ```
 
 分段的跑法：
 
 ```bash
-./exp/bin/windows.sh is-seg | while read s d; do
-  ./exp/bin/run.sh e042 2317 exp/strategies/my_strat.py 1m "$s" "$d" 'lookback:5400,pos_pct:0.5'
+./poc/experiments/bin/windows.sh is-seg | while read s d; do
+  ./poc/experiments/bin/run.sh e042 2317 poc/experiments/strategies/my_strat.py 1m "$s" "$d" 'lookback:5400,pos_pct:0.5'
 done
 ```
 
@@ -234,7 +234,7 @@ echo ready
 ### 3.4 環境健康檢查（每次啟動 broker 後跑一次）
 
 ```bash
-./exp/bin/run.sh health 2317 BollingerStrategy 1d 2021-01-01 1461 'risk__max_position_pct:0.5'
+./poc/experiments/bin/run.sh health 2317 BollingerStrategy 1d 2021-01-01 1461 'risk__max_position_pct:0.5'
 ```
 
 必須得到 **`bars=970`、`sharpe=0.213954`、`cagr=+1.59%`、`TiM=+47.00%`**。
@@ -247,29 +247,29 @@ echo ready
 
 **這一節以外的東西都不要用。** 不要連網查價格或新聞、不要用 trading engine、不要為了找 bug 去讀框架 source code。
 
-### 4.1 實驗工具包 `exp/bin/`（你的主要介面）
+### 4.1 實驗工具包 `poc/experiments/bin/`（你的主要介面）
 
 | 指令 | 用途 |
 |---|---|
-| `./exp/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]` | **跑一次回測的唯一方式。**自動重試、記錄一列 CSV、產出 insight 報告 |
-| `./exp/bin/report.sh [tag\|--pass\|--bad]` | 讀回 `exp/runs.csv` |
-| `./exp/bin/windows.sh is\|oos\|stress\|is-seg\|oos-seg\|stress-seg` | 預先登錄的視窗與分段 |
+| `./poc/experiments/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]` | **跑一次回測的唯一方式。**自動重試、記錄一列 CSV、產出 insight 報告 |
+| `./poc/experiments/bin/report.sh [tag\|--pass\|--bad]` | 讀回 `poc/experiments/runs.csv` |
+| `./poc/experiments/bin/windows.sh is\|oos\|stress\|is-seg\|oos-seg\|stress-seg` | 預先登錄的視窗與分段 |
 
 `<strategy>` 可以是內建策略名稱，也可以是**你自己寫的 `.py` 路徑**。兩者走同一個引擎、同一份 bar、同一個成本模型，數字可以互相比較。
 
 ```bash
 # 內建策略
-./exp/bin/run.sh e001 2317 DonchianBreakoutStrategy 1m 2021-01-01 1461 'donchian__period:100,risk__max_position_pct:0.5'
+./poc/experiments/bin/run.sh e001 2317 DonchianBreakoutStrategy 1m 2021-01-01 1461 'donchian__period:100,risk__max_position_pct:0.5'
 
 # 你自己寫的策略
-./exp/bin/run.sh e002 2317 exp/strategies/my_strat.py 1m 2021-01-01 1461 'lookback:5400,pos_pct:0.5'
+./poc/experiments/bin/run.sh e002 2317 poc/experiments/strategies/my_strat.py 1m 2021-01-01 1461 'lookback:5400,pos_pct:0.5'
 ```
 
 環境變數：`BAL`（預設 1000000）、`EXPECT_BARS`（bar 數不符就把該列標成 `BAR_MISMATCH`）。
 
 每次 run 的產出：
-- `exp/runs.csv` 追加一列（31 欄，只增不改）
-- `exp/runs/<tag>/<sid>.insight.md` 和 `.insight.json`
+- `poc/experiments/runs.csv` 追加一列（31 欄，只增不改）
+- `poc/experiments/runs/<tag>/<sid>.insight.md` 和 `.insight.json`
 
 **執行時間**：內建策略 1m 全 IS 期間約 17 秒；自訂策略約 28 秒（取決於 `on_bar` 複雜度）。182 天分段約 5–8 秒。
 
@@ -283,8 +283,8 @@ ARENAX_PORT=8802 uv run python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_ba
   --params 'donchian__period:100,risk__max_position_pct:0.5' --no-browser
 
 # 自訂策略單次回測
-ARENAX_PORT=8802 uv run python exp/bin/custom_backtest.py \
-  --file exp/strategies/my_strat.py --symbol 2317 \
+ARENAX_PORT=8802 uv run python poc/experiments/bin/custom_backtest.py \
+  --file poc/experiments/strategies/my_strat.py --symbol 2317 \
   --start 2021-01-01 --duration 1461 --interval 1m \
   --balance 1000000 --params 'lookback:5400,pos_pct:0.5'
 ```
@@ -359,12 +359,12 @@ uv run strategy-tool template --kind bb --name MyStrat --symbol 2317 | jq -r .so
 |---|---|
 | 為了找 root cause 去讀框架 source code | 你的角色是使用者。發現怪異行為就記錄（第 8.4 節），不要追進去 |
 | 連網查價格、新聞、財報 | 資料已全部預熱在本機，不需要連網。這是實驗設計的一部分 |
-| 用 trading engine（`poc/trading_engine/main2.py`） | 太慢。一次最多 300 天、只支援 1m、每次數分鐘。這個實驗不需要它 |
+| 用 trading engine（`poc/trading_engine/main.py`） | 太慢。一次最多 300 天、只支援 1m、每次數分鐘。這個實驗不需要它 |
 | 碰 OOS 區間（2025-01-01 之後）做調參 | 那是驗收資料。只能在 P5 碰一次 |
 | 用 `DCA_Monthly` / `BaselineStrategy` 當答案 | 違反低曝險目標。只能當基準對照 |
-| 改 `exp/bin/windows.sh` 的清單 | 預先登錄的意義就在於不能改 |
+| 改 `poc/experiments/bin/windows.sh` 的清單 | 預先登錄的意義就在於不能改 |
 | 設 `CJTRADE_HOME` | 會一起隔離掉憑證，broker 起不來 |
-| 手改或刪除 `exp/runs.csv` 的列 | 只增不改。刪掉難看的結果就是在騙自己 |
+| 手改或刪除 `poc/experiments/runs.csv` 的列 | 只增不改。刪掉難看的結果就是在騙自己 |
 
 **第 5 節的「寫自己的策略」不算越界。** 界線是「不要為了 debug 框架去讀它的實作」，不是「不准寫程式」。第 5 節就是完整的策略撰寫契約，照著寫就夠，不需要打開框架任何檔案。
 
@@ -469,10 +469,10 @@ Signal(action, symbol, quantity, price, reason="", meta={})
 
 ### 5.8 可直接跑的範例
 
-`exp/strategies/example_breakout.py`：在 1m bar 上做日線級突破，多日回看、持有數天、不在趨勢中就空手。
+`poc/experiments/strategies/example_breakout.py`：在 1m bar 上做日線級突破，多日回看、持有數天、不在趨勢中就空手。
 
 ```bash
-./exp/bin/run.sh demo 2317 exp/strategies/example_breakout.py 1m 2021-01-01 1461 \
+./poc/experiments/bin/run.sh demo 2317 poc/experiments/strategies/example_breakout.py 1m 2021-01-01 1461 \
   'lookback:5400,exit_lookback:2700,pos_pct:0.5'
 ```
 
@@ -510,7 +510,7 @@ sqlite3 ~/Library/Caches/cjtrade/arenax_price.db \
 **每一次 run 都要檢查 CSV 裡的 `bars` 欄位。** bar 數突然改變就是出事了。用 `EXPECT_BARS` 可以自動抓到：
 
 ```bash
-EXPECT_BARS=258138 ./exp/bin/run.sh e001 2317 ... 1m 2021-01-01 1461 '...'
+EXPECT_BARS=258138 ./poc/experiments/bin/run.sh e001 2317 ... 1m 2021-01-01 1461 '...'
 ```
 
 常用組合的正確 bar 數（2317）：
@@ -542,7 +542,7 @@ IS 8 個分段（2317，1m）的正確 bar 數依序為：31,385 / 33,752 / 31,3
 要當基準用，**本金必須設 10,000,000**：
 
 ```bash
-BAL=10000000 ./exp/bin/run.sh bench 0050 BaselineStrategy 1d 2023-03-01 660 ''
+BAL=10000000 ./poc/experiments/bin/run.sh bench 0050 BaselineStrategy 1d 2023-03-01 660 ''
 ```
 
 實測這樣會得到 1 筆成交（開頭全押），即 buy&hold。該視窗結果：**Sharpe 1.3748 / CAGR 16.56% / MDD -13.44%**。
@@ -698,11 +698,11 @@ Sharpe 方面：`Sharpe ≈ sqrt(f) × (持倉期間的每日 Sharpe) × sqrt(25
 
 | 檔案 | 寫什麼 | 怎麼寫 |
 |---|---|---|
-| `exp/runs.csv` | 每一次 run 一列 | `run.sh` 自動，只增不改，**永遠不要手改或刪列** |
-| `exp/logs/JOURNAL.md` | **實驗日誌**：你的心路歷程 | 手寫，往下追加，見 8.2 |
-| `exp/logs/OBSERVATIONS.md` | 框架怪異行為 | 手寫，見 8.4 |
+| `poc/experiments/runs.csv` | 每一次 run 一列 | `run.sh` 自動，只增不改，**永遠不要手改或刪列** |
+| `poc/experiments/logs/JOURNAL.md` | **實驗日誌**：你的心路歷程 | 手寫，往下追加，見 8.2 |
+| `poc/experiments/logs/OBSERVATIONS.md` | 框架怪異行為 | 手寫，見 8.4 |
 
-### 8.2 實驗日誌 `exp/logs/JOURNAL.md`
+### 8.2 實驗日誌 `poc/experiments/logs/JOURNAL.md`
 
 每一個決策點都要有一筆。格式固定，方便之後搜尋：
 
@@ -713,7 +713,7 @@ Sharpe 方面：`Sharpe ≈ sqrt(f) × (持倉期間的每日 Sharpe) × sqrt(25
 
 **假設**：出場太慢，部位在趨勢結束後還抱著。縮短出場回看應該能壓低 TiM。
 
-**做了什麼**：`./exp/bin/run.sh e012 2317 exp/strategies/breakout_v3.py 1m 2021-01-01 1461 'lookback:5400,exit_lookback:1350,pos_pct:0.5'`
+**做了什麼**：`./poc/experiments/bin/run.sh e012 2317 poc/experiments/strategies/breakout_v3.py 1m 2021-01-01 1461 'lookback:5400,exit_lookback:1350,pos_pct:0.5'`
 
 **結果**：sharpe 0.58 / cagr 4.1% / TiM 24% / trips 31（sid `a1b2c3d4`）
 
@@ -748,7 +748,7 @@ Sharpe 方面：`Sharpe ≈ sqrt(f) × (持倉期間的每日 Sharpe) × sqrt(25
 
 長時間工作時，**每次重新進入狀況就先讀最後一個 checkpoint**，不要重讀整份日誌。
 
-### 8.4 觀察紀錄 `exp/logs/OBSERVATIONS.md`
+### 8.4 觀察紀錄 `poc/experiments/logs/OBSERVATIONS.md`
 
 遇到框架怪異行為就記在這裡，**然後繼續做你的實驗**。不要追查原因、不要讀 source code、不要試圖修。專門修框架的人看到就會處理。
 
@@ -769,8 +769,8 @@ Sharpe 方面：`Sharpe ≈ sqrt(f) × (持倉期間的每日 Sharpe) × sqrt(25
 每個策略版本存成獨立檔案，**不要覆寫**：
 
 ```
-exp/strategies/breakout_v1.py
-exp/strategies/breakout_v2.py
+poc/experiments/strategies/breakout_v1.py
+poc/experiments/strategies/breakout_v2.py
 ...
 ```
 
@@ -779,19 +779,19 @@ CSV 的 `params` 欄位記錄了參數，`provenance.strategy_file` 記錄了檔
 ### 8.6 隨時找回資料
 
 ```bash
-./exp/bin/report.sh                  # 所有 run
-./exp/bin/report.sh --pass           # 只看通過門檻的
-./exp/bin/report.sh --bad            # 只看沒產出結果的（NO_KBARS 等）
-./exp/bin/report.sh e012             # 某個 tag
+./poc/experiments/bin/report.sh                  # 所有 run
+./poc/experiments/bin/report.sh --pass           # 只看通過門檻的
+./poc/experiments/bin/report.sh --bad            # 只看沒產出結果的（NO_KBARS 等）
+./poc/experiments/bin/report.sh e012             # 某個 tag
 uv run insight <sid> --stdout        # 某次 run 的完整報告
-grep -n "E012" exp/logs/JOURNAL.md   # 某個決策點
+grep -n "E012" poc/experiments/logs/JOURNAL.md   # 某個決策點
 ```
 
 ---
 
 ## 9. 最終交付
 
-全部做完後，在 `exp/logs/JOURNAL.md` 最後寫一份總結：
+全部做完後，在 `poc/experiments/logs/JOURNAL.md` 最後寫一份總結：
 
 1. **最終策略**：檔案路徑、參數、標的、interval
 2. **IS 全期數字**：Sharpe / CAGR / TiM / MDD / trips，逐條對照 0.1 節的三級目標

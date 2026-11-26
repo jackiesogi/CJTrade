@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # prewarm.sh — pull the whole experiment window into the local price DB.
 #
-#   ./exp/bin/prewarm.sh 1m 2317 [2330 ...]
+#   ./poc/experiments/bin/prewarm.sh 1m 2317 [2330 ...]
 #
 # One process per (symbol, year) slice, because repeated get_kbars() calls in
 # one process were observed to make later calls return 0 bars for ranges that
@@ -13,8 +13,8 @@
 set -uo pipefail
 
 TF="$1"; shift
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LOG="$ROOT/exp/prewarm.log"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+LOG="$ROOT/poc/experiments/prewarm.log"
 PORT="${ARENAX_PORT:-8802}"
 SLEEP="${PREWARM_SLEEP:-2}"
 
@@ -32,7 +32,7 @@ mkdir -p "$ROOT/exp"
 for SYM in "$@"; do
   for S in "${SLICES[@]}"; do
     set -- $S
-    OUT=$(ARENAX_PORT="$PORT" uv run python "$ROOT/exp/bin/prewarm_one.py" \
+    OUT=$(ARENAX_PORT="$PORT" uv run python "$ROOT/poc/experiments/bin/prewarm_one.py" \
             "$SYM" "$TF" "$1" "$2" 2>&1 | grep -E 'bars=|ERROR' | tail -1)
     echo "$(date +%H:%M:%S) $OUT" | tee -a "$LOG"
     sleep "$SLEEP"

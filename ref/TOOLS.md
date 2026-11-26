@@ -708,16 +708,16 @@ uv run python -m cjtrade.pkgs.ui poc/backtest.toml --renderer=cli
 
 通用表單執行器：位置參數是 TOML，`--renderer`（預設 `auto`：有 zenity 用 zenity，否則 cli），輸出 `export VAR='...'` 供 `eval`。不接受欄位旗標（問題 12）。
 
-### `exp/bin/`（研究用腳本，快照中的版本）
+### `poc/experiments/bin/`（研究用腳本）
 
 | 腳本 | 用法 |
 |---|---|
-| `run.sh` | `./exp/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]`；環境 `BAL`（1000000）、`ARENAX_PORT`（8802）、`EXPECT_BARS`；跑回測＋insight，追加到 `exp/runs.csv` |
+| `run.sh` | `./poc/experiments/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]`；環境 `BAL`（1000000）、`ARENAX_PORT`（8802）、`EXPECT_BARS`；跑回測＋insight，追加到 `poc/experiments/runs.csv` |
 | `custom_backtest.py` | `--file`（必填）、`--class`、`--symbol`（必填）、`--start`（必填）、`--duration`（必填）、`--interval`（1m）、`--balance`、`--params`；用自寫的 BaseStrategy 跑 one-shot |
-| `prewarm.sh` | `./exp/bin/prewarm.sh <tf> <symbol...>`；環境 `ARENAX_PORT`（8802）、`PREWARM_SLEEP`（2）；逐年預熱價格快取 |
-| `prewarm_one.py` | `python exp/bin/prewarm_one.py <sym> <tf> <start> <end>` |
-| `report.sh` | `./exp/bin/report.sh [tag\|--pass\|--bad]`，讀 `exp/runs.csv` |
-| `windows.sh` | `./exp/bin/windows.sh {is,oos,is-seg,oos-seg,stress-seg}`，印預先登記的評估視窗；只能在 macOS 上跑（BSD `date`） |
+| `prewarm.sh` | `./poc/experiments/bin/prewarm.sh <tf> <symbol...>`；環境 `ARENAX_PORT`（8802）、`PREWARM_SLEEP`（2）；逐年預熱價格快取 |
+| `prewarm_one.py` | `python poc/experiments/bin/prewarm_one.py <sym> <tf> <start> <end>` |
+| `report.sh` | `./poc/experiments/bin/report.sh [tag\|--pass\|--bad]`，讀 `poc/experiments/runs.csv` |
+| `windows.sh` | `./poc/experiments/bin/windows.sh {is,oos,is-seg,oos-seg,stress-seg}`，印預先登記的評估視窗；只能在 macOS 上跑（BSD `date`） |
 
 ---
 
@@ -814,7 +814,7 @@ SKIP=sinopac-shell git commit -m "..."
 20. **`arenaxd --host` 可以綁到 loopback 以外。** API 自己的說明寫「沒有逐路由認證，不要綁到 127.0.0.1 以外」，但 `--host`／`AX_HOST_ADDRESS` 沒有阻擋。`system` 的 `--host` 也是一樣。
 21. **CJNews 只有 CNYES 能用。** 選「財報狗」會丟 `NotImplementedError`；選「NewsAPI」時 `NewsClient(provider)` 沒傳 `api_key`，`NewsAPIProvider` 要求 `api_key`，推斷會失敗（未執行）。
 22. **`price_db_report.py` 不讀 `AX_PRICE_DB_PATH`。** 預設只看 `paths.price_db_path()`，用自訂快取時要加 `--db`。
-23. **`exp/bin/windows.sh` 只能在 macOS 上跑。** 它用 BSD `date -j -v`，Linux 會失敗。
+23. **`poc/experiments/bin/windows.sh` 只能在 macOS 上跑。** 它用 BSD `date -j -v`，Linux 會失敗。
 24. **`main` 與 `cjtrade` 重複。** 兩者指向同一個函式，`main` 沒有其他用途。
 
 未驗證範圍：沒有執行任何會啟動伺服器、登入券商、下單或等待輸入的程式。只跑過下列指令的 `--help`：`arenaxd`、`system`、`_system_direct`、`aresh`、`cjtrade`、`backtest`、`strategy-tool`、`insight`、`preload-prices`、`check_readme_examples.py`、`price_db_report.py`；另外跑了 `check_readme_examples.py --no-smoke`、`python -m cjtrade.pkgs.ui` 的錯誤路徑，以及 `load_cjsys("demo")` 的解析。交易引擎、表單 TOML、互動 shell 與 CJEdit/CJNews 都只讀了程式碼。

@@ -4,7 +4,7 @@ One call per process on purpose. Repeated get_kbars() calls inside a single
 process were observed to make later calls return 0 bars for ranges that have
 complete data, so the prewarm never loops in-process.
 
-    ARENAX_PORT=8802 uv run python exp/bin/prewarm_one.py 2317 1m 2020-03-02 2021-01-01
+    ARENAX_PORT=8802 uv run python poc/experiments/bin/prewarm_one.py 2317 1m 2020-03-02 2021-01-01
 """
 import logging
 import sys

@@ -36,6 +36,10 @@ htmlcov/
 # mkdocs build output
 site/
 
+# What poc/experiments/bin writes as it runs
+poc/experiments/runs.csv
+poc/experiments/runs/
+
 # Claude Code: personal settings stay local; .claude/settings.json is shared
 # (and has to be un-ignored past the *.json rule above)
 .claude/settings.local.json

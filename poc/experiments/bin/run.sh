@@ -2,9 +2,9 @@
 # run.sh — one backtest + its insight report, logged as one CSV row.
 # This is the ONLY way to run a backtest in this experiment.
 #
-#   ./exp/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]
+#   ./poc/experiments/bin/run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]
 #
-#   ./exp/bin/run.sh scr01 2317 DonchianBreakoutStrategy 1m 2021-01-01 1461 \
+#   ./poc/experiments/bin/run.sh scr01 2317 DonchianBreakoutStrategy 1m 2021-01-01 1461 \
 #       'donchian__period:100,risk__max_position_pct:0.5'
 #
 # Env:
@@ -13,8 +13,8 @@
 #   EXPECT_BARS  if set, a different bar count marks the row BAR_MISMATCH
 #
 # Writes:
-#   exp/runs.csv                    one row per run, append-only
-#   exp/runs/<tag>/<sid>.insight.md, .insight.json
+#   poc/experiments/runs.csv                    one row per run, append-only
+#   poc/experiments/runs/<tag>/<sid>.insight.md, .insight.json
 #
 # Why the retry: the first request for a (symbol, interval, range) the broker
 # has not served since it last started comes back with zero bars; a retry
@@ -25,9 +25,9 @@ set -uo pipefail
 [[ $# -ge 6 ]] || { echo "usage: run.sh <tag> <symbol> <strategy> <interval> <start> <duration> [params]" >&2; exit 2; }
 TAG="$1"; SYM="$2"; STRAT="$3"; IV="$4"; START="$5"; DUR="$6"; PARAMS="${7:-}"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CSV="$ROOT/exp/runs.csv"
-ART="$ROOT/exp/runs/$TAG"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CSV="$ROOT/poc/experiments/runs.csv"
+ART="$ROOT/poc/experiments/runs/$TAG"
 BAL="${BAL:-1000000}"
 PORT="${ARENAX_PORT:-8802}"
 
@@ -38,7 +38,7 @@ mkdir -p "$ART"
 # built-in names. Both paths use the same engine, bars and cost model, so their
 # numbers are comparable with each other.
 if [[ "$STRAT" == *.py ]]; then
-  MOD=(python "$ROOT/exp/bin/custom_backtest.py" --file "$STRAT")
+  MOD=(python "$ROOT/poc/experiments/bin/custom_backtest.py" --file "$STRAT")
   ARGS=(--symbol "$SYM" --start "$START" --duration "$DUR" --interval "$IV" --balance "$BAL")
 else
   MOD=(python -m cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest)

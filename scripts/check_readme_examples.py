@@ -50,7 +50,7 @@ It checks, from the repository alone:
   target resolves to a file that defines that function. Both halves: `osystem`
   stayed declared after its module was deleted, and the name alone passed.
 * `uv run python -m pkg.mod` -- the module exists on disk.
-* paths -- anything starting poc/ src/ scripts/ tests/ doc/ exp/ exists.
+* paths -- anything starting poc/ src/ scripts/ tests/ doc/ exists.
 * `--flags` -- accepted by the command on that line, read from the script's
   own source plus the cli_arg entries of any poc/*.toml it drives.
 * URLs on a known port -- the path is a route that port's server declares.
@@ -348,7 +348,7 @@ def _looks_like_repo_path(token: str) -> bool:
     if token.startswith(("127.0.0.1", "localhost")):
         return False
     head = token.split("/")[0]
-    return head in {"poc", "src", "scripts", "tests", "doc", "exp"}
+    return head in {"poc", "src", "scripts", "tests", "doc"}
 
 
 def _static_checks(b: Block, entries: dict[str, str],

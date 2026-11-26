@@ -4,16 +4,16 @@
 # Two kinds, and they answer different questions:
 #
 #   ROLLING (overlapping, steps 1 month, 182 days each)
-#     ./exp/bin/windows.sh is       43 windows, 2021-01-01 .. 2024-07-01
-#     ./exp/bin/windows.sh oos      17 windows, 2025-01-01 .. 2026-05-01
+#     ./poc/experiments/bin/windows.sh is       43 windows, 2021-01-01 .. 2024-07-01
+#     ./poc/experiments/bin/windows.sh oos      17 windows, 2025-01-01 .. 2026-05-01
 #     Shows the full distribution and the worst case, including windows that
 #     straddle a turn. Neighbours share 5/6 of their bars, so these are NOT
 #     independent tests -- never count them as "17 confirmations".
 #
 #   SEGMENTS (non-overlapping, printed as "start duration")
-#     ./exp/bin/windows.sh is-seg    8 segments of 182d covering 2021-01-01..2024-12-29
-#     ./exp/bin/windows.sh oos-seg   4 segments of 170d covering 2025-01-01..2026-11-09
-#     ./exp/bin/windows.sh stress-seg 1 segment  of 182d from 2020-03-02
+#     ./poc/experiments/bin/windows.sh is-seg    8 segments of 182d covering 2021-01-01..2024-12-29
+#     ./poc/experiments/bin/windows.sh oos-seg   4 segments of 170d covering 2025-01-01..2026-11-09
+#     ./poc/experiments/bin/windows.sh stress-seg 1 segment  of 182d from 2020-03-02
 #     Each segment is disjoint, so passing on k of them is k independent
 #     pieces of evidence. This is what "stable across 3-5 periods" means.
 #

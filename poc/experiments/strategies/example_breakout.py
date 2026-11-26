@@ -8,8 +8,8 @@ is in cash unless price is making new highs.
 It is a STARTING POINT, not a candidate. Nothing here is tuned.
 
 Run it:
-    ARENAX_PORT=8802 uv run python exp/bin/custom_backtest.py \
-        --file exp/strategies/example_breakout.py \
+    ARENAX_PORT=8802 uv run python poc/experiments/bin/custom_backtest.py \
+        --file poc/experiments/strategies/example_breakout.py \
         --symbol 2317 --start 2021-01-01 --duration 1461 --interval 1m \
         --params 'lookback:5400,exit_lookback:2700,pos_pct:0.5'
 """
