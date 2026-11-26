@@ -30,6 +30,7 @@ from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.logger import kv
+from cjtrade.pkgs.logger import one_line
 from cjtrade.pkgs.logger import setup_logging
 from cjtrade.pkgs.marketdata import MarketData
 from cjtrade.pkgs.marketdata import from_names
@@ -80,11 +81,6 @@ class _WerkzeugAccessFilter(logging.Filter):
         record.args = None
         return True
 
-def _mask_key(api_key) -> str:
-    """Last 4 chars of an API key, enough to tell keys apart in a log."""
-    if not api_key:
-        return repr(api_key)
-    return "***" + str(api_key)[-4:]
 
 def prepare_price_db(price_db_path: Optional[str]):
     if not price_db_path:
@@ -553,13 +549,16 @@ class ArenaX_BrokerSideServer:
                 return jsonify({"ok": False, "error": "symbols is required"}), 400
             try:
                 start, end = to_window(request.args.get("start"), request.args.get("end"))
-            except (TypeError, ValueError) as exc:
-                return jsonify({"ok": False, "error": f"bad start/end: {exc}"}), 400
+            except (TypeError, ValueError):
+                return jsonify({"ok": False,
+                                "error": "start and end must be ISO dates or datetimes"}), 400
             try:
                 stamps = sorted({k.timestamp for sym in symbols
                                  for k in self.backend.data.get_kbars(sym, start, end, interval)})
-            except Exception as e:
-                return jsonify({"ok": False, "error": str(e)}), 500
+            except Exception:
+                # Details stay in the server log; a client gets no stack trace.
+                log.exception("timeline %s failed", one_line(",".join(symbols)))
+                return jsonify({"ok": False, "error": "could not read the timeline"}), 500
             return jsonify({"ok": True, "result": [t.isoformat() for t in stamps]}), 200
 
         @app.get("/api/v1/config")
@@ -586,10 +585,11 @@ class ArenaX_BrokerSideServer:
             payload = request.get_json(silent=True) or {}
             api_key = payload.get("api_key")
             if api_key in self._valid_api_keys:
-                log.info("login ok, api key %s", _mask_key(api_key))
+                # Never the key, not even part of it.
+                log.info("login ok")
                 return jsonify({"ok": True, "message": "Login successful"})
             else:
-                log.warning("login failed, invalid api key %s", _mask_key(api_key))
+                log.warning("login failed: invalid api key")
                 return jsonify({"ok": False, "message": "Invalid API key"}), 401
 
         @app.delete("/api/v1/session")
@@ -815,8 +815,10 @@ class ArenaX_BrokerSideServer:
                     info.update(broker=broker,
                                 available_start=availability.get("start"),
                                 available_end=availability.get("end"))
-                except Exception as e:
-                    return jsonify({"ok": False, "error": str(e)}), 500
+                except Exception:
+                    log.exception("data availability: broker query failed")
+                    return jsonify({"ok": False,
+                                    "error": "could not query the broker"}), 500
             return jsonify(info), 200
 
 

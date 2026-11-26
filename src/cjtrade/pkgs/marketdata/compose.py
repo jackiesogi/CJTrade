@@ -8,6 +8,7 @@ from typing import List
 from typing import Sequence
 
 from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import one_line
 from cjtrade.pkgs.marketdata.base import Capabilities
 from cjtrade.pkgs.marketdata.base import in_window
 from cjtrade.pkgs.marketdata.base import is_offline
@@ -162,7 +163,8 @@ class Cached(MarketData):
                     # Offline that is expected, so it is not worth a warning.
                     report = log.debug if is_offline() else log.warning
                     report("%s: %s %s [%s, %s) not fetched: %s", self.source.name,
-                           symbol, interval, chunk_start, chunk_end, e)
+                           one_line(symbol), one_line(interval), chunk_start,
+                           chunk_end, e)
                     continue
                 if not bars:
                     continue

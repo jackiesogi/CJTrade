@@ -103,6 +103,15 @@ class Formatter(logging.Formatter):
 _HANDLER_TAG = "_cjtrade_handler"
 
 
+def one_line(value) -> str:
+    """`value` as text with CR and LF escaped, for logging input from outside.
+
+    A request parameter or anything else a caller controls must not be able to
+    start a new log line and forge an entry.
+    """
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
+
+
 def kv(values: dict) -> str:
     """``{"a": 1, "t": datetime(...)}`` as ``a=1 t=2025-09-01 09:00:00``, for one log line.
 

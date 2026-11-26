@@ -9,6 +9,7 @@ from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NEGATIVE_QUANT
 from cjtrade.apps.ArenaX.oder_result_helper import REJECTED_ORDER_NOT_FOUND_FOR_COMMIT
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import one_line
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import Order
 from cjtrade.pkgs.models.order import OrderResult
@@ -186,7 +187,8 @@ class ArenaX_Backend_RealTrade(ArenaX_BackendBase):
         try:
             return super().kbars(symbol, start, end, interval)
         except Exception as exc:
-            log.error("kbars %s [%s, %s] failed: %s", symbol, start, end, exc)
+            log.error("kbars %s [%s, %s] failed: %s", one_line(symbol),
+                      one_line(start), one_line(end), exc)
             return []
 
     # ─── Trade operations ──────────────────────────────────────────────────────
