@@ -1,0 +1,33 @@
+# Creates or updates every label in .github/labels.yml, so the labels the
+# labeler adds have their colour and description. Never deletes a label:
+# one that is removed from the file stays on the repository until a person
+# deletes it.
+#
+# Runs when labels.yml changes on master, and on demand from the Actions tab.
+name: Sync labels
+
+on:
+  push:
+    branches: [master]
+    paths: [.github/labels.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write        # labels belong to the issues API
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # yq and gh are preinstalled on GitHub's Ubuntu runners.
+      - name: Create or update each label
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          yq -r '.[] | [.name, .color, .description] | @tsv' .github/labels.yml |
+          while IFS=$'\t' read -r name color description; do
+            gh label create "$name" --color "$color" --description "$description" --force
+          done
