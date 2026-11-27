@@ -1,25 +1,23 @@
 # 連線到券商
 
-這一頁要啟動模擬券商 ArenaX，再從 Python 連上它。做完之後，你會印出自己（模擬）帳戶的餘額。
-
-你需要開兩個終端機視窗：一個執行 ArenaX，另一個執行你的程式。
+本頁啟動模擬券商 ArenaX，並從 Python 連線讀取帳戶餘額。需要兩個終端機：一個執行 ArenaX，另一個執行你的程式。
 
 ## 步驟 1：啟動 ArenaX
 
-在第一個終端機裡，進到 `CJTrade` 資料夾執行：
+在第一個終端機中，於 `CJTrade` 資料夾內執行：
 
 ```sh
 uv run arenaxd
 ```
 
-這會用預設的 `demo` 模式啟動 ArenaX 伺服器。它會：
+這會以預設的 `demo` 後端啟動 ArenaX，它會：
 
-1. 挑一個 11 到 20 天前的交易日，
-2. 從 Yahoo Finance 下載那段期間的 1 分鐘價格（不需要帳戶），並存進價格快取，
-3. 開一個全新的模擬帳戶，裡面有 NT$100,000，
-4. 在 `127.0.0.1:8801` 等待連線，只有你自己的電腦連得到。
+1. 挑選 11 到 20 天前的某個交易日，
+2. 從 Yahoo Finance 下載該期間的 1 分鐘 K 棒（不需要帳戶），存入價格快取，
+3. 開立一個含 NT$100,000 的全新模擬帳戶，
+4. 在 `127.0.0.1:8801` 監聽（僅接受本機連線）。
 
-幾秒後的預期輸出（有省略，日期會和你的不同）：
+數秒後的預期輸出（有省略，日期會不同）：
 
 ```text
 [INFO][...] ArenaX.server: market data: yfinance
@@ -29,14 +27,14 @@ uv run arenaxd
 [INFO][...] ArenaX.backend: sim env started
 ```
 
-`mock_current_time` 是 ArenaX 模擬出來的「現在」，`playback_speed=120.0` 表示真實的 1 秒等於市場的 2 分鐘。讓這個終端機保持執行。
+`mock_current_time` 是 ArenaX 的模擬時間；`playback_speed=120.0` 表示真實的 1 秒等於市場的 2 分鐘。讓這個終端機保持執行。
 
 ??? question "出現 `[ERROR] yfinance: ... possibly delisted; no price data found`"
-    ArenaX 要的某幾天在 Yahoo 上沒有 K 棒資料，通常是週末或假日。ArenaX 會用有拿到的日子繼續執行。只要最後有看到 `sim env started` 就沒問題。
+    Yahoo 缺少部分請求日期的 K 棒，通常是週末或假日。ArenaX 會以已取得的日期繼續執行。只要之後出現 `sim env started`，這個錯誤即可忽略。
 
 ## 步驟 2：從 Python 連線
 
-在第二個終端機裡，把下面的程式存成 `hello.py`，再用 `uv run python hello.py` 執行：
+在第二個終端機中，將下列程式存成 `hello.py`，以 `uv run python hello.py` 執行：
 
 ```python
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
@@ -52,12 +50,10 @@ print("market time:", client.get_market_time()["mock_current_time"])
 client.disconnect()
 ```
 
-逐行說明：
-
-- `AccountClient(BrokerType.ARENAX, ...)` 選擇券商。其餘的程式碼不管用哪家券商都一樣。`testkey123` 是每個 ArenaX 伺服器預設都接受的金鑰。
-- `connect()` 開始連線。一定要搭配 `disconnect()` 使用。
-- `get_balance()` 是你的現金，`get_positions()` 是你的持股。
-- `get_market_time()` 詢問 ArenaX 它的模擬市場現在是幾點。
+- `BrokerType.ARENAX` 選擇券商，其餘程式碼對所有券商都相同。`testkey123` 是所有 ArenaX 伺服器預設接受的 API 金鑰。
+- 每個 `connect()` 都要搭配 `disconnect()`。
+- `get_balance()` 回傳現金，`get_positions()` 回傳持股。
+- `get_market_time()` 回傳 ArenaX 的模擬市場時間。
 
 預期輸出：
 
@@ -68,17 +64,17 @@ positions: []
 market time: 2026-11-13 09:24:43.668600
 ```
 
-新帳戶有 NT$100,000，沒有任何持股。過幾秒再執行一次，會發現市場時間往前走了：只要 ArenaX 還在執行，模擬時鐘就會一直走。
+新帳戶有 NT$100,000，沒有持股。只要 ArenaX 在執行，模擬時鐘就持續推進，數秒後再執行一次，市場時間會較晚。
 
 !!! note "帳戶跟著伺服器存在"
-    斷線後再連線，餘額和持股都還在。重新啟動 `arenaxd` 則會在隨機挑選的新日期開一個全新的帳戶。
+    斷線後重新連線，餘額和持股不變。重新啟動 `arenaxd` 則會在隨機挑選的新日期開立全新帳戶。
 
 ??? question "`connect()` 失敗，出現 `Connection refused`"
-    ArenaX 沒有在執行，或還沒準備好。確認第一個終端機已經顯示 `sim env started`，再試一次。其他錯誤請看[疑難排解](troubleshooting.md)。
+    ArenaX 未執行或尚未就緒。等第一個終端機顯示 `sim env started` 後再重試。其他錯誤請見[疑難排解](troubleshooting.md)。
 
 ## Sinopac（正式券商）
 
-準備好使用正式帳戶時，唯一要改的是建立 client 的方式。你需要安裝 `sinopac` 選用套件，並從 [Sinopac 的 API 網站](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4)取得 API 金鑰、密鑰和憑證：
+改用 Sinopac 只需更換 client 的建構方式。需要安裝 `sinopac` 選用套件，並從 [Sinopac 的 API 網站](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4)取得 API 金鑰、密鑰和憑證：
 
 ```python
 client = AccountClient(
@@ -91,8 +87,8 @@ client.connect()
 ```
 
 !!! danger "`simulation=False` 就是你的正式帳戶"
-    設成 `simulation=False` 時，每一筆委託都是用真錢下的真委託。在你的程式於 ArenaX 和沙盒上都跑得正確之前，請保持 `simulation=True`。
+    設成 `simulation=False` 時，每一筆委託都是動用真實資金的真實委託。在程式於 ArenaX 和沙盒上都正確執行之前，請保持 `simulation=True`。
 
-不要把密鑰寫在程式碼裡，請放在設定檔中，詳見[設定與路徑](../reference/config.md)。
+密鑰不要寫在程式碼裡，請放在設定檔中，詳見[設定與路徑](../reference/config.md)。
 
 下一步：[帳戶與委託](account-and-orders.md)。

@@ -1,7 +1,7 @@
 # 指令
 
-CJTrade 安裝的所有指令、各自的用途和選項。從原始碼執行時，在每個指令前面加上
-`uv run`（`uv run arenaxd`）；用 `pip install cjtrade` 安裝後，可以直接執行。
+CJTrade 安裝的所有指令及其用途和選項。在原始碼目錄中，每個指令前加上
+`uv run`（`uv run arenaxd`）；以 `pip install cjtrade` 安裝後，不需加前綴即可執行。
 
 | 指令 | 用途 | 需要券商帳戶嗎？ | 埠（port） |
 |---|---|---|---|
@@ -15,12 +15,12 @@ CJTrade 安裝的所有指令、各自的用途和選項。從原始碼執行時
 | [`finhub`](#finhub) | 交易引擎的網頁介面 | 不需要 | 8000 |
 | `aresh` | 管理執行中 ArenaX 伺服器的 shell | 不需要 | 使用 ArenaX 的埠 |
 
-所有伺服器都只綁定 `127.0.0.1`，其他機器無法連到。
+所有伺服器都只綁定 `127.0.0.1`，其他機器無法連線。
 
 ## `arenaxd` {#arenaxd}
 
-啟動 ArenaX 伺服器。它維護一個模擬帳戶，透過 HTTP 接收委託，並在模擬時鐘上用資料
-來源的價格撮合成交。
+啟動 ArenaX 伺服器：維護一個模擬帳戶，透過 HTTP 接收委託，並在模擬時鐘上以設定的
+資料來源價格撮合。
 
 ```sh
 arenaxd [--backend=demo|backtest|paper|real] [--port=N] [--data=SOURCES] [--price-db=FILE]
@@ -41,16 +41,16 @@ arenaxd [--backend=demo|backtest|paper|real] [--port=N] [--data=SOURCES] [--pric
 | `paper` | 8803 | `sinopac` | 實際時間 | ArenaX |
 | `real` | 8888 | `sinopac` | 實際時間 | **Sinopac 正式帳戶**；沒有設定 `I_UNDERSTAND_REAL_TRADING_RISKS=y` 就拒絕啟動 |
 
-執行時，可以在 `http://127.0.0.1:<port>/docs` 查看每個 API 端點的說明，也能直接試用：
+執行期間，`http://127.0.0.1:<port>/docs` 提供每個 API 端點的說明，並可直接呼叫：
 
 ![ArenaX 的 API 頁面](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/arenax_api_docs.png)
 
-backend 的其他設定是[設定與路徑](config.md#arenax-server-settings)中的 `AX_*` 鍵。
+backend 的其他設定見[設定與路徑](config.md#arenax-server-settings)中的 `AX_*` 鍵。
 
 ## `cjtrade` {#cjtrade}
 
-在 ArenaX 上逐根 K 棒執行 `BOT_ROSTER`（或名單（roster）檔）裡的 bot。沒有給的選項
-會在終端機中詢問。見[執行交易引擎](../get-started/trading-engine.md)。
+在 ArenaX 上逐根 K 棒執行 `BOT_ROSTER`（或名單（roster）檔）裡的 bot。未指定的選項
+會以互動方式詢問。見[執行交易引擎](../get-started/trading-engine.md)。
 
 | 選項 | 預設值 | 說明 |
 |---|---|---|
@@ -69,7 +69,7 @@ backend 的其他設定是[設定與路徑](config.md#arenax-server-settings)中
 
 ## `preload-prices` {#preload-prices}
 
-把 K 棒下載到價格檔，讓 ArenaX 可以離線使用。只會下載檔案裡缺少的區間。
+把 K 棒下載到價格檔，供 ArenaX 離線執行。只下載檔案中缺少的區間。
 
 | 選項 | 預設值 | 說明 |
 |---|---|---|
@@ -104,7 +104,7 @@ backend 的其他設定是[設定與路徑](config.md#arenax-server-settings)中
 
 ## `backtest` {#backtest}
 
-內建策略的一次性回測（oneshot）工具。它從執行中的 ArenaX 伺服器取得 K 棒。
+內建策略的一次性回測（oneshot）工具，從執行中的 ArenaX 伺服器取得 K 棒。
 
 | 選項 | 預設值 | 說明 |
 |---|---|---|
@@ -125,7 +125,7 @@ backend 的其他設定是[設定與路徑](config.md#arenax-server-settings)中
 cjshell --broker=arenax|sinopac [COMMAND [ARGS...]]
 ```
 
-有給指令時，執行一次就結束；沒有給則開啟提示字元。讀取
+指定指令時執行一次後結束；未指定則開啟提示字元。讀取
 `arenax_system.cjconf` 或 `sinopac_system.cjconf`（用
 `bash scripts/gen_config.sh arenax|sinopac` 建立）。`help` 會列出所有指令；
 常用指令見 [CJShell 與 FinHub](../get-started/shell-and-finhub.md#cjshell)。
@@ -137,7 +137,7 @@ cjshell --broker=arenax|sinopac [COMMAND [ARGS...]]
 | `--port` | 8000 | 127.0.0.1 上的埠 |
 | `--reload` | | 程式碼變更時自動重新啟動（開發用） |
 
-設定是 `FINHUB_*` 環境變數；見
+設定以 `FINHUB_*` 環境變數指定；見
 [FinHub README](https://github.com/jackiesogi/CJTrade/blob/master/src/cjtrade/apps/FinHub/README.md)。
 
 ## 原始碼中的腳本

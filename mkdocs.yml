@@ -68,7 +68,7 @@ plugins:
             Run the trading engine: 執行交易引擎
             CJShell and FinHub: CJShell 與 FinHub
             Troubleshooting: 疑難排解
-            Reference: 參考
+            Commands and settings: 指令與設定
             Commands: 指令
             Overview: 總覽
             API reference: API 參考
@@ -128,7 +128,7 @@ nav:
       - Run the trading engine: get-started/trading-engine.md
       - CJShell and FinHub: get-started/shell-and-finhub.md
       - Troubleshooting: get-started/troubleshooting.md
-  - Reference:
+  - Commands and settings:
       - Commands: reference/commands.md
       - Configuration and paths: reference/config.md
   - API reference:

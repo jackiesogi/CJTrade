@@ -1,18 +1,13 @@
 # Backtesting
 
-In this page you run a strategy over a year of real TSMC (2330) prices and
-read the result. It runs entirely in memory, needs no server, and finishes
-in a few seconds.
-
-A *backtest* answers "what would this strategy have done?". Keep in mind
-that a good backtest is not a promise: the past does not repeat exactly, and
-a simulation is always a little kinder than a real market (see
-[What a backtest leaves out](#what-a-backtest-leaves-out)).
+A oneshot backtest of a strategy over a year of TSMC (2330) daily bars. It
+runs in memory with no server and completes in a few seconds. Its fill
+model is optimistic; see
+[What a backtest leaves out](#what-a-backtest-leaves-out).
 
 ## Run a built-in strategy
 
-CJTrade comes with ready-made strategies. This runs the Bollinger band
-strategy over 2024 with NT$1,000,000:
+The built-in Bollinger band strategy over 2024 with NT$1,000,000:
 
 ```python
 from cjtrade.pkgs.marketdata import Cached, Fallback, FinMindMarketData, YFinanceMarketData
@@ -37,11 +32,11 @@ report.print_round_trips()
 ```
 
 - Step 1 is the same as in [Market data](market-data.md).
-- `params={"bb__window_size": 20}` sets the strategy's parameters. Built-in
-  strategies name them `<group>__<name>`; [Built-in strategies](../reference/strategies.md)
+- `params={"bb__window_size": 20}` sets strategy parameters. Built-in
+  strategies use `<group>__<name>` keys; [Built-in strategies](../reference/strategies.md)
   lists them all.
-- `engine.run(...)` walks through the bars one at a time, asks the strategy
-  what to do, and simulates each order.
+- `engine.run(...)` iterates over the bars, calls the strategy on each, and
+  simulates the resulting orders.
 
 Expected output:
 
@@ -80,33 +75,32 @@ bars: 242
 ================================================================================
 ```
 
-The same bars always give the same result, so you should see exactly these
-numbers.
+The backtest is deterministic: the same bars give exactly these numbers.
 
 ## Read the summary {#read-the-summary}
 
 | Line | Meaning |
 |---|---|
-| Init balance / Final balance | cash at the start and at the end |
-| Final equity | cash plus the value of the shares still held |
-| PnL (Total) | profit or loss: final equity minus initial balance |
-| rPnL / uPnL | *realised* (from closed trades) and *unrealised* (shares still held) profit |
-| Total fills | how many orders filled; a round trip is two fills |
-| Commission, Tax, Total cost | what the fills paid in fees |
-| Sharpe ratio | return relative to how much the account value swung; above 1 is usually considered good |
-| CAGR | the yearly growth rate the result corresponds to |
-| Max drawdown | the largest fall from a peak, in percent |
-| Round trips, win rate | buy-then-sell pairs, and how many made money |
+| Init balance / Final balance | cash at start and end |
+| Final equity | cash + marked-to-market shares still held |
+| PnL (Total) | final equity − init balance, absolute and % |
+| rPnL / uPnL | realised (cash change from closed trades) / unrealised (open position) |
+| Total fills | filled orders; a round trip counts as two |
+| Commission, Tax, Total cost | fees summed over all fills |
+| Sharpe ratio | from equity-curve returns, daily resolution, annualised |
+| CAGR | annualised from the same returns |
+| Max drawdown | largest peak-to-trough decline of the equity curve, % |
+| Round trips, win rate | matched buy-then-sell pairs, and the share with positive P&L |
 
-In this run the strategy traded twice and won both times, for +1.68% after
-costs. It bought only 66 and 61 shares: by default a built-in strategy puts
-about 5% of the account into one position, so most of the money stayed in
-cash. That is why the profit is small next to the stock's own rise that
-year.
+Here the strategy made two round trips, both winners, for +1.68% after
+costs. Position sizes were 66 and 61 shares because built-in strategies
+size each position at about 5% of the account by default
+(`risk__max_position_pct=0.05`), leaving most of the capital in cash. That
+is why the profit is small next to the stock's own rise that year.
 
 ## Run your own strategy file
 
-The file from [Write a strategy](strategy.md) runs the same way once loaded:
+A file from [Write a strategy](strategy.md) runs the same way once loaded:
 
 ```python
 from pathlib import Path
@@ -129,9 +123,8 @@ Expected output:
 2024-09-25 SELL 61 1005.0 upper band touch
 ```
 
-These are the same trades as the built-in strategy, since `my_strategy.py`
-follows the same rules. The `reason` is the text you passed to `buy()` and
-`sell()`.
+`my_strategy.py` implements the same rules, so the trades match the
+built-in strategy. `reason` is the text passed to `buy()` and `sell()`.
 
 ## Save a full report
 
@@ -140,20 +133,19 @@ report.save_html("report.html")
 print(report.metrics()["pnl_pct"])          # every number as a dict
 ```
 
-`report.html` is a full performance report (a *tearsheet*) with charts of
-the account value, drawdowns and monthly returns. Open it in a browser:
+`report.html` is a QuantStats tearsheet with equity, drawdown and monthly
+return charts. Open it in a browser:
 
 ![The top of a tearsheet](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/quantstats.png)
 
-`report.full_report()` writes the same file and opens it for you; pass
-`open_browser=False` on a machine without a browser.
+`report.full_report()` writes the same file and opens it in a browser; pass
+`open_browser=False` on a headless machine.
 
 ## Costs
 
-Every fill pays the TWSE costs: a commission of 0.1425% of its value with a
-NT$20 minimum, and on sells a transaction tax of 0.3% (0.1% for ETFs, the
-symbols starting with `0`). To model a broker discount or slippage, pass a
-`CostModel`:
+Every fill pays TWSE costs: 0.1425% commission with a NT$20 minimum, and
+on sells a 0.3% transaction tax (0.1% for ETFs, i.e. symbols starting with
+`0`). For a broker commission discount or slippage, pass a `CostModel`:
 
 ```python
 from cjtrade.pkgs.models.cost import CostModel
@@ -166,16 +158,16 @@ See [Cost model](../reference/cost-model.md) for every option.
 
 ## What a backtest leaves out {#what-a-backtest-leaves-out}
 
-The oneshot backtester is fast because it simplifies:
+The oneshot backtester trades realism for speed:
 
-- A signal calculated on a bar's close is filled **on that bar, at that
-  price**, even if a real market would not have given you that price.
-- There is no limit on volume: any size fills at once.
-- TWSE's daily price limits (漲跌停) are not applied.
+- A signal computed on a bar's close fills **on that bar, at that price**,
+  whether or not the market would have offered it.
+- No volume constraint: any size fills at once.
+- TWSE daily price limits (漲跌停) are not applied.
 
-Treat the result as the best case. For a closer simulation, minute by
-minute with real order matching, use the
-[trading engine](trading-engine.md); its numbers are usually lower, so
-compare trends rather than exact amounts between the two.
+Treat the result as an upper bound. For minute-by-minute simulation with
+real order matching, use the [trading engine](trading-engine.md). Its
+numbers are usually lower; compare trends between the two, not exact
+amounts.
 
 Next: [Run the trading engine](trading-engine.md).

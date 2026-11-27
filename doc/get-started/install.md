@@ -1,23 +1,22 @@
 # Install
 
-This page gets CJTrade onto your computer and checks that it works. It takes
-about five minutes.
+Installing and verifying takes about five minutes.
 
-## What you need
+## Requirements
 
-| Tool | Why | Check you have it |
+| Tool | Purpose | Check |
 |---|---|---|
 | Python 3.12 or newer | CJTrade is a Python package | `python3 --version` prints `Python 3.12.x` or higher |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | installs Python packages and runs commands in the project's environment | `uv --version` |
-| git | downloads the source code | `git --version` |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | installs dependencies and runs commands in the project environment | `uv --version` |
+| git | clones the source | `git --version` |
 
-CJTrade runs on Linux and macOS. It is not tested on Windows.
+Supported on Linux and macOS. Not tested on Windows.
 
-## Two ways to install
+## Install options
 
-=== "From the source code (recommended to start)"
+=== "From source (recommended to start)"
 
-    You get the library, every command-line tool, the example scripts and
+    Includes the library, every command-line tool, the example scripts and
     the tests.
 
     ```sh
@@ -26,32 +25,30 @@ CJTrade runs on Linux and macOS. It is not tested on Windows.
     uv sync
     ```
 
-    - `git clone` downloads the code into a folder called `CJTrade`.
-    - `uv sync` creates a private Python environment in `CJTrade/.venv` and
-      installs everything CJTrade needs into it, including every optional
-      part. Your system Python is not touched.
+    `uv sync` creates the environment in `CJTrade/.venv` and installs all
+    dependencies, including every optional extra. The system Python is left
+    untouched.
 
-    From now on, run commands **inside the `CJTrade` folder** and put
-    `uv run` in front of them. `uv run` runs a command inside that private
-    environment, so `uv run python` is the Python that has CJTrade installed.
+    Run all commands in these pages **from the `CJTrade` folder**, prefixed
+    with `uv run`; `uv run python` is the interpreter with CJTrade installed.
 
-=== "As a package with pip"
+=== "With pip"
 
-    You get the library and the command-line tools, but not the example
+    Includes the library and the command-line tools, but not the example
     scripts under `scripts/`, `poc/` and `tests/`.
 
     ```sh
     pip install cjtrade
     ```
 
-    The core covers the pretend broker, backtesting, the shell and reports.
-    Other parts are *extras*: add them in brackets when you need them.
+    The core covers ArenaX (the simulated broker), backtesting, the shell
+    and reports. Everything else is an extra:
 
     ```sh
     pip install 'cjtrade[sinopac,finhub]'
     ```
 
-    | Extra | Adds | You need it for |
+    | Extra | Adds | Required for |
     |---|---|---|
     | `sinopac` | the `shioaji` SDK | trading on Sinopac, and reading prices from Sinopac |
     | `finhub` | FastAPI and friends | the FinHub web UI |
@@ -59,12 +56,10 @@ CJTrade runs on Linux and macOS. It is not tested on Windows.
     | `news` | NewsAPI client | the NewsAPI news source |
     | `all` | all of the above | |
 
-    In this case, drop the `uv run` from the commands in these pages:
-    `uv run arenaxd` becomes `arenaxd`.
+    With a pip install, drop the `uv run` prefix from the commands in these
+    pages: `uv run arenaxd` becomes `arenaxd`.
 
-## Check that it works
-
-Ask one of the tools for its help text:
+## Verify
 
 ```sh
 uv run strategy-tool templates
@@ -76,19 +71,16 @@ Expected output (one line of JSON, shortened here):
 {"templates": [{"kind": "bb", "label": "Bollinger mean reversion", ...}, {"kind": "dca", ...}, ...]}
 ```
 
-If you see that, CJTrade is installed.
-
 ??? question "It says `command not found` or `No module named cjtrade`"
-    - Make sure you are inside the `CJTrade` folder (from-source install).
-    - Make sure you typed `uv run` in front of the command.
-    - If you installed with pip, make sure the `pip` you used belongs to the
-      Python you are running (`python3 -m pip install cjtrade` avoids the
-      mix-up).
+    - From-source install: run from inside the `CJTrade` folder.
+    - Prefix the command with `uv run`.
+    - pip install: the `pip` you used must belong to the Python you are
+      running (`python3 -m pip install cjtrade` avoids the mix-up).
 
-## Where CJTrade keeps its files
+## File locations
 
-CJTrade never writes into the folder you run it from. Reports, the price
-cache and account snapshots go to your user folders:
+CJTrade never writes into the working directory. Reports, the price cache
+and account snapshots go to per-user directories:
 
 | What | macOS | Linux |
 |---|---|---|
@@ -96,7 +88,7 @@ cache and account snapshots go to your user folders:
 | Reports, account snapshots | `~/Library/Application Support/cjtrade` | `~/.local/share/cjtrade` |
 | Price cache | `~/Library/Caches/cjtrade` | `~/.cache/cjtrade` |
 
-To keep everything in one folder instead, set `CJTRADE_HOME`:
+To keep everything under one directory, set `CJTRADE_HOME`:
 
 ```sh
 export CJTRADE_HOME=~/cjtrade-data

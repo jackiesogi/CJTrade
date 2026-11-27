@@ -1,12 +1,10 @@
 # 回測
 
-這一頁會拿一個策略，跑一整年台積電（2330）的真實價格，然後解讀結果。整個過程都在記憶體裡完成，不需要伺服器，幾秒鐘就跑完。
-
-「回測」回答的是：「這個策略過去會怎麼做？」請記得，回測結果好不代表保證賺錢：過去不會完全重演，而且模擬永遠比真實市場寬容一點（見[回測沒有考慮到的事](#what-a-backtest-leaves-out)）。
+以台積電（2330）一年的日 K 對策略做一次性回測。全程在記憶體中執行，不需要伺服器，數秒內完成。它的成交模型偏樂觀，見[回測沒有考慮到的事](#what-a-backtest-leaves-out)。
 
 ## 執行內建策略
 
-CJTrade 附有現成的策略。下面用 NT$1,000,000，拿布林通道策略跑 2024 年：
+以 NT$1,000,000 對 2024 年執行內建的布林通道策略：
 
 ```python
 from cjtrade.pkgs.marketdata import Cached, Fallback, FinMindMarketData, YFinanceMarketData
@@ -31,8 +29,8 @@ report.print_round_trips()
 ```
 
 - 第 1 步和[行情資料](market-data.md)裡的做法一樣。
-- `params={"bb__window_size": 20}` 設定策略的參數。內建策略的參數名稱格式是 `<group>__<name>`；完整清單見[內建策略](../reference/strategies.md)。
-- `engine.run(...)` 會一根一根走過 K 棒，問策略要怎麼做，再模擬每一筆委託。
+- `params={"bb__window_size": 20}` 設定策略參數。內建策略的參數鍵格式為 `<group>__<name>`；完整清單見[內建策略](../reference/strategies.md)。
+- `engine.run(...)` 逐根走過 K 棒，對每根呼叫策略，並模擬產生的委託。
 
 預期輸出：
 
@@ -71,28 +69,28 @@ bars: 242
 ================================================================================
 ```
 
-同樣的 K 棒永遠得到同樣的結果，所以你看到的數字應該和上面一模一樣。
+回測結果是確定性的：同樣的 K 棒會得到與上面完全相同的數字。
 
 ## 看懂摘要 {#read-the-summary}
 
 | 欄位 | 意思 |
 |---|---|
-| Init balance / Final balance | 一開始和最後的現金 |
-| Final equity | 現金加上還持有的股票市值 |
-| PnL (Total) | 損益：最終權益減掉初始餘額 |
-| rPnL / uPnL | 已實現損益（已經平倉的交易）和未實現損益（還持有的股票） |
-| Total fills | 有幾筆委託成交；一買一賣（round trip）算兩筆成交 |
-| Commission, Tax, Total cost | 這些成交付了多少手續費和稅 |
-| Sharpe ratio | 報酬相對於帳戶價值波動的比例；一般認為大於 1 算不錯 |
-| CAGR | 這個結果換算成的年化成長率 |
-| Max drawdown | 從高點往下跌的最大幅度，以百分比表示 |
-| Round trips, win rate | 先買後賣的配對次數，以及其中有幾次賺錢 |
+| Init balance / Final balance | 期初與期末現金 |
+| Final equity | 現金 + 未平倉持股的市值 |
+| PnL (Total) | 期末權益 − 期初餘額，金額與百分比 |
+| rPnL / uPnL | 已實現損益（已平倉交易造成的現金變動）／未實現損益（未平倉部位） |
+| Total fills | 成交筆數；一次 round trip 算兩筆 |
+| Commission, Tax, Total cost | 所有成交的費用加總 |
+| Sharpe ratio | 以權益曲線報酬計算，日解析度，年化 |
+| CAGR | 以同一組報酬年化 |
+| Max drawdown | 權益曲線從高點到低點的最大回撤，% |
+| Round trips, win rate | 先買後賣的配對數，以及損益為正的比例 |
 
-這次執行中，策略交易了兩次，兩次都賺，扣掉成本後賺 +1.68%。它只買了 66 股和 61 股：內建策略預設只把帳戶大約 5% 的資金放進一筆持股，所以大部分的錢都留在現金。這就是為什麼和那年股價本身的漲幅相比，獲利顯得很小。
+這次執行有兩次 round trip，都獲利，扣除成本後 +1.68%。部位只有 66 股和 61 股，因為內建策略預設每筆部位約占帳戶 5%（`risk__max_position_pct=0.05`），大部分資金留在現金。因此獲利相較於該股當年的漲幅顯得很小。
 
 ## 執行你自己的策略檔
 
-[撰寫策略](strategy.md)裡的檔案載入之後，用法完全一樣：
+[撰寫策略](strategy.md)的檔案載入後用法相同：
 
 ```python
 from pathlib import Path
@@ -115,7 +113,7 @@ for f in result.fill_history:
 2024-09-25 SELL 61 1005.0 upper band touch
 ```
 
-因為 `my_strategy.py` 的規則和內建策略相同，所以交易也一樣。`reason` 就是你傳給 `buy()` 和 `sell()` 的文字。
+`my_strategy.py` 的規則與內建策略相同，所以交易一致。`reason` 是傳給 `buy()` 和 `sell()` 的文字。
 
 ## 儲存完整報告
 
@@ -124,15 +122,15 @@ report.save_html("report.html")
 print(report.metrics()["pnl_pct"])          # 所有數字，以 dict 形式取得
 ```
 
-`report.html` 是一份完整的績效報告（tearsheet），裡面有帳戶價值、回撤和每月報酬的圖表。用瀏覽器打開就能看：
+`report.html` 是 QuantStats 績效報告（tearsheet），包含權益、回撤和每月報酬圖表。用瀏覽器開啟：
 
 ![績效報告的開頭](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/quantstats.png)
 
-`report.full_report()` 會寫出同一個檔案並幫你打開；在沒有瀏覽器的機器上，請傳入 `open_browser=False`。
+`report.full_report()` 寫出同一個檔案並以瀏覽器開啟；在沒有瀏覽器的機器上請傳入 `open_browser=False`。
 
 ## 交易成本
 
-每筆成交都會付台灣證交所（TWSE）的交易成本：手續費是成交金額的 0.1425%，最低 NT$20；賣出時另收 0.3% 的證交稅（ETF 是 0.1%，也就是代號開頭是 `0` 的股票）。如果要模擬券商手續費折扣或滑價，可以傳入 `CostModel`：
+每筆成交都計入台灣證交所（TWSE）交易成本：手續費 0.1425%，最低 NT$20；賣出另收 0.3% 證交稅（ETF 為 0.1%，即代號以 `0` 開頭者）。要模擬券商手續費折扣或滑價，傳入 `CostModel`：
 
 ```python
 from cjtrade.pkgs.models.cost import CostModel
@@ -145,12 +143,12 @@ engine = BacktestEngine(kbars=kbars, symbol="2330", initial_balance=1_000_000,
 
 ## 回測沒有考慮到的事 {#what-a-backtest-leaves-out}
 
-一次性回測（oneshot）之所以快，是因為它做了一些簡化：
+一次性回測（oneshot）以真實度換取速度：
 
-- 根據某根 K 棒收盤價算出的訊號，會**在同一根 K 棒、用那個價格**成交，就算真實市場不一定給得了這個價格。
-- 沒有成交量限制：多大的量都會一次成交。
-- 沒有套用台股每日的漲跌停限制。
+- 以某根 K 棒收盤價算出的訊號，**在同一根 K 棒、以該價格**成交，不論市場實際能否成交在這個價格。
+- 沒有成交量限制：任何數量都一次成交。
+- 不套用台股每日漲跌停限制。
 
-請把結果當成最好的情況。如果想要更接近真實的模擬，也就是逐分鐘、真的撮合委託，請用[交易引擎](trading-engine.md)。它算出來的數字通常比較低，所以比較兩者時，請看趨勢，不要比確切金額。
+請把結果視為上限。需要逐分鐘、真實撮合委託的模擬，請用[交易引擎](trading-engine.md)。它的數字通常較低；比較兩者時看趨勢，不比確切金額。
 
 下一步：[執行交易引擎](trading-engine.md)。

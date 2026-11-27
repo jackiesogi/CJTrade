@@ -1,22 +1,22 @@
 # 安裝
 
-這一頁帶你把 CJTrade 裝到電腦上，並確認它能正常運作。大約需要五分鐘。
+安裝與驗證約需五分鐘。
 
-## 需要準備的工具
+## 需求
 
 | 工具 | 用途 | 確認方式 |
 |---|---|---|
-| Python 3.12 以上 | CJTrade 是一個 Python 套件 | `python3 --version` 顯示 `Python 3.12.x` 或更新版本 |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | 安裝 Python 套件，並在專案環境中執行指令 | `uv --version` |
-| git | 下載原始碼 | `git --version` |
+| Python 3.12 以上 | CJTrade 是 Python 套件 | `python3 --version` 顯示 `Python 3.12.x` 或更新版本 |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | 安裝相依套件，並在專案環境中執行指令 | `uv --version` |
+| git | 取得原始碼 | `git --version` |
 
-CJTrade 可在 Linux 和 macOS 上執行，沒有在 Windows 上測試過。
+支援 Linux 和 macOS，未在 Windows 上測試。
 
-## 兩種安裝方式
+## 安裝方式
 
-=== "從原始碼安裝（建議新手使用）"
+=== "從原始碼安裝（建議初次使用）"
 
-    你會拿到函式庫、所有命令列工具、範例程式和測試。
+    包含函式庫、所有命令列工具、範例程式和測試。
 
     ```sh
     git clone https://github.com/jackiesogi/CJTrade
@@ -24,20 +24,19 @@ CJTrade 可在 Linux 和 macOS 上執行，沒有在 Windows 上測試過。
     uv sync
     ```
 
-    - `git clone` 會把程式碼下載到名為 `CJTrade` 的資料夾。
-    - `uv sync` 會在 `CJTrade/.venv` 建立一個專屬的 Python 環境，並把 CJTrade 需要的東西（包含所有選用套件）都裝進去。系統原本的 Python 不會被動到。
+    `uv sync` 會在 `CJTrade/.venv` 建立環境並安裝所有相依套件（包含全部選用套件），不會動到系統的 Python。
 
-    之後請在 **`CJTrade` 資料夾裡**執行指令，並在指令前面加上 `uv run`。`uv run` 會在那個專屬環境中執行指令，所以 `uv run python` 就是已經裝好 CJTrade 的 Python。
+    本文件中的指令都請在 **`CJTrade` 資料夾內**執行，並加上 `uv run` 前綴；`uv run python` 就是已安裝 CJTrade 的直譯器。
 
-=== "用 pip 安裝套件"
+=== "用 pip 安裝"
 
-    你會拿到函式庫和命令列工具，但沒有 `scripts/`、`poc/` 和 `tests/` 底下的範例程式。
+    包含函式庫和命令列工具，但不含 `scripts/`、`poc/` 和 `tests/` 底下的範例程式。
 
     ```sh
     pip install cjtrade
     ```
 
-    核心套件包含模擬券商、回測、shell 和報表。其他功能是*選用套件（extra）*：需要時寫在方括號裡一起安裝。
+    核心套件包含 ArenaX（模擬券商）、回測、shell 和報表，其餘功能為選用套件（extra）：
 
     ```sh
     pip install 'cjtrade[sinopac,finhub]'
@@ -51,11 +50,9 @@ CJTrade 可在 Linux 和 macOS 上執行，沒有在 Windows 上測試過。
     | `news` | NewsAPI 用戶端 | NewsAPI 新聞來源 |
     | `all` | 以上全部 | |
 
-    用這種方式安裝時，本文件中的指令都要拿掉 `uv run`：`uv run arenaxd` 改成 `arenaxd`。
+    以 pip 安裝時，本文件中的指令都要去掉 `uv run` 前綴：`uv run arenaxd` 改成 `arenaxd`。
 
-## 確認安裝成功
-
-請其中一個工具印出它的說明：
+## 驗證安裝
 
 ```sh
 uv run strategy-tool templates
@@ -67,16 +64,14 @@ uv run strategy-tool templates
 {"templates": [{"kind": "bb", "label": "Bollinger mean reversion", ...}, {"kind": "dca", ...}, ...]}
 ```
 
-看到這段輸出，就代表 CJTrade 已經裝好了。
-
 ??? question "出現 `command not found` 或 `No module named cjtrade`"
-    - 確認你在 `CJTrade` 資料夾裡（從原始碼安裝時）。
-    - 確認指令前面有加 `uv run`。
-    - 如果是用 pip 安裝，確認你用的 `pip` 屬於你正在執行的那個 Python（改用 `python3 -m pip install cjtrade` 就不會搞混）。
+    - 從原始碼安裝：須在 `CJTrade` 資料夾內執行。
+    - 指令前須加上 `uv run`。
+    - 以 pip 安裝：所用的 `pip` 必須屬於正在執行的 Python（改用 `python3 -m pip install cjtrade` 可避免混用）。
 
-## CJTrade 把檔案放在哪裡
+## 檔案位置
 
-CJTrade 不會把檔案寫進你執行它的資料夾。報表、價格快取和帳戶快照都會放在你的使用者資料夾：
+CJTrade 不會寫入目前的工作目錄。報表、價格快取和帳戶快照都放在使用者目錄下：
 
 | 內容 | macOS | Linux |
 |---|---|---|
@@ -84,7 +79,7 @@ CJTrade 不會把檔案寫進你執行它的資料夾。報表、價格快取和
 | 報表、帳戶快照 | `~/Library/Application Support/cjtrade` | `~/.local/share/cjtrade` |
 | 價格快取 | `~/Library/Caches/cjtrade` | `~/.cache/cjtrade` |
 
-如果想把所有東西放在同一個資料夾，請設定 `CJTRADE_HOME`：
+若要把所有檔案集中在同一個目錄，請設定 `CJTRADE_HOME`：
 
 ```sh
 export CJTRADE_HOME=~/cjtrade-data
