@@ -25,3 +25,16 @@
   --md-typeset-a-color: #93c5fd;
   --md-accent-fg-color: #bfdbfe;
 }
+
+/* The footer carries only the copyright line, centred, on the header's colour. */
+:root {
+  --md-footer-bg-color--dark: #0f172a;
+}
+.md-footer-meta__inner {
+  justify-content: center;
+}
+.md-copyright {
+  width: 100%;
+  margin: auto;
+  text-align: center;
+}

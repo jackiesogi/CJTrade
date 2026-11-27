@@ -33,6 +33,10 @@ theme:
       primary: custom
       toggle: {icon: material/weather-sunny, name: Light mode}
 
+copyright: Copyright &copy; 2026 Shou-Chi Chen &middot; Released under the <a href="https://github.com/jackiesogi/CJTrade/blob/master/LICENSE">MIT License</a>
+extra:
+  generator: false   # drop "Made with Material for MkDocs"
+
 extra_css:
   - assets/css/extra.css
 
