@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # yq and gh are preinstalled on GitHub's Ubuntu runners.
       - name: Create or update each label
         env:
