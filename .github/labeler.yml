@@ -25,8 +25,8 @@ documentation:
           - 'mkdocs.yml'
           - '**/*.md'
 
-# ── area: from the changed files ──────────────────────────────────────────────
-'area: arenax':
+# ── area (changed files) ──────────────────────────────────────────────────────
+arenax:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/apps/ArenaX/**'
@@ -35,19 +35,19 @@ documentation:
           - 'tests/integration/arenax/**'
           - 'tests/unit/apps/arenax/**'
 
-'area: sinopac':
+sinopac:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/brokers/sinopac/**'
           - 'src/cjtrade/pkgs/marketdata/sinopac.py'
 
-'area: brokers':
+brokers:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/brokers/*.py'
           - 'tests/unit/pkgs/brokers/**'
 
-'area: market-data':
+market-data:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/marketdata/**'
@@ -57,19 +57,19 @@ documentation:
           - 'src/cjtrade/apps/preload_prices.py'
           - 'tests/unit/pkgs/marketdata/**'
 
-'area: engine':
+engine:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/apps/CJTrade/**'
           - 'tests/unit/apps/CJTrade/**'
 
-'area: finhub':
+finhub:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/apps/FinHub/**'
           - 'tests/unit/apps/FinHub/**'
 
-'area: strategy':
+strategy:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/strategy/**'
@@ -77,7 +77,7 @@ documentation:
           - 'src/cjtrade/apps/CJEdit/**'
           - 'tests/unit/pkgs/strategy/**'
 
-'area: backtest':
+backtest:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/analytics/backtest/**'
@@ -86,20 +86,20 @@ documentation:
           - 'src/cjtrade/apps/insight.py'
           - 'poc/backtest*'
 
-'area: risk':
+risk:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/risk/**'
           - 'tests/unit/pkgs/risk/**'
 
-'area: shell':
+shell:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/apps/CJShell/**'
           - 'tests/test_cjtrade_integration*.sh'
           - 'tests/*.sh'
 
-'area: analytics':
+analytics:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/analytics/technical/**'
@@ -109,7 +109,7 @@ documentation:
           - 'src/cjtrade/pkgs/chart/**'
           - 'src/cjtrade/apps/CJNews/**'
 
-'area: core':
+core:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/cjtrade/pkgs/models/**'
