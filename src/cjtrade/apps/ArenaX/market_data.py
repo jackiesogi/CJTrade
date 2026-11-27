@@ -200,6 +200,11 @@ class ArenaX_Market:
         # log.debug("mock time %+.1fh, total offset %+.1fh", hours,
         #           self.manual_time_offset.total_seconds() / 3600)
 
+    @property
+    def clock_started(self) -> bool:
+        """Whether a start time has been set; until then there is no market time."""
+        return self.real_init_time != 0
+
     def get_market_time(self):
         real_current_time = datetime.now()
         # If paused, return the frozen paused_time as mock_current_time

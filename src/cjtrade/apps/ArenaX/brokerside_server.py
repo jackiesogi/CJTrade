@@ -1103,6 +1103,11 @@ class ArenaX_BrokerSideServer:
         scaled its sleep by playback speed, not this loop.
         """
         while not self._stop_event.is_set():
+            # No clock until a start time is set (a backtest whose random start
+            # found no data waits for the client's set_timeline_origin).
+            if not getattr(getattr(self.backend, "market", None), "clock_started", True):
+                self._stop_event.wait(self._match_interval)
+                continue
             # Same lock the request threads take, and released before the wait
             # below -- holding it across the sleep would stall every request for
             # a whole interval.
