@@ -1,0 +1,55 @@
+# Weekly update PRs for everything with a version this repository pins.
+#
+# One PR per ecosystem per week where possible (the `groups`), so a quiet
+# week is a handful of PRs rather than one per package. A major version bump
+# of a Python dependency gets its own PR: it is the one most likely to break
+# something and should be reviewed on its own.
+#
+# PRs from Dependabot get no repository secrets, so the Sinopac CI job skips
+# itself on them; every other check runs as usual.
+version: 2
+updates:
+  # Workflow actions. Most are pinned to a commit SHA with the tag in a
+  # comment; Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "[chore]"
+    labels: [chore, ci, dependencies]
+
+  # pyproject.toml and uv.lock.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "[chore]"
+    labels: [chore, dependencies]
+
+  # The hooks in .pre-commit-config.yaml that come from other repositories.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Taipei
+    groups:
+      hooks:
+        patterns: ["*"]
+    commit-message:
+      prefix: "[chore]"
+    labels: [chore, ci]

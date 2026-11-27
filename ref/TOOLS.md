@@ -659,10 +659,27 @@ FinHub 預設也是 8000，兩者同時開時其中一個要換 port（例如 `u
 
 | Workflow | 觸發 | 內容 |
 |---|---|---|
-| `ci.yml` | push、pull_request、手動 | 各 hook 一個 job：`file-hooks`（只對本次變更檔案跑 whitespace/EOF/YAML/import order）、`readme-examples`、`unit-tests`（上傳 `htmlcov/unit`）、`arenax-integration`、`arenax-shell`（先 `gen_config.sh arenax`，現在已非必要）、`sinopac-shell`（需 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_BASE64`、`SINOPAC_CA_PASSWORD` secrets，缺就跳過；強制 `SIMULATION=y`，所以 CI 只下沙盒單；fork 的 PR 不跑；同時只允許一個 Sinopac 登入）。全部 `TZ=Asia/Taipei`、Python 3.12、`UV_LOCKED=1` |
-| `codeql.yml` | 對 `master` 的 push/PR、每週一 03:17（台北）、手動 | CodeQL `security-extended`，語言 python 與 actions；忽略 `poc/experiments`、`ref`、`tests`、`src/cjtrade/apps/FinHub/static/vendor` |
+| `ci.yml` | push、pull_request、手動 | 各 hook 一個 job：`file-hooks`（只對本次變更檔案跑 whitespace/EOF/YAML/import order）、`readme-examples`、`unit-tests`（上傳 `htmlcov/unit`）、`arenax-integration`、`arenax-shell`、`sinopac-shell`（需 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_BASE64`、`SINOPAC_CA_PASSWORD` secrets，缺就跳過；強制 `SIMULATION=y`，所以 CI 只下沙盒單；fork 的 PR 不跑；同時只允許一個 Sinopac 登入）。全部 `TZ=Asia/Taipei`、Python 3.12、`UV_LOCKED=1` |
+| `codeql.yml` | 對 `master` 的 push/PR、每週一 03:17（台北）、手動 | CodeQL `security-extended`，語言 python、actions 與 javascript-typescript；忽略 `poc/experiments`、`ref`、`tests`、`src/cjtrade/apps/FinHub/static/vendor` |
 | `docs.yml` | push、pull_request、手動 | `uv sync --locked --only-group docs` 後 `mkdocs build --strict`；只有 `master` 的 push 會部署到 GitHub Pages |
 | `labeler.yml` | `pull_request_target` | 依分支名與變更檔案自動加 label（規則在 `.github/labeler.yml`，label 定義在 `.github/labels.yml`） |
+| `labels.yml` | `master` 上 `.github/labels.yml` 有變動、手動 | 依 `labels.yml` 建立或更新 label，不刪除 |
+| `release.yml` | push `v*` tag | 檢查 tag 與 `pyproject.toml` 版本一致 → build → 驗證 wheel 能裝能 import → 用 Trusted Publishing 上傳 PyPI（`pypi` environment）→ 建立 GitHub Release，附 sdist／wheel，release notes 依 `.github/release.yml` 按 label 分類 |
+
+Dependabot（`.github/dependabot.yml`）：每週一 09:00（台北）對 GitHub Actions 與 uv 依賴各開一張合併 PR（Python 的 major 版本各自一張），每月對 pre-commit hook 開一張；標題前綴 `[chore]:`，自動加 `chore`／`dependencies` 等 label。
+
+### 發布新版本
+
+1. 把 `pyproject.toml` 的 `version` 改成新版本（例如 `1.0.0`），照平常流程開 PR 並 merge。
+2. 在 master 上打 tag 並推上去：
+
+   ```sh
+   git switch master && git pull
+   git tag -a v1.0.0 -m "v1.0.0"
+   git push origin v1.0.0
+   ```
+
+3. `release.yml` 會自動上傳 PyPI 並建立 GitHub Release。tag 與版本不一致時第一步就失敗，什麼都不會發布。PyPI 不接受重複上傳同一個版本，發錯只能再發一個新版本。
 
 ---
 
