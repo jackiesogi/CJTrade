@@ -65,8 +65,8 @@ uv run --group docs mkdocs build --strict -d /tmp/site                  # docs s
 ```
 
 Never run `bash tests/test_cjtrade_integration.sh --broker=sinopac` (the
-`sinopac-shell` pre-commit hook) on your own: it places **real** odd-lot
-orders on the user's account. Commit with `SKIP=sinopac-shell git commit ...`
+`integration-cjshell-sinopac` pre-commit hook) on your own: it places **real** odd-lot
+orders on the user's account. Commit with `SKIP=integration-cjshell-sinopac git commit ...`
 unless the user asks for it. `/verify` (`.claude/commands/verify.md`) runs
 the safe checks in CI order.
 
@@ -502,7 +502,7 @@ class BalanceCommand(CommandBase):
   `nacl ValueError`) if you point pytest at them. They are scripts; run them
   by hand.
 - The pre-commit config runs the Sinopac shell test, which **places real
-  orders**. Use `SKIP=sinopac-shell` unless the user asked for it; never set
+  orders**. Use `SKIP=integration-cjshell-sinopac` unless the user asked for it; never set
   `SIMULATION=y` in that hook to make it safe — the user keeps it real on
   purpose.
 - `_is_sufficient_account_inventory` / `_is_sufficient_account_balance`
@@ -550,7 +550,7 @@ class BalanceCommand(CommandBase):
 ## 11. Branches, commits and PRs
 
 **Branches.** `type/short-desc`, cut from the latest `origin/master`:
-`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `poc/` (e.g.
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `test/`, `poc/` (e.g.
 `feat/market-data`, `chore/release-automation`). The prefix sets the PR's
 type label (`.github/labeler.yml`). One topic per branch.
 
@@ -564,7 +564,7 @@ saying what changed and why in plain sentences; no bullet lists, no
 ```sh
 printf '%s\n' "Subject line" "" "Body line one," "body line two." > /tmp/msg.txt
 awk 'length > 72' /tmp/msg.txt          # must print nothing
-SKIP=sinopac-shell git commit -F /tmp/msg.txt
+SKIP=integration-cjshell-sinopac git commit -F /tmp/msg.txt
 ```
 
 If the `reorder-python-imports` or `end-of-file-fixer` hook fails, it has

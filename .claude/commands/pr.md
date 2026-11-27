@@ -10,7 +10,7 @@ CLAUDE.md. Arguments: $ARGUMENTS (type and topic).
 2. Run `/verify` and stop if a step fails.
 3. Write each commit message to a file: imperative subject of 5–12 words,
    body of at most 3 lines; `awk 'length > 72'` on it must print nothing.
-   Commit with `SKIP=sinopac-shell git commit -F <file>`; if an import or
+   Commit with `SKIP=integration-cjshell-sinopac git commit -F <file>`; if an import or
    end-of-file hook rewrote files, `git add -A` and commit again.
 4. Show the user the commits and the proposed PR title and body, and wait
    for approval before pushing.
