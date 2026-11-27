@@ -26,13 +26,23 @@
 
 | 鍵 | 適用對象 | 說明 |
 |---|---|---|
-| `API_KEY` | ArenaX、Sinopac | ArenaX：`testkey123`。Sinopac：你的 API key |
-| `SECRET_KEY` | Sinopac | 你的 API secret |
-| `CA_CERT_PATH` | Sinopac | `Sinopac.pfx` 憑證的路徑 |
-| `CA_PASSWORD` | Sinopac | 憑證的密碼 |
-| `SIMULATION` | Sinopac | `y` 為永豐的沙盒（模擬環境），`n` 為你的**正式帳戶**（產生出來的檔案是 `n`） |
+| `API_KEY` | ArenaX | `testkey123`，每個 ArenaX 伺服器都接受的金鑰 |
+| `SINOPAC_API_KEY` | Sinopac | 你的 API key |
+| `SINOPAC_SECRET_KEY` | Sinopac | 你的 API secret |
+| `SINOPAC_CA_CERT_PATH` | Sinopac | `Sinopac.pfx` 憑證的路徑 |
+| `SINOPAC_CA_PASSWORD` | Sinopac | 憑證的密碼 |
+| `SINOPAC_SIMULATION` | Sinopac | `y` 為永豐的沙盒（模擬環境），`n` 為你的**正式帳戶**（產生出來的檔案是 `n`） |
+| `FUBON_PERSONAL_ID` | Fubon | 帳戶持有人的身分證字號 |
+| `FUBON_API_KEY` 或 `FUBON_PASSWORD` | Fubon | API 金鑰登入，或密碼登入 |
+| `FUBON_CERT_PATH`、`FUBON_CERT_PASSWORD` | Fubon | `.pfx` 憑證及其密碼 |
+| `FUBON_ACCOUNT` | Fubon | 選填：登入回傳多個帳號時要交易的帳號 |
 | `LLM_MODEL`、`LLM_API_KEY`、`GEMINI_API_KEY` | LLM 用戶端、CJShell `llm` | 使用的模型及其金鑰 |
 | `FINMIND_TOKEN` | FinMind 價格來源 | 選填；可提高請求次數上限 |
+
+`bash scripts/gen_config.sh sinopac` 和 `... fubon` 會寫出包含這些鍵的設定檔。`cjtrade.pkgs.config.broker_settings` 會把它們轉成 `AccountClient` 的參數，例如 `AccountClient(BrokerType.FUBON, **fubon_config())`。
+
+!!! note "Sinopac 的舊名稱"
+    Sinopac 的鍵以前沒有前綴（`API_KEY`、`SECRET_KEY`、`CA_CERT_PATH`、`CA_PASSWORD`、`SIMULATION`）。在 `SINOPAC_` 名稱未設定時仍會讀取舊名稱，並記錄一則警告。`SINOPAC_SIMULATION` 或 `SIMULATION` 任一個為 `y` 時，就會使用沙盒。
 
 ## CJTrade 全域變數
 

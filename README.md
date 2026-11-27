@@ -149,8 +149,9 @@ uv run cjshell --broker=sinopac
 
 > [!CAUTION]
 > A live session places **real orders**, and the shell does not ask for
-> confirmation. Set `SIMULATION = y` in the config file to use Sinopac's
-> sandbox. Fubon has no sandbox.
+> confirmation. Set `SINOPAC_SIMULATION = y` in the config file to use
+> Sinopac's sandbox. Fubon has no sandbox; its settings are `FUBON_*`
+> (`bash scripts/gen_config.sh fubon`).
 
 [Live brokers](https://jackiesogi.github.io/CJTrade/get-started/live-brokers/)
 compares the brokers and shows what each adapter converts.

@@ -251,8 +251,10 @@ Write tests when changing `pkgs/`. Don't add tests to `poc/` unless asked.
 - Shell commands: `XxxCommand(CommandBase)`. The user-facing `name` is either
   a full word (`balance`, `help`, `kbars`) or a terse abbreviation
   (`lsodr`, `lspos`, `mvrs`) — match whichever family the neighbours use.
-- Config keys: `AX_*` (ArenaX server), `FINHUB_*` (FinHub), uppercase in
-  `.cjconf`.
+- Config keys: `AX_*` (ArenaX server), `FINHUB_*` (FinHub), `SINOPAC_*` and
+  `FUBON_*` (broker credentials, read through `pkgs/config/broker_settings.py`;
+  Sinopac's old unprefixed names still work with a warning), uppercase in
+  `.cjconf`. `API_KEY` is ArenaX's key.
 - Console scripts are lowercase (`cjtrade`, `cjshell`, `finhub`); app
   directories under `apps/` are the product name (`CJTrade`, `CJShell`,
   `FinHub`, `ArenaX`).
@@ -500,12 +502,12 @@ class BalanceCommand(CommandBase):
 
 ## 9. Known traps
 
-- `tests/manual/test_*.py` — 4 files fail collection (`KeyError: 'API_KEY'`,
+- `tests/manual/test_*.py` — 4 files fail collection (no credentials,
   `nacl ValueError`) if you point pytest at them. They are scripts; run them
   by hand.
 - The pre-commit config runs the Sinopac shell test, which **places real
   orders**. Use `SKIP=integration-cjshell-sinopac` unless the user asked for it; never set
-  `SIMULATION=y` in that hook to make it safe — the user keeps it real on
+  `SINOPAC_SIMULATION=y` (or `SIMULATION=y`) in that hook to make it safe — the user keeps it real on
   purpose.
 - ArenaX fills every order in full at its limit price: no partial fills,
   `PriceType.MKT` is matched as a limit, and the slippage setting is never

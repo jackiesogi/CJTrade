@@ -8,6 +8,7 @@ import os
 
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.config.broker_settings import sinopac_credentials
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.db.db_api import *
 from cjtrade.pkgs.logger import get_console
@@ -71,10 +72,7 @@ def main():
     load_supported_config_files()
 
     config = {
-        "api_key": os.getenv("API_KEY"),
-        "secret_key": os.getenv("SECRET_KEY"),
-        "ca_path": os.getenv("CA_CERT_PATH"),
-        "ca_passwd": os.getenv("CA_PASSWORD")
+        **sinopac_credentials(),
     }
 
     broker_type = BrokerType[args.broker]

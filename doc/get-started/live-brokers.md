@@ -66,6 +66,10 @@ client = AccountClient(
 client.connect()
 ```
 
+The same arguments from settings: `AccountClient(BrokerType.SINOPAC,
+**sinopac_config())`, with `SINOPAC_API_KEY`, `SINOPAC_SECRET_KEY`,
+`SINOPAC_CA_CERT_PATH`, `SINOPAC_CA_PASSWORD` and `SINOPAC_SIMULATION`.
+
 !!! danger "`simulation=False` is your real account"
     With `simulation=False` every order is a real order with real money.
     Keep `simulation=True` until your code has run correctly on ArenaX and
@@ -102,6 +106,18 @@ print(client.get_balance())
 | `cert_path`, `cert_pass` | the `.pfx` certificate and its password |
 | `account` | the account number to trade when the login returns several; default the first stock account |
 | `market` | where bars come from; the Fubon adapter serves quotes, not bars |
+
+To read these from settings instead (`FUBON_PERSONAL_ID`, `FUBON_API_KEY` or
+`FUBON_PASSWORD`, `FUBON_CERT_PATH`, `FUBON_CERT_PASSWORD`, `FUBON_ACCOUNT`;
+see [Configuration and paths](../reference/config.md)):
+
+```python
+from cjtrade.pkgs.config.broker_settings import fubon_config
+from cjtrade.pkgs.config.config_loader import load_supported_config_files
+
+load_supported_config_files()
+client = AccountClient(BrokerType.FUBON, **fubon_config(), market=...)
+```
 
 Behaviour specific to Fubon:
 

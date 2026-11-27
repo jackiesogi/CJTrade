@@ -488,7 +488,7 @@ def _launch_env() -> dict:
     # See _browser_stub: noisy on purpose, and opens nothing.
     env["BROWSER"] = _browser_stub()
     # Belt and braces for anything that consults it before trading.
-    env["SIMULATION"] = "y"
+    env["SINOPAC_SIMULATION"] = "y"
     # Stop a stale AX_* from a developer's shell deciding which backend the
     # example talks to -- the same shadowing poc/backtest.sh unsets.
     for key in ("AX_HOST_PORT", "AX_HOST_ADDRESS", "AX_LAUNCH_MODE", "AX_STATE_FILE"):

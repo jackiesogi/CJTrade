@@ -27,6 +27,8 @@ from cjtrade.pkgs.analytics.technical.strategies.fixed_price import *
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
+from cjtrade.pkgs.config.broker_settings import sinopac_config
+from cjtrade.pkgs.config.broker_settings import sinopac_missing
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.logger import get_console
 from cjtrade.pkgs.logger import get_logger
@@ -927,11 +929,7 @@ def main():
     # .get(): only Sinopac needs these, and an ArenaX shell must start with
     # none of them set. The Sinopac branch below checks they are there.
     config = {
-        'api_key': os.environ.get("API_KEY", ""),
-        'secret_key': os.environ.get("SECRET_KEY", ""),
-        'ca_path': os.environ.get("CA_CERT_PATH", ""),
-        'ca_passwd': os.environ.get("CA_PASSWORD", ""),
-        'simulation': True if os.environ.get("SIMULATION") == "y" else False,
+        **sinopac_config(),
 
         'username': os.environ.get('USERNAME', 'user000'),
         'news_source': os.environ.get('NEWS_SOURCE', 'cnyes'),
@@ -940,8 +938,7 @@ def main():
 
 
     if args.broker == 'sinopac':
-        missing = [k for k in ("API_KEY", "SECRET_KEY", "CA_CERT_PATH", "CA_PASSWORD")
-                   if not os.environ.get(k)]
+        missing = sinopac_missing()
         if missing:
             out.info(f"--broker=sinopac needs {', '.join(missing)} "
                      f"(in a .cjconf file or the environment)")

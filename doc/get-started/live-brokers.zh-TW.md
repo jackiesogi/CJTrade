@@ -59,6 +59,8 @@ client = AccountClient(
 client.connect()
 ```
 
+從設定讀取相同的參數：`AccountClient(BrokerType.SINOPAC, **sinopac_config())`，對應的設定為 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_PATH`、`SINOPAC_CA_PASSWORD` 和 `SINOPAC_SIMULATION`。
+
 !!! danger "`simulation=False` 就是你的正式帳戶"
     設成 `simulation=False` 時，每一筆委託都是動用真實資金的真實委託。在程式於 ArenaX 和沙盒上都正確執行之前，請保持 `simulation=True`。
 
@@ -89,6 +91,16 @@ print(client.get_balance())
 | `cert_path`、`cert_pass` | `.pfx` 憑證及其密碼 |
 | `account` | 登入回傳多個帳號時要交易的帳號；預設為第一個證券帳號 |
 | `market` | K 棒的來源；Fubon 轉接層只提供報價，不提供 K 棒 |
+
+改從設定讀取（`FUBON_PERSONAL_ID`、`FUBON_API_KEY` 或 `FUBON_PASSWORD`、`FUBON_CERT_PATH`、`FUBON_CERT_PASSWORD`、`FUBON_ACCOUNT`；見[設定與路徑](../reference/config.md)）：
+
+```python
+from cjtrade.pkgs.config.broker_settings import fubon_config
+from cjtrade.pkgs.config.config_loader import load_supported_config_files
+
+load_supported_config_files()
+client = AccountClient(BrokerType.FUBON, **fubon_config(), market=...)
+```
 
 Fubon 特有的行為：
 

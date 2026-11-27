@@ -18,8 +18,9 @@ bash scripts/gen_config.sh arenax
 ```
 
 This writes `arenax_system.cjconf` to the current directory with
-`API_KEY = testkey123` set and the other keys blank. The other keys are only
-needed for the `llm` command or for Sinopac.
+`API_KEY = testkey123` set and the LLM keys blank; those are only needed
+for the `llm` command. `bash scripts/gen_config.sh sinopac` and `... fubon`
+write the files for the live brokers.
 
 ### Run one command, or many
 
@@ -72,12 +73,12 @@ Market Value: 2,360.000
 Total Unrealized PnL: -57.400 (-2.37%)
 ```
 
-!!! danger "On Sinopac, CJShell places real orders without asking"
-    `uv run cjshell --broker=sinopac` reads `sinopac_system.cjconf` (generate
-    it with `bash scripts/gen_config.sh sinopac` and fill in your keys).
-    `buy` sends a real order immediately, with no confirmation. The generated
-    file sets `SIMULATION = n`, which is your real account; set
-    `SIMULATION = y` to use Sinopac's sandbox.
+!!! danger "On a live broker, CJShell places real orders without asking"
+    `uv run cjshell --broker=sinopac` and `--broker=fubon` read the settings
+    written by `bash scripts/gen_config.sh sinopac` / `fubon` (fill in your
+    keys). `buy` sends a real order immediately, with no confirmation. The
+    Sinopac file sets `SINOPAC_SIMULATION = n`, which is your real account;
+    set it to `y` to use Sinopac's sandbox. Fubon has no sandbox.
 
 ## FinHub {#finhub}
 

@@ -7,16 +7,17 @@ import sys
 from pathlib import Path
 
 from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.config.broker_settings import setting
 from dotenv import load_dotenv
 
 
 load_dotenv()
 
 config = {
-    'api_key': os.environ["API_KEY"],
-    'secret_key': os.environ["SECRET_KEY"],
-    'ca_path': os.environ["CA_CERT_PATH"],
-    'ca_passwd': os.environ["CA_PASSWORD"],
+    'api_key': setting("SINOPAC_API_KEY", "API_KEY"),
+    'secret_key': setting("SINOPAC_SECRET_KEY", "SECRET_KEY"),
+    'ca_path': setting("SINOPAC_CA_CERT_PATH", "CA_CERT_PATH"),
+    'ca_passwd': setting("SINOPAC_CA_PASSWORD", "CA_PASSWORD"),
     'simulation': False  # Use production environment to see actual holdings
 }
 
@@ -73,10 +74,10 @@ def test_sinopac_get_account_balance():
 
 def test_sinopac_buy_0050_intraday_odd_real():
     real_config = {
-            'api_key': os.environ["API_KEY"],
-            'secret_key': os.environ["SECRET_KEY"],
-            'ca_path': os.environ["CA_CERT_PATH"],
-            'ca_passwd': os.environ["CA_PASSWORD"],
+            'api_key': setting("SINOPAC_API_KEY", "API_KEY"),
+            'secret_key': setting("SINOPAC_SECRET_KEY", "SECRET_KEY"),
+            'ca_path': setting("SINOPAC_CA_CERT_PATH", "CA_CERT_PATH"),
+            'ca_passwd': setting("SINOPAC_CA_PASSWORD", "CA_PASSWORD"),
             'simulation': False
     }
     client = AccountClient(BrokerType.SINOPAC, **real_config)

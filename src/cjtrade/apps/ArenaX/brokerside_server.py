@@ -26,6 +26,7 @@ from cjtrade.pkgs.models.cost import CostModel
 # import is a name nothing can check.
 from cjtrade.pkgs.models.order import OrderStatus
 from cjtrade.pkgs.brokers.account_client import *
+from cjtrade.pkgs.config.broker_settings import sinopac_config
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.logger import get_logger
@@ -119,15 +120,12 @@ BROKER_KBAR_DATA_AVAILABILITY = {
 # CJCONF is for the brokers / services configuration (e.g. API keys, certs, etc.)
 def load_cjconf():
     load_supported_config_files()
-    keys = ['API_KEY', 'SECRET_KEY', 'CA_CERT_PATH', 'CA_PASSWORD', 'SIMULATION',
-            'USERNAME', 'LLM_API_KEY', 'LLM_MODEL', 'GEMINI_API_KEY', 'NEWSAPI_API_KEY']
-    for key in keys:
+    # The Sinopac login behind the sinopac price source and the paper/real
+    # backends: SINOPAC_* settings, or the old unprefixed names.
+    external_config.update(sinopac_config())
+    for key in ('USERNAME', 'LLM_API_KEY', 'LLM_MODEL', 'GEMINI_API_KEY', 'NEWSAPI_API_KEY'):
         if os.environ.get(key):
             external_config[key.lower()] = os.environ[key]
-
-    external_config['simulation'] = external_config.get('simulation', 'n').lower() == 'y'
-    external_config['ca_path'] = external_config.get('ca_cert_path', "")
-    external_config['ca_passwd'] = external_config.get('ca_password', "")
 
 # CJSYS is for CJTrade System itself
 def _flag(value) -> bool:
