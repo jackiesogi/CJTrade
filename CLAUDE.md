@@ -363,7 +363,9 @@ client.market                              # MarketData: get_kbars(symbol, start
 client.disconnect()
 ```
 
-`BrokerType` is `SINOPAC`, `ARENAX`, and the unimplemented `YUANTA` / `CATHAY`.
+`BrokerType` is `SINOPAC`, `FUBON`, `ARENAX`, and the unimplemented `YUANTA` / `CATHAY`.
+`FUBON` (`pkgs/brokers/fubon/`, `fubon` extra) has no sandbox and serves quotes
+but no bars; it has not been run against a live account.
 
 ### Kbar
 

@@ -14,7 +14,7 @@ stateDiagram-v2
     COMMITTED_WAIT_MARKET_OPEN --> COMMITTED_WAIT_MATCHING: 09:00 開盤
     COMMITTED_WAIT_MARKET_OPEN --> CANCELLED: cancel_order()
     COMMITTED_WAIT_MATCHING --> FILLED: 價格到達限價
-    COMMITTED_WAIT_MATCHING --> PARTIAL: 部分成交（Sinopac）
+    COMMITTED_WAIT_MATCHING --> PARTIAL: 部分成交（正式券商）
     PARTIAL --> FILLED: 其餘成交
     COMMITTED_WAIT_MATCHING --> CANCELLED: cancel_order() 或收盤失效（ROD）
     PARTIAL --> CANCELLED: cancel_order() 取消剩餘部分

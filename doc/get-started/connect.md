@@ -17,16 +17,19 @@ flowchart LR
     Code["Your code"] --> AC["AccountClient"]
     AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
     AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
+    AC -- "BrokerType.FUBON" --> FBA["FubonBrokerAPI"]
     AC -. "client.market" .-> MD["MarketData"]
     AXA -- "HTTP, 127.0.0.1" --> AXS["ArenaX server<br/>(arenaxd)"]
     SPA -- "shioaji SDK" --> SPS["Sinopac"]
+    FBA -- "fubon_neo SDK" --> FBS["Fubon"]
     subgraph Adapters["Adapters: subclasses of BrokerAPIBase"]
         AXA
         SPA
+        FBA
     end
 ```
 
-Adding a broker means writing one more adapter; see the
+Adding a broker means writing one more adapter, as Fubon's was; see the
 [Broker interface](../reference/broker-base.md).
 
 ## Step 1: start ArenaX
@@ -111,28 +114,14 @@ market time.
     shows `sim env started`, then retry. See
     [Troubleshooting](troubleshooting.md) for other errors.
 
-## Sinopac (a real broker)
+## Live brokers
 
-Switching to Sinopac changes only the client constructor. It requires the
-`sinopac` extra and the API key, secret and certificate from
-[Sinopac's API portal](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4):
-
-```python
-client = AccountClient(
-    BrokerType.SINOPAC,
-    api_key="...", secret_key="...",
-    ca_path="/path/to/Sinopac.pfx", ca_passwd="...",
-    simulation=True,      # Sinopac's sandbox: orders are not real
-)
-client.connect()
-```
-
-!!! danger "`simulation=False` is your real account"
-    With `simulation=False` every order is a real order with real money.
-    Keep `simulation=True` until your code has run correctly on ArenaX and
-    on the sandbox.
+Switching to a real account changes only the `AccountClient` constructor:
+`BrokerType.SINOPAC` or `BrokerType.FUBON`, and that broker's credentials.
+[Live brokers](live-brokers.md) has the connection code for both, what
+each adapter converts, and which features each broker supports.
 
 Keep secrets out of code by putting them in a settings file; see
 [Configuration and paths](../reference/config.md).
 
-Next: [Account and orders](account-and-orders.md).
+Next: [Live brokers](live-brokers.md), or [Account and orders](account-and-orders.md).

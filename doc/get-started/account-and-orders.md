@@ -16,7 +16,7 @@ stateDiagram-v2
     COMMITTED_WAIT_MARKET_OPEN --> COMMITTED_WAIT_MATCHING: 09:00
     COMMITTED_WAIT_MARKET_OPEN --> CANCELLED: cancel_order()
     COMMITTED_WAIT_MATCHING --> FILLED: limit price reached
-    COMMITTED_WAIT_MATCHING --> PARTIAL: part filled (Sinopac)
+    COMMITTED_WAIT_MATCHING --> PARTIAL: part filled (live brokers)
     PARTIAL --> FILLED: rest filled
     COMMITTED_WAIT_MATCHING --> CANCELLED: cancel_order() or end of day (ROD)
     PARTIAL --> CANCELLED: cancel_order() cancels the rest

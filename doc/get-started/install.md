@@ -45,12 +45,13 @@ Supported on Linux and macOS. Not tested on Windows.
     and reports. Everything else is an extra:
 
     ```sh
-    pip install 'cjtrade[sinopac,finhub]'
+    pip install 'cjtrade[sinopac,fubon,finhub]'
     ```
 
     | Extra | Adds | Required for |
     |---|---|---|
     | `sinopac` | the `shioaji` SDK | trading on Sinopac, and reading prices from Sinopac |
+    | `fubon` | the `fubon-neo` SDK | trading on Fubon |
     | `finhub` | FastAPI and friends | the FinHub web UI |
     | `llm` | Gemini and Azure OpenAI clients | the shell's `llm` command, LLM helpers |
     | `news` | NewsAPI client | the NewsAPI news source |

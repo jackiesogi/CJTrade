@@ -11,16 +11,19 @@ flowchart LR
     Code["你的程式"] --> AC["AccountClient"]
     AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
     AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
+    AC -- "BrokerType.FUBON" --> FBA["FubonBrokerAPI"]
     AC -. "client.market" .-> MD["MarketData"]
     AXA -- "HTTP，127.0.0.1" --> AXS["ArenaX 伺服器<br/>（arenaxd）"]
     SPA -- "shioaji SDK" --> SPS["Sinopac"]
+    FBA -- "fubon_neo SDK" --> FBS["Fubon"]
     subgraph Adapters["轉接層：BrokerAPIBase 的子類別"]
         AXA
         SPA
+        FBA
     end
 ```
 
-新增一家券商，只要多寫一個轉接層；見[券商介面](../reference/broker-base.md)。
+新增一家券商，只要多寫一個轉接層，Fubon 就是這樣加入的；見[券商介面](../reference/broker-base.md)。
 
 ## 步驟 1：啟動 ArenaX
 
@@ -92,23 +95,10 @@ market time: 2026-11-13 09:24:43.668600
 ??? question "`connect()` 失敗，出現 `Connection refused`"
     ArenaX 未執行或尚未就緒。等第一個終端機顯示 `sim env started` 後再重試。其他錯誤請見[疑難排解](troubleshooting.md)。
 
-## Sinopac（正式券商）
+## 實盤券商
 
-改用 Sinopac 只需更換 client 的建構方式。需要安裝 `sinopac` 選用套件，並從 [Sinopac 的 API 網站](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4)取得 API 金鑰、密鑰和憑證：
-
-```python
-client = AccountClient(
-    BrokerType.SINOPAC,
-    api_key="...", secret_key="...",
-    ca_path="/path/to/Sinopac.pfx", ca_passwd="...",
-    simulation=True,      # Sinopac 的沙盒：委託不是真的
-)
-client.connect()
-```
-
-!!! danger "`simulation=False` 就是你的正式帳戶"
-    設成 `simulation=False` 時，每一筆委託都是動用真實資金的真實委託。在程式於 ArenaX 和沙盒上都正確執行之前，請保持 `simulation=True`。
+改用正式帳戶時，只需更換 `AccountClient` 的建構參數：`BrokerType.SINOPAC` 或 `BrokerType.FUBON`，以及該券商的登入資訊。兩家券商的連線程式碼、各轉接層負責的轉換，以及各券商支援的功能，請見[實盤券商](live-brokers.md)。
 
 密鑰不要寫在程式碼裡，請放在設定檔中，詳見[設定與路徑](../reference/config.md)。
 
-下一步：[帳戶與委託](account-and-orders.md)。
+下一步：[實盤券商](live-brokers.md)，或[帳戶與委託](account-and-orders.md)。

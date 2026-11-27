@@ -8,7 +8,7 @@ API 頁面由 docstring 產生，每頁涵蓋一個模組的類別、函式及�
 | 連線、讀取帳戶、下委託 | [AccountClient](account-client.md) |
 | 撰寫自己的券商轉接層 | [券商介面](broker-base.md) |
 | 直接和 ArenaX 溝通，包括它的時鐘 | [ArenaX 用戶端](arenax-client.md) |
-| 了解 Sinopac 轉接層做了什麼 | [永豐金轉接層](sinopac.md) |
+| 了解正式券商的轉接層做了什麼 | [永豐金轉接層](sinopac.md)、[富邦轉接層](fubon.md) |
 | 撰寫策略檔 | [策略撰寫](strategy-authoring.md)、[載入策略檔](user-strategy.md) |
 | 撰寫以類別為基礎的策略 | [BaseStrategy](base-strategy.md)、[內建策略](strategies.md)、[策略參數](strategy-parameters.md) |
 | 從任何來源取得價格 | [行情資料](market-data.md) |

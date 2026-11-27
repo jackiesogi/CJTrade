@@ -16,8 +16,11 @@ changing it.
 
 ## Features
 
-- **One broker API.** `AccountClient` covers accounts, orders, quotes and
-  historical bars, the same way for every broker.
+- **One broker API, any broker.** `AccountClient` covers accounts, orders,
+  quotes and bars the same way for every broker. Each broker is an adapter
+  that converts CJTrade's orders, statuses and positions to its SDK, so a
+  strategy moves from the simulator to Sinopac or Fubon by changing one
+  argument.
 - **ArenaX, a built-in simulated broker.** A local server for demos, paper
   trading and backtests, with TWSE commission and tax applied to every fill.
 - **Reproducible backtesting.** A fast in-memory backtester, and a trading
@@ -31,11 +34,21 @@ changing it.
 - **Analytics.** Technical indicators (TA-Lib), TWSE fundamentals, news,
   LLM clients, quantstats reports and run diagnostics.
 
-| Broker | Status |
-|---|---|
-| **ArenaX** (simulated) | `demo`, `backtest`, `paper` backends |
-| **Sinopac** 永豐金證券 | Live trading and market data through `shioaji` |
-| Cathay, Yuanta, Mega, Interactive Brokers | Planned |
+| Broker | `BrokerType` | Status |
+|---|---|---|
+| **ArenaX** (simulated) | `ARENAX` | `demo`, `backtest`, `paper` backends |
+| **Sinopac** 永豐金證券 | `SINOPAC` | Live trading and market data through `shioaji`; sandbox available |
+| **Fubon** 富邦證券 | `FUBON` | Live trading and quotes through `fubon_neo`; new, not yet run against a live account |
+| Cathay, Yuanta, Mega, Interactive Brokers | | Planned |
+
+<!-- cjcheck: skip reason="a diagram" -->
+```mermaid
+flowchart LR
+    Code["Your strategy / code"] --> AC["AccountClient"]
+    AC --> AX["ArenaX adapter"] --> AXS["ArenaX (simulated)"]
+    AC --> SP["Sinopac adapter"] --> SPS["Sinopac"]
+    AC --> FB["Fubon adapter"] --> FBS["Fubon"]
+```
 
 ## Installation
 
@@ -63,6 +76,7 @@ a checkout for those.
 | Extra | Adds |
 |---|---|
 | `sinopac` | The Sinopac broker (`shioaji`), also needed by ArenaX's `backtest` and `paper` backends |
+| `fubon` | The Fubon broker (`fubon-neo`) |
 | `llm` | Gemini and Azure OpenAI clients |
 | `news` | The NewsAPI news source |
 | `finhub` | The FinHub web UI |
@@ -110,9 +124,20 @@ uv run cjshell --broker=arenax
 The [Get started guide](https://jackiesogi.github.io/CJTrade/get-started/connect/)
 walks through accounts, orders, market data, strategies and backtests.
 
-### Sinopac
+### Live brokers
 
-Generate a config file, fill in the credentials from
+The same client connects to a real account; only the constructor changes:
+
+<!-- cjcheck: static -->
+```python
+client = AccountClient(BrokerType.SINOPAC, api_key="...", secret_key="...",
+                       ca_path="Sinopac.pfx", ca_passwd="...", simulation=True)
+client = AccountClient(BrokerType.FUBON, personal_id="A123456789", api_key="...",
+                       cert_path="A123456789.pfx", cert_pass="...")
+```
+
+For the interactive shell on Sinopac, generate a config file, fill in the
+credentials from
 [Sinopac's API portal](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4),
 and connect:
 
@@ -123,9 +148,12 @@ uv run cjshell --broker=sinopac
 ```
 
 > [!CAUTION]
-> A Sinopac session places **real orders**, and the shell does not ask for
+> A live session places **real orders**, and the shell does not ask for
 > confirmation. Set `SIMULATION = y` in the config file to use Sinopac's
-> sandbox.
+> sandbox. Fubon has no sandbox.
+
+[Live brokers](https://jackiesogi.github.io/CJTrade/get-started/live-brokers/)
+compares the brokers and shows what each adapter converts.
 
 ## Backtesting
 
@@ -240,4 +268,5 @@ commit and PR conventions are in [`CLAUDE.md`](https://github.com/jackiesogi/CJT
 CJTrade is not investment advice, and nothing it prints is a recommendation to
 buy or sell. It can place real orders on a real account; you are responsible
 for every order it sends and for any loss that follows. Test a strategy on
-ArenaX, then on Sinopac's sandbox, before trading real money.
+ArenaX, then with small orders on a live account (Sinopac's sandbox where
+available), before trading real money.

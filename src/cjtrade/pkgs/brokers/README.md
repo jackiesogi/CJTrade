@@ -14,6 +14,9 @@ dashboard — can be pointed at another broker without being rewritten.
 
 ### Currently available
 - **Sinopac** (永豐金證券) — full implementation with real-time data and trading
+- **Fubon** (富邦證券) — orders, account and quotes through `fubon_neo`
+  (`fubon/`); bars come from a separate MarketData. Not yet run against a
+  live account
 - **ArenaX** (模擬環境) — the built-in simulator: paper trading (模擬交易) and
   backtesting (回測)
 
