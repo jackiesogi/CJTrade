@@ -1,8 +1,8 @@
 # API reference
 
-These pages are generated from the code's docstrings. Each lists a module's
-classes and functions with their parameters; use the search box, or the
-table below, to find the right page.
+The API pages are generated from docstrings. Each covers one module's
+classes and functions with their parameters. Find a page with search or the
+table below.
 
 | You want to | Page |
 |---|---|
@@ -20,13 +20,13 @@ table below, to find the right page.
 | Settings and where files go | [Configuration and paths](config.md) |
 | Build a form for a script | [Forms](forms.md) |
 
-Reading a page:
+Page conventions:
 
-- A heading with a small `class` or `func` label is one class or function.
-  Its first paragraph says what it is; **Parameters** lists the arguments,
-  **Returns** what comes back, **Raises** the errors.
-- Click **Source code** under an entry to see its implementation.
-- Names starting with `_` are internal and not listed.
+- Each heading labelled `class` or `func` is one class or function. Its
+  first paragraph describes it; **Parameters** lists the arguments,
+  **Returns** the return value, **Raises** the exceptions.
+- **Source code** under an entry expands its implementation.
+- Names starting with `_` are internal and omitted.
 
-If you are new to CJTrade, the [Get started](../get-started/install.md) pages
-explain the same objects with examples.
+The [Get started](../get-started/install.md) pages cover the same objects
+with worked examples.

@@ -1,30 +1,26 @@
 # Write a strategy
 
-In this page you write a strategy file, check it for mistakes, and see what
-each part does. In the next page you run it over a year of prices.
+This page covers writing a strategy file, checking it statically, and the
+strategy API. The next page backtests it over a year of prices.
 
 ## What a strategy is
 
 A strategy is a Python file with one required function, `on_bar`. CJTrade
-calls it once for every new bar, and it answers with one of three things:
+calls it once per new bar, and it returns one of:
 
-- `buy(...)`: I want to buy,
-- `sell(...)`: I want to sell,
-- `hold("why")`: do nothing this time, for this reason.
+- `buy(...)`: intent to buy,
+- `sell(...)`: intent to sell,
+- `hold("why")`: no action this bar, with a reason.
 
-The file never talks to a broker. `buy()` only states an *intention*; the
-backtester or the trading engine decides whether the order is placed, how
-big it is, and sends it. That is why the same file runs unchanged in a
-backtest, on ArenaX and on a real account.
+The file never talks to a broker. `buy()` expresses intent only; the
+backtester or the trading engine decides whether to place the order, sizes
+it, and sends it. The same file therefore runs unchanged in a backtest, on
+ArenaX and on a real account.
 
 ## Your first strategy
 
-This is a *Bollinger band* strategy. Bollinger bands are a line above and a
-line below the recent average price. The idea: when the price drops to the
-lower line it is "cheap", so buy; when it reaches the upper line it is
-"expensive", so sell.
-
-Save it as `my_strategy.py`:
+A Bollinger band mean-reversion strategy: buy on a lower-band touch, sell
+on an upper-band touch. Save it as `my_strategy.py`:
 
 ```python linenums="1"
 from cjtrade.pkgs.strategy.authoring import *
@@ -45,32 +41,20 @@ def on_bar(bar, account):
     return hold("inside the bands")
 ```
 
-Line by line:
-
-- **Line 1** imports everything a strategy may use: `ta`, `buy`, `sell`,
-  `hold`, `param` and the rest. You need no other import.
-- **Line 3** declares a *parameter*: a number you may want to tune. Here it
-  is 20, the number of bars the bands are calculated over. The label and
-  range are used when a tool shows the parameter as a form field.
-- **Line 5** is the function CJTrade calls on every bar. `bar` is the newest
-  bar plus the history before it; `account` is this strategy's money and
-  shares.
-- **Line 6** calculates the bands from the closing prices so far
-  (`bar.closes`). Inside a strategy, `ta.bb` returns just the **latest**
-  three values, not whole arrays.
-- **Lines 7-8**: until there are 20 bars, there are no bands yet and `ta.bb`
-  returns `None`. The strategy waits and says why.
-- **Line 10** `watch(...)` records numbers to show while the bot runs. It
-  does not affect trading.
-- **Lines 12-15** are the rules. `account.holding` is true when this strategy
-  owns shares, so it never buys twice in a row or sells what it does not
-  have.
-- **Line 16**: in every other case, do nothing.
+| Line | Notes |
+|---|---|
+| 1 | The star import provides the whole strategy vocabulary (`ta`, `buy`, `sell`, `hold`, `param`, ...). No other import is needed. |
+| 3 | `param.int(default, label, min=, max=)` declares a tunable parameter, here the band window of 20 bars. Label and range are used when a tool renders it as a form field. |
+| 5 | `on_bar` is called once per bar. `bar` is the newest bar plus its history; `account` is this strategy's cash and shares. |
+| 6 | Bands over `bar.closes`. Inside a strategy, `ta.bb` returns only the **latest** three values, not arrays. |
+| 7-8 | `ta.bb` returns `None` until 20 bars are available; the strategy holds with the reason. The `hold` reason is shown in the bot's status. |
+| 10 | `watch(...)` records values for display while the bot runs. Display only; it does not affect trading. |
+| 12-15 | Entry and exit rules. `account.holding` is per-strategy (true when this strategy holds shares), so it never buys twice in a row or sells shares it does not have. |
+| 16 | Otherwise, hold. |
 
 ## Check it before running it
 
-`strategy-tool check` reads the file and reports mistakes without running
-any trades:
+`strategy-tool check` reports errors without running any trades:
 
 ```sh
 uv run strategy-tool check < my_strategy.py
@@ -82,11 +66,11 @@ Expected output:
 {"ok": true, "diagnostics": [], "params": [{"kind": "int", "default": 20, "label": "Bollinger window", "min": 5, "max": 500}]}
 ```
 
-`"ok": true` and an empty `diagnostics` list mean no problems were found.
-`params` lists the parameters the file declares.
+`"ok": true` with an empty `diagnostics` list means no problems. `params`
+lists the declared parameters.
 
-Now break it on purpose: rename `on_bar` to `on_bar_typo` and misspell
-`WINDOW` as `WINDW` on line 6, then check again:
+With `on_bar` renamed to `on_bar_typo` and `WINDOW` misspelled as `WINDW`
+on line 6:
 
 ```json
 {"ok": false, "diagnostics": [
@@ -95,32 +79,32 @@ Now break it on purpose: rename `on_bar` to `on_bar_typo` and misspell
 ], "params": []}
 ```
 
-Each diagnostic gives the line and what is wrong. Catching this now is
-better than finding out on the first bar of a long run.
+Each diagnostic carries the line and the error, so these are caught before
+a run rather than on its first bar.
 
 !!! danger "A strategy file is ordinary Python"
-    Checking or running a strategy executes the file. It is not a sandbox:
-    only run strategy files you trust.
+    Checking or running a strategy executes the file. There is no sandbox:
+    run only strategy files you trust.
 
 ## Start from a template instead
 
-`strategy-tool` can write a complete starting file for you:
+`strategy-tool` generates complete starter files:
 
 ```sh
 uv run strategy-tool templates
 ```
 
-lists the kinds:
+lists the available kinds:
 
 | Kind | Strategy |
 |---|---|
-| `bb` | Bollinger mean reversion (like the one above) |
-| `dca` | Dollar-cost averaging: buy a fixed amount every month, never sell |
-| `adx` | Regime switch: trade breakouts in a trend, the range otherwise |
-| `blank` | An empty `on_bar` to fill in |
+| `bb` | Bollinger mean reversion (as above) |
+| `dca` | Dollar-cost averaging: fixed amount every month, never sells |
+| `adx` | Regime switch: breakouts in a trend, range trading otherwise |
+| `blank` | Empty `on_bar` |
 
-To save one as a file (the tool prints JSON, and the second command takes
-the `source` field out of it):
+To write one to a file (the tool prints JSON; the second command extracts
+the `source` field):
 
 ```sh
 uv run strategy-tool template --kind dca \
@@ -129,47 +113,47 @@ uv run strategy-tool template --kind dca \
 
 ## What a strategy can use
 
-`bar`, the bar being processed and the history before it:
+`bar`, the current bar and its history:
 
 | Name | Value |
 |---|---|
 | `bar.close`, `bar.open`, `bar.volume`, `bar.time` | this bar's values |
-| `bar.closes` | every close so far, oldest first |
-| `bar.ago(n)` | the close `n` bars ago |
-| `bar.bars_seen` | how many bars this strategy has seen |
-| `bar.day_high`, `bar.day_low` | the **trading day's** high and low so far (not this bar's) |
+| `bar.closes` | all closes so far, oldest first |
+| `bar.ago(n)` | close `n` bars ago |
+| `bar.bars_seen` | number of bars this strategy has seen |
+| `bar.day_high`, `bar.day_low` | **session-to-date** high and low (not this bar's) |
 
-`account`, this strategy's own money and shares:
+`account`, this strategy's own cash and shares:
 
 | Name | Value |
 |---|---|
 | `account.cash` | cash available to this strategy |
-| `account.equity` | cash plus the value of its shares |
-| `account.shares`, `account.avg_cost` | shares held and their average cost |
+| `account.equity` | cash plus market value of its shares |
+| `account.shares`, `account.avg_cost` | shares held and average cost |
 | `account.holding` | `True` if it holds any shares |
 
 Decisions:
 
 | Call | Meaning |
 |---|---|
-| `buy()` | buy as much as the risk budget allows |
+| `buy()` | buy up to the risk budget |
 | `buy(100)` | buy exactly 100 shares |
-| `buy(amount=10_000)` | buy about NT$10,000 worth, in whole shares |
+| `buy(amount=10_000)` | buy about NT$10,000, rounded to whole shares |
 | `buy(price=250.0)` | limit price 250 instead of the bar's close |
-| `sell()` | sell every share this strategy holds |
-| `hold("why")` | do nothing; the reason shows in the bot's status |
+| `sell()` | sell all shares this strategy holds |
+| `hold("why")` | no action; the reason shows in the bot's status |
 
 Tools:
 
 | Name | Use |
 |---|---|
-| `ta.bb`, `ta.sma`, `ta.ema`, `ta.rsi`, `ta.macd`, `ta.wma`, `ta.highest`, `ta.lowest`, `ta.efficiency` | indicators; each returns the latest value, or `None` until there are enough bars |
+| `ta.bb`, `ta.sma`, `ta.ema`, `ta.rsi`, `ta.macd`, `ta.wma`, `ta.highest`, `ta.lowest`, `ta.efficiency` | indicators; each returns the latest value, or `None` until warm |
 | `param.int`, `param.float`, `param.bool`, `param.choice` | declare a tunable value |
-| `state.x = ...` | keep a value from one bar to the next |
-| `watch(name=value)` | show a number in the bot's status |
-| `plot(name=value)` | draw a line on the chart |
+| `state.x = ...` | persist a value across bars |
+| `watch(name=value)` | show a value in the bot's status |
+| `plot(name=value)` | plot a line on the chart |
 
-Optional functions: `init()` runs once before the first bar,
+Optional hooks: `init()` runs once before the first bar,
 `on_fill(fill, account)` after each fill, `on_end(account)` after the last
 bar.
 
@@ -177,14 +161,13 @@ bar.
 
 !!! warning "Windows are counted in bars, not days"
     `ta.bb(bar.closes, 20)` is 20 *bars*: 20 trading days on daily bars, 20
-    minutes on 1-minute bars. The same file on another interval is a
-    different strategy.
+    minutes on 1-minute bars. The same file on another interval behaves as
+    a different strategy.
 
 !!! warning "Current limitations"
-    - `bar` keeps a history of closes only, so `ta.adx`, `ta.atr` and
-      `ta.stoch`, which need each bar's high and low, are not available in a
-      strategy file.
-    - `param.*` always returns the declared default for now. Edit the file
-      to change a value.
+    - `bar` keeps close history only, so `ta.adx`, `ta.atr` and `ta.stoch`,
+      which need per-bar high and low, are not available in a strategy file.
+    - `param.*` currently always returns the declared default. Edit the
+      file to change a value.
 
 Next: [Backtesting](backtesting.md).

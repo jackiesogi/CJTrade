@@ -1,10 +1,10 @@
 # 帳戶與委託
 
-這一頁要在 ArenaX 上買一股，看著委託成交、出現在持股裡，接著再下一筆不會成交的委託，然後把它取消。
+本頁在 ArenaX 上買進一股，確認成交與持股，接著下一筆不會成交的委託並將其取消。
 
-請讓[連線到券商](connect.md)裡啟動的 ArenaX 繼續執行。這裡的每個範例都是完整的程式：存檔後用 `uv run python file.py` 執行。
+ArenaX 須保持執行（啟動方式見[連線到券商](connect.md)）。每個範例都是完整的程式，以 `uv run python file.py` 執行。
 
-## 委託的流程
+## 委託生命週期
 
 ```
  place_order ──▶ COMMITTED_WAIT_MATCHING ──▶ FILLED       (the price was reached)
@@ -16,18 +16,18 @@
 
 | 狀態 | 意思 |
 |---|---|
-| `COMMITTED_WAIT_MATCHING` | 券商已接受委託，正在等價格到 |
-| `COMMITTED_WAIT_MARKET_OPEN` | 在交易時段以外接受的委託，會等到 09:00 |
-| `FILLED` | 已成交：現金和持股都變了 |
-| `CANCELLED` | 不會成交了 |
-| `REJECTED` | 券商拒絕了，原因寫在 `result.message` |
+| `COMMITTED_WAIT_MATCHING` | 券商已接受，等待價格到達 |
+| `COMMITTED_WAIT_MARKET_OPEN` | 於交易時段外接受，等待 09:00 開盤 |
+| `FILLED` | 已成交，現金和持股已更新 |
+| `CANCELLED` | 已由你取消，或於收盤時失效 |
+| `REJECTED` | 券商拒絕，原因見 `result.message` |
 
-!!! warning "問題會以狀態回報，不會拋出錯誤"
-    委託被拒絕時，下單的方法不會拋出例外。請一定要檢查 `result.status`。
+!!! warning "問題以狀態回報，不會拋出錯誤"
+    委託被拒絕時，下單方法不會拋出例外。務必檢查 `result.status`。
 
 ## 買一股 {#buy-one-share}
 
-為了確保成交，這個範例用比目前價格高 2% 的價格出價：
+範例以高於最新成交價 2% 的價格出價，確保成交：
 
 ```python
 import time
@@ -53,12 +53,12 @@ print("balance:", client.get_balance())
 client.disconnect()
 ```
 
-- `get_snapshots` 回傳最新的報價，`.close` 是最新成交價。
-- `buy_stock(symbol, quantity, price)` 下一筆限價買進委託。它交易的是**零股**，所以 `1` 就是一股。
-- `result.linked_order` 是這筆委託的 id，取消時會用到。
-- `list_orders()` 列出這個帳戶的委託和它們目前的狀態。
+- `get_snapshots(...)[0].close` 是最新成交價。
+- `buy_stock(symbol, quantity, price)` 下一筆**零股**限價買進委託：`1` 即一股。
+- `result.linked_order` 是委託 id，`cancel_order` 需要用到。
+- `list_orders()` 回傳此帳戶的委託及其目前狀態。
 
-預期輸出（價格會和你的不同）：
+預期輸出（價格會不同）：
 
 ```text
 last price: 2370.0
@@ -68,19 +68,16 @@ positions: [Position(symbol='2330', quantity=1, avg_cost=2417.4, current_price=2
 balance: 97562.6
 ```
 
-發生了什麼事：
+- `buy_stock` 回傳 `COMMITTED_WAIT_MATCHING`；ArenaX 在數秒內以下一分鐘的價格撮合，之後 `list_orders()` 顯示 `FILLED`。
+- `unrealized_pnl` 以 `current_price` 計算。
+- 餘額減少的金額為成交價加上最低手續費 NT$20：100,000 − 2,417.4 − 20 = 97,562.6。
 
-1. 委託被接受了（`COMMITTED_WAIT_MATCHING`）。
-2. 幾秒內，ArenaX 用下一分鐘的價格撮合，`list_orders()` 顯示 `FILLED`。
-3. 你現在持有 1 股。`unrealized_pnl` 是用 `current_price` 賣出時會賺或賠的金額。
-4. 餘額減少了股價加上最低手續費 NT$20：100,000 − 2,417.4 − 20 = 97,562.6。
+!!! warning "ArenaX 以你的限價成交"
+    ArenaX 以委託價格而非市價記錄成交：上例中，市價 2,370 的股票以 2,417.4 成交，正式券商則會以較佳的市價成交。出價請貼近市價，模擬成本才會接近實際。
 
-!!! warning "ArenaX 用你的限價成交"
-    ArenaX 是用委託的價格記錄成交，而不是用市價。上面的例子中，市價 2,370 的股票你付了 2,417.4。正式券商會給你比較好的市價。出價請貼近市價，模擬出來的成本才會接近真實。
+## 掛單後取消
 
-## 下一筆會等待的委託，再把它取消
-
-買進價格遠低於市價時不會成交，委託會一直掛著，直到你取消：
+低於市價 20% 的買進委託會持續掛著，直到取消：
 
 ```python
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
@@ -106,21 +103,21 @@ placed: COMMITTED_WAIT_MATCHING
 cancel: CANCELLED - Order cancelled successfully.
 ```
 
-取消一筆已經成交的委託，會回傳 `REJECTED`，原因寫在 `message`。
+取消已成交的委託會回傳 `REJECTED`，原因見 `message`。
 
 ## 賣出
 
-`sell_stock` 的用法和 `buy_stock` 一樣。要用市價賣掉上面買的那一股：
+`sell_stock` 的參數與 `buy_stock` 相同。以可在市價成交的價格賣出上面買進的一股：
 
 ```python
 result = client.sell_stock("2330", 1, round(snap.close * 0.98, 1))
 ```
 
-你只能賣自己持有的股票，賣超過持股會被 `REJECTED`。
+賣出股數超過持股時會被 `REJECTED`。
 
-## 完整控制：自己建立 `Order`
+## 自行建立 `Order`
 
-簡便函式已經能滿足大部分需求。如果想自己決定每個欄位：
+`buy_stock` 和 `sell_stock` 會套用預設值。若要指定每個欄位：
 
 ```python
 from cjtrade.pkgs.models.order import Order, OrderAction, OrderLot, OrderType, PriceType
@@ -141,7 +138,7 @@ result = client.place_order(order)
 !!! warning "`quantity` 的單位取決於 `order_lot`"
     `OrderLot.IntraDayOdd` 以**股**計算，`OrderLot.Common` 以**張（1,000 股）**計算。在正式帳戶上，`quantity=1` 可能是一股，也可能是一千股。
 
-## 快速參考
+## 常用呼叫一覽
 
 | 呼叫 | 回傳 |
 |---|---|
@@ -153,6 +150,6 @@ result = client.place_order(order)
 | `client.list_orders()` | `Trade(id, symbol, action, quantity, price, status, ...)` 的清單 |
 | `client.sync_state()` | 從券商更新未成交委託的狀態 |
 
-所有方法都列在 [AccountClient 參考](../reference/account-client.md)裡。
+完整方法列表見 [AccountClient 參考](../reference/account-client.md)。
 
 下一步：[行情資料](market-data.md)。

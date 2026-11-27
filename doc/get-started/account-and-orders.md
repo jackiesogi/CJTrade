@@ -1,12 +1,12 @@
 # Account and orders
 
-In this page you buy one share on ArenaX, watch the order fill, see it in
-your positions, and then place and cancel an order that does not fill.
+This page buys one share on ArenaX, checks the fill and the resulting
+position, then places and cancels an order that does not fill.
 
-Keep ArenaX running from [Connect to a broker](connect.md). Every example
-here is a complete script: save it, then run it with `uv run python file.py`.
+ArenaX must be running, as started in [Connect to a broker](connect.md).
+Each example is a complete script; run it with `uv run python file.py`.
 
-## How an order moves
+## Order lifecycle
 
 ```
  place_order ──▶ COMMITTED_WAIT_MATCHING ──▶ FILLED       (the price was reached)
@@ -18,11 +18,11 @@ here is a complete script: save it, then run it with `uv run python file.py`.
 
 | Status | Meaning |
 |---|---|
-| `COMMITTED_WAIT_MATCHING` | the broker accepted the order and is waiting for the price |
-| `COMMITTED_WAIT_MARKET_OPEN` | accepted outside trading hours; it waits for 09:00 |
-| `FILLED` | it happened: cash and shares changed |
-| `CANCELLED` | it will not happen |
-| `REJECTED` | the broker refused it; `result.message` says why |
+| `COMMITTED_WAIT_MATCHING` | accepted by the broker, waiting for the price |
+| `COMMITTED_WAIT_MARKET_OPEN` | accepted outside trading hours; waits for 09:00 |
+| `FILLED` | filled; cash and positions updated |
+| `CANCELLED` | cancelled by you, or expired at the end of the day |
+| `REJECTED` | refused by the broker; `result.message` gives the reason |
 
 !!! warning "Problems come back as a status, not an error"
     Order methods do not raise when an order is refused. Always check
@@ -30,7 +30,7 @@ here is a complete script: save it, then run it with `uv run python file.py`.
 
 ## Buy one share {#buy-one-share}
 
-To make sure the order fills, this example bids 2% above the current price:
+The example bids 2% above the last price so that the order fills:
 
 ```python
 import time
@@ -56,12 +56,11 @@ print("balance:", client.get_balance())
 client.disconnect()
 ```
 
-- `get_snapshots` returns the latest quote; `.close` is the last traded
-  price.
-- `buy_stock(symbol, quantity, price)` places a limit buy. It trades **odd
-  lots**, so `1` is one share.
-- `result.linked_order` is the order's id. You need it to cancel.
-- `list_orders()` lists this account's orders with their current status.
+- `get_snapshots(...)[0].close` is the last traded price.
+- `buy_stock(symbol, quantity, price)` places a limit buy in **odd lots**:
+  `1` is one share.
+- `result.linked_order` is the order id, required by `cancel_order`.
+- `list_orders()` returns this account's orders with their current status.
 
 Expected output (your prices will differ):
 
@@ -73,26 +72,22 @@ positions: [Position(symbol='2330', quantity=1, avg_cost=2417.4, current_price=2
 balance: 97562.6
 ```
 
-What happened:
-
-1. The order was accepted (`COMMITTED_WAIT_MATCHING`).
-2. Within a few seconds ArenaX matched it against the next minute's prices,
-   and `list_orders()` shows `FILLED`.
-3. You now hold 1 share. `unrealized_pnl` is what you would gain or lose by
-   selling at `current_price`.
-4. The balance dropped by the price plus the minimum NT$20 commission:
-   100,000 − 2,417.4 − 20 = 97,562.6.
+- `buy_stock` returns `COMMITTED_WAIT_MATCHING`; ArenaX matches the order
+  against the next minute's prices within a few seconds, after which
+  `list_orders()` shows `FILLED`.
+- `unrealized_pnl` is marked at `current_price`.
+- The balance falls by the fill price plus the NT$20 minimum commission:
+  100,000 − 2,417.4 − 20 = 97,562.6.
 
 !!! warning "ArenaX fills at your limit price"
-    ArenaX books a fill at the order's price, not at the market price. Above
-    you paid 2,417.4 for a share trading at 2,370. A real broker would give
-    you the better market price. Bid close to the market to keep simulated
-    costs realistic.
+    ArenaX books a fill at the order's price, not at the market price: the
+    order above paid 2,417.4 for a share trading at 2,370, where a real
+    broker would fill at the better market price. Bid close to the market
+    to keep simulated costs realistic.
 
-## Place an order that waits, then cancel it
+## Place a resting order, then cancel it
 
-A buy far below the market will not fill, so it stays open until you cancel
-it:
+A buy 20% below the market stays open until cancelled:
 
 ```python
 from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
@@ -118,23 +113,23 @@ placed: COMMITTED_WAIT_MATCHING
 cancel: CANCELLED - Order cancelled successfully.
 ```
 
-Cancelling an order that already filled returns `REJECTED` with the reason
-in `message`.
+Cancelling an order that has already filled returns `REJECTED`, with the
+reason in `message`.
 
 ## Sell
 
-`sell_stock` works like `buy_stock`. To sell the share bought above at the
-market:
+`sell_stock` takes the same arguments as `buy_stock`. To sell the share
+bought above, priced to fill at the market:
 
 ```python
 result = client.sell_stock("2330", 1, round(snap.close * 0.98, 1))
 ```
 
-You can only sell shares you hold; selling more is `REJECTED`.
+Selling more shares than you hold is `REJECTED`.
 
-## Full control: build an `Order`
+## Build an `Order` explicitly
 
-The shortcuts cover most needs. To choose every field yourself:
+`buy_stock` and `sell_stock` fill in defaults. To set every field:
 
 ```python
 from cjtrade.pkgs.models.order import Order, OrderAction, OrderLot, OrderType, PriceType
@@ -157,7 +152,7 @@ result = client.place_order(order)
     **lots of 1,000 shares**. On a real account, `quantity=1` is either one
     share or a thousand.
 
-## Quick reference
+## Cheat sheet
 
 | Call | Returns |
 |---|---|

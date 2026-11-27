@@ -1,24 +1,23 @@
 # CJTrade
 
 CJTrade is a Python framework for trading stocks on the Taiwan Stock Exchange
-(TWSE). You write your trading idea once, as a small Python file, and run it
-in three ways without changing it:
+(TWSE). A strategy is a single Python file, and the same file runs unchanged
+in three modes:
 
-1. **Against history** (a *backtest*), to see how it would have done.
-2. **Against a pretend broker** that runs on your own computer, to watch it
-   trade without risking money.
-3. **Against a real brokerage account** (Sinopac 永豐金證券), when you trust it.
+1. **Backtest**: replayed over historical prices.
+2. **Paper trading**: against ArenaX, a simulated broker that runs locally,
+   with no money at risk.
+3. **Live**: against a Sinopac (永豐金證券) brokerage account.
 
-You do not need a brokerage account to try any of it. Everything in
-[Get started](get-started/install.md) runs on your computer with free price
-data.
+No brokerage account is required for any of
+[Get started](get-started/install.md); it runs locally on free price data.
 
 !!! danger "Not investment advice"
     CJTrade can place real orders on a real account, and you are responsible
-    for every order it sends. Try a strategy on the pretend broker first, then
-    on Sinopac's sandbox, before it touches real money.
+    for every order it sends. Run a strategy on ArenaX first, then on
+    Sinopac's sandbox, before it touches real money.
 
-## How the pieces fit
+## Architecture
 
 ```
   your strategy file  ─┐
@@ -36,35 +35,33 @@ data.
                └───────────────┘
 ```
 
-- **A broker** is where orders go and where your cash and shares live.
-  **ArenaX** is a pretend broker that comes with CJTrade: a small server on
-  your computer that accepts orders and fills them against real historical
-  prices.
-- **Market data** is where prices come from. It is separate from the broker,
-  so you can, for example, trade on ArenaX with prices from Yahoo Finance.
-- **Your code** talks to a broker through one object, `AccountClient`. The
-  same calls work on ArenaX and on Sinopac.
+- **Broker**: receives orders and holds cash and positions. **ArenaX** is the
+  simulated broker bundled with CJTrade: a local server that accepts orders
+  and fills them against real historical prices.
+- **Market data**: the price source, independent of the broker. You can, for
+  example, trade on ArenaX with prices from Yahoo Finance.
+- **`AccountClient`**: the single object your code uses to talk to a broker.
+  The same calls work on ArenaX and on Sinopac.
 
-If any of these words is new, [Key ideas](get-started/concepts.md) explains
-them in plain terms.
+[Key ideas](get-started/concepts.md) defines CJTrade's terms and conventions.
 
 ## Choose your path
 
-| You want to | Start here | Time |
+| Goal | Start here | Time |
 |---|---|---|
-| Install CJTrade and check it works | [Install](get-started/install.md) | 5 min |
-| Learn the words used in these pages | [Key ideas](get-started/concepts.md) | 10 min |
-| Place your first (pretend) order from Python | [Connect to a broker](get-started/connect.md), then [Account and orders](get-started/account-and-orders.md) | 15 min |
-| Get prices and compute an indicator | [Market data](get-started/market-data.md) | 10 min |
-| Write a strategy and test it on a year of prices | [Write a strategy](get-started/strategy.md), then [Backtesting](get-started/backtesting.md) | 20 min |
-| Run several bots minute by minute, like live trading | [Run the trading engine](get-started/trading-engine.md) | 15 min |
+| Install CJTrade and verify the install | [Install](get-started/install.md) | 5 min |
+| CJTrade terms and conventions | [Key ideas](get-started/concepts.md) | 10 min |
+| Place a first order on ArenaX from Python | [Connect to a broker](get-started/connect.md), then [Account and orders](get-started/account-and-orders.md) | 15 min |
+| Fetch prices and compute an indicator | [Market data](get-started/market-data.md) | 10 min |
+| Write a strategy and backtest it over a year | [Write a strategy](get-started/strategy.md), then [Backtesting](get-started/backtesting.md) | 20 min |
+| Run several bots minute by minute, as in live trading | [Run the trading engine](get-started/trading-engine.md) | 15 min |
 | Use the interactive shell or the web UI | [CJShell and FinHub](get-started/shell-and-finhub.md) | 10 min |
 | Fix an error | [Troubleshooting](get-started/troubleshooting.md) | |
 
-The Get started pages build on each other; read them in order the first
-time.
+Each Get started page builds on the previous one; read them in order the
+first time.
 
-## For people who already know CJTrade
+## Lookup
 
 | Look up | Page |
 |---|---|

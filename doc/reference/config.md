@@ -1,30 +1,30 @@
 # Configuration and paths
 
-Where CJTrade reads its settings from, the settings that exist, and where it
-writes files.
+Setting sources and precedence, the available settings, and the
+directories CJTrade writes to.
 
 ## Where settings come from
 
-A setting is a `KEY = value` pair. CJTrade looks for each key in this order
-and uses the **first** value it finds:
+Settings are `KEY = value` pairs. Each key is resolved from these sources
+in order; the **first** value found wins:
 
 1. an environment variable (`export API_KEY=...`, or `API_KEY=... command`),
-2. a `.env` file in the folder you run from,
-3. any `*.cjconf` file in that folder or below it (shallower folders first,
-   then alphabetical),
-4. `*.cjconf` files in your user settings folder (see [Paths](#paths)),
-5. the defaults that ship with CJTrade (`*.cjsys` files).
+2. a `.env` file in the working directory,
+3. any `*.cjconf` file in the working directory or below it (shallower
+   directories first, then alphabetical),
+4. `*.cjconf` files in the user config directory (see [Paths](#paths)),
+5. the defaults shipped with CJTrade (`*.cjsys` files).
 
-So a value you `export` always wins over a file, and a file in your project
-wins over one in your user folder.
+An exported variable therefore overrides any file, and a project file
+overrides one in the user config directory.
 
-`*.cjconf` files hold your own settings and secrets; keep them out of git
-(the repository's `.gitignore` already does). Create a starting one with
-`bash scripts/gen_config.sh arenax` or `... sinopac`.
+`*.cjconf` files hold your settings and secrets; keep them out of git (the
+repository's `.gitignore` already excludes them). Generate a starting file
+with `bash scripts/gen_config.sh arenax` or `... sinopac`.
 
 !!! tip "Which file did a value come from?"
     `cjtrade.pkgs.config.config_loader.describe_sources()` prints every
-    setting with the file or variable it came from.
+    setting with its source file or variable.
 
 ## Broker settings (`*.cjconf`)
 
@@ -42,16 +42,16 @@ wins over one in your user folder.
 
 | Variable | Meaning |
 |---|---|
-| `CJTRADE_HOME` | put every folder below under this one path |
-| `CJTRADE_OFFLINE=1` | every network price source fails instead of connecting |
+| `CJTRADE_HOME` | root for every directory in the Paths table below |
+| `CJTRADE_OFFLINE=1` | network price sources fail instead of connecting |
 | `CJTRADE_LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING`, ... |
 | `ARENAX_PORT` | the port `AccountClient` connects to on ArenaX (default 8801) |
 | `I_UNDERSTAND_REAL_TRADING_RISKS=y` | required to start `arenaxd --backend=real` |
 
 ## ArenaX server settings (`AX_*`) {#arenax-server-settings}
 
-Each backend has defaults in `src/cjtrade/apps/ArenaX/configs/<backend>.cjsys`;
-set a variable to override one.
+Per-backend defaults live in `src/cjtrade/apps/ArenaX/configs/<backend>.cjsys`;
+set the variable to override.
 
 | Variable | Default (demo) | Meaning |
 |---|---|---|
@@ -59,11 +59,11 @@ set a variable to override one.
 | `AX_DATA_SOURCES` | `yfinance` | price sources, as `--data` |
 | `AX_PRICE_DB_PATH` | shared cache | price file, as `--price-db` |
 | `AX_INITIAL_BALANCE` | 100000 | starting cash of a fresh account |
-| `AX_STATE_FILE` | | an account snapshot to resume from instead of starting fresh |
-| `AX_BACKTEST_DURATION_DAYS` | 11 (backtest 300) | how many days of prices to load from the start date |
+| `AX_STATE_FILE` | | account snapshot to resume from instead of a fresh account |
+| `AX_BACKTEST_DURATION_DAYS` | 11 (backtest 300) | days of prices to load from the start date |
 | `AX_BACKTEST_PLAYBACK_SPEED` | 120 | market seconds per real second |
 | `AX_SKIP_NON_TRADING_HOURS` | `y` | jump over nights and weekends |
-| `AX_COMMISSION_DISCOUNT` | 1.0 | 0.6 is a 六折 discount |
+| `AX_COMMISSION_DISCOUNT` | 1.0 | commission multiplier; 0.6 is a 六折 discount |
 | `AX_SLIPPAGE_MODEL`, `AX_SLIPPAGE_PCT` | `none`, 0.0005 | slippage model and size (not yet applied to ArenaX fills) |
 
 ## FinHub settings (`FINHUB_*`)
@@ -81,7 +81,7 @@ See the [FinHub README](https://github.com/jackiesogi/CJTrade/blob/master/src/cj
 
 With `CJTRADE_HOME=/some/path`, they become `/some/path/config`,
 `/some/path/data`, `/some/path/cache`, `/some/path/state` and
-`/some/path/logs`. `arenaxd` prints the folders it uses when it starts.
+`/some/path/logs`. `arenaxd` prints the directories it uses at startup.
 
 ## API
 

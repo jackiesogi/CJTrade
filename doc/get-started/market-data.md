@@ -1,21 +1,20 @@
 # Market data
 
-In this page you get prices three ways: from the broker you are connected
-to, from free sources without any broker, and from a file on your disk. At
-the end you compute an indicator.
+Three ways to get prices: from the connected broker, from free sources
+with no broker, and from a local price file. The page ends with computing
+an indicator.
 
 ## Prices come from a separate place
 
-In CJTrade, *where prices come from* is separate from *where orders go*. A
-connected client has its prices at `client.market`. On ArenaX that is
-ArenaX's own replay; on Sinopac it is Sinopac's feed. You can also use a
-price source on its own, with no broker at all.
+CJTrade separates the price source from the order route. A connected
+client exposes its prices at `client.market`: ArenaX's own replay on
+ArenaX, Sinopac's feed on Sinopac. A price source can also be used on its
+own, with no broker.
 
-Every source answers the same two questions:
+Every source implements the same two calls:
 
-- `get_snapshots(symbols)`: what is the latest quote?
-- `get_kbars(symbol, start, end, interval)`: what were the bars in this
-  window?
+- `get_snapshots(symbols)`: latest quote per symbol.
+- `get_kbars(symbol, start, end, interval)`: bars in a window.
 
 ## From the broker you are connected to
 
@@ -40,7 +39,7 @@ print(len(minutes), "one-minute bars; the first:", minutes[0])
 client.disconnect()
 ```
 
-Use dates from ArenaX's simulated clock (the `market time` you printed in
+Dates are on ArenaX's simulated clock (the `market time` printed in
 [Connect to a broker](connect.md)), not today's date.
 
 Expected output (your dates and prices will differ):
@@ -53,24 +52,23 @@ Kbar(symbol=2330, timestamp=2026-11-12 09:00:00, open=2385.0, high=2395.0, low=2
 9 one-minute bars; the first: Kbar(symbol=2330, timestamp=2026-11-13 09:01:00, open=2375.0, ...)
 ```
 
-How to read it:
+Conventions:
 
-- **The window includes `start` and stops before `end`.** Asking for 10 to
-  13 November returns the 10th, 11th and 12th.
-- **A bar's timestamp is when it ends.** The 09:01 bar covers 09:00 to 09:01.
+- **Windows are half-open, `[start, end)`.** 10 to 13 November returns the
+  10th, 11th and 12th.
+- **Bars are stamped at their close.** The 09:01 bar covers 09:00 to 09:01.
   Daily bars are stamped 09:00.
-- **Only finished bars are returned.** ArenaX's clock was at 09:10 on the
-  13th, so that day's daily bar does not exist yet, and you got 9 one-minute
-  bars, not 10.
+- **Only closed bars are returned.** ArenaX's clock was at 09:10 on the
+  13th, so that day's daily bar does not exist yet and there are 9
+  one-minute bars, not 10.
 - **Volume is in lots** (1,000 shares).
-- **A snapshot's open, high and low are the whole day's so far**, not one
-  bar's.
+- **Snapshot open, high and low are session-to-date**, not per bar.
 
 ## Without a broker: free sources {#without-a-broker-free-sources}
 
-FinMind and Yahoo Finance need no brokerage account. Put them one after the
-other with `Fallback` (if the first has no answer, ask the next), and wrap
-that in `Cached` so each bar is downloaded only once:
+FinMind and Yahoo Finance need no brokerage account. `Fallback` queries
+sources in order until one answers; `Cached` around it downloads each bar
+once:
 
 ```python
 from cjtrade.pkgs.marketdata import Cached, Fallback, FinMindMarketData, YFinanceMarketData
@@ -92,27 +90,27 @@ Kbar(symbol=2330, timestamp=2025-09-26 09:00:00, open=1310.0, high=1315.0, low=1
 Kbar(symbol=2330, timestamp=2025-09-30 09:00:00, open=1310.0, high=1320.0, low=1305.0, close=1305.0, volume=44853)
 ```
 
-Run it twice: the second time is instant, because `Cached` reads the bars
-from the price cache on your disk.
+A second run returns immediately: `Cached` reads the bars from the local
+price cache.
 
-What each free source gives you:
+Free source coverage:
 
 | Source | Daily bars | Minute bars | Notes |
 |---|---|---|---|
-| FinMind | yes, years back | only with a paid plan | set `FINMIND_TOKEN` for a higher request limit; works without |
-| Yahoo Finance | yes | the last ~30 days only | rate-limited if you ask too often |
+| FinMind | yes, years back | paid plan only | `FINMIND_TOKEN` raises the request limit; optional |
+| Yahoo Finance | yes | last ~30 days only | rate-limited |
 
-With the `Fallback` above, a minute-bar request that FinMind cannot serve is
-answered by Yahoo.
+With the `Fallback` above, minute-bar requests FinMind cannot serve go to
+Yahoo.
 
 !!! warning "Asking for something no source has"
     An interval no source serves raises `UnsupportedRequest`. A window with
-    no trading (a weekend, a holiday) returns an empty list, not an error.
+    no trading (weekend, holiday) returns an empty list, not an error.
 
 ## Offline: your own price file
 
-To work without the network, or to make a run repeatable, download the bars
-once into a file with `preload-prices`:
+For offline or reproducible runs, download the bars once into a file with
+`preload-prices`:
 
 ```sh
 uv run preload-prices --price-db prices.db --symbols 2357 --start 2026-11-02 --end 2026-11-21 --interval 1m,1d
@@ -120,11 +118,11 @@ uv run preload-prices --price-db prices.db --symbols 2357 --start 2026-11-02 --e
 
 | Option | Meaning |
 |---|---|
-| `--price-db prices.db` | the file to fill; created if missing |
-| `--symbols 2357` | which stocks, comma-separated |
-| `--start` / `--end` | the window; `--end` is not included and defaults to tomorrow |
-| `--interval 1m,1d` | which bar sizes; default `1m,5m,1h,1d` |
-| `--data` | where to download from; default `finmind,yfinance` |
+| `--price-db prices.db` | target file; created if missing |
+| `--symbols 2357` | comma-separated symbols |
+| `--start` / `--end` | window; `--end` is exclusive and defaults to tomorrow |
+| `--interval 1m,1d` | intervals; default `1m,5m,1h,1d` |
+| `--data` | download sources; default `finmind,yfinance` |
 
 Expected output:
 
@@ -134,14 +132,14 @@ Expected output:
 3654 bars in prices.db
 ```
 
-Running it again only downloads what the file is missing. You can then run
-ArenaX on that file with no network at all, which
-[Run the trading engine](trading-engine.md) does.
+Re-running downloads only what the file is missing. ArenaX can then run on
+that file with no network, as in
+[Run the trading engine](trading-engine.md).
 
 ## Indicators
 
-`ta` calculates indicators with TA-Lib. It takes a NumPy array and returns
-an array of the same length:
+`ta` wraps TA-Lib. It takes a NumPy array and returns an array of the same
+length:
 
 ```python
 import numpy as np
@@ -166,9 +164,10 @@ first SMA:   [  nan   nan   nan   nan 1165.]
 BB(20):      1367.94 1250.75 1133.56
 ```
 
-The first four SMA values are `nan` ("not a number"): a 5-bar average needs
-5 bars before it has a value. Other indicators include `ta.ema`, `ta.rsi`,
-`ta.macd`, and `ta.adx(highs, lows, closes)` and `ta.atr(highs, lows, closes)`, which need all three; see
+Output is aligned to the input, so the warm-up period is `nan` (the first
+four values of SMA(5)). Other indicators include `ta.ema`, `ta.rsi`,
+`ta.macd`, and `ta.adx(highs, lows, closes)` and
+`ta.atr(highs, lows, closes)`, which take all three arrays; see
 [Technical indicators](../reference/technical.md).
 
 ??? info "For advanced users: your own source, ticks, aggregation"
@@ -177,8 +176,8 @@ The first four SMA values are `nan` ("not a number"): a 5-bar average needs
     - A source that only has ticks can build 1m bars with
       `bars_from_ticks`. Every coarser interval is aggregated from 1m.
     - `CJTRADE_OFFLINE=1` makes every network source raise
-      `MarketDataUnavailable` instead of connecting, so a run that is meant
-      to be offline cannot quietly download.
+      `MarketDataUnavailable` instead of connecting, so an offline run
+      cannot silently download.
     - `client.market.capabilities.intervals` lists the intervals a source
       serves.
 

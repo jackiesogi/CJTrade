@@ -1,8 +1,8 @@
 # Commands
 
-Every command CJTrade installs, what it is for, and its options. From a
-source checkout, put `uv run` in front of each (`uv run arenaxd`); after
-`pip install cjtrade`, run them directly.
+Every command CJTrade installs, with its purpose and options. In a source
+checkout, prefix each with `uv run` (`uv run arenaxd`); after
+`pip install cjtrade`, run them without the prefix.
 
 | Command | What it is | Needs a broker account? | Ports |
 |---|---|---|---|
@@ -16,13 +16,13 @@ source checkout, put `uv run` in front of each (`uv run arenaxd`); after
 | [`finhub`](#finhub) | web UI for the trading engine | no | 8000 |
 | `aresh` | admin shell for a running ArenaX server | no | uses ArenaX's port |
 
-Every server binds to `127.0.0.1` only, so nothing is reachable from other
+Every server binds to `127.0.0.1` only and is not reachable from other
 machines.
 
 ## `arenaxd` {#arenaxd}
 
-Starts the ArenaX server. It keeps one pretend account, accepts orders over
-HTTP and fills them against prices from its data source, on a simulated
+Starts the ArenaX server: one simulated account, orders accepted over HTTP
+and filled against prices from the configured data source on a simulated
 clock.
 
 ```sh
@@ -44,18 +44,18 @@ arenaxd [--backend=demo|backtest|paper|real] [--port=N] [--data=SOURCES] [--pric
 | `paper` | 8803 | `sinopac` | real time | ArenaX |
 | `real` | 8888 | `sinopac` | real time | **real Sinopac account**; refuses to start without `I_UNDERSTAND_REAL_TRADING_RISKS=y` |
 
-While it runs, every endpoint is documented, and can be tried, at
-`http://127.0.0.1:<port>/docs`:
+While it runs, `http://127.0.0.1:<port>/docs` documents every endpoint and
+lets you call it:
 
 ![ArenaX's API page](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/arenax_api_docs.png)
 
-The backend's other settings are the `AX_*` keys in
+Other backend settings are the `AX_*` keys in
 [Configuration and paths](config.md#arenax-server-settings).
 
 ## `cjtrade` {#cjtrade}
 
 Runs the bots in `BOT_ROSTER` (or a roster file) against ArenaX, bar by bar.
-Options left out are asked for in the terminal. See
+Omitted options are prompted for interactively. See
 [Run the trading engine](../get-started/trading-engine.md).
 
 | Option | Default | Meaning |
@@ -75,8 +75,8 @@ Writes `engine_<session>.pkl` (the result), `.html` (the report) and
 
 ## `preload-prices` {#preload-prices}
 
-Downloads bars into a price file so ArenaX can run on it offline. Only
-windows the file lacks are downloaded.
+Downloads bars into a price file for offline ArenaX runs. Only windows
+missing from the file are fetched.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -112,8 +112,8 @@ Every subcommand prints JSON.
 
 ## `backtest` {#backtest}
 
-The oneshot backtester for built-in strategies. It fetches bars from a
-running ArenaX server.
+Oneshot backtester for built-in strategies. Fetches bars from a running
+ArenaX server.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -160,4 +160,4 @@ Settings are `FINHUB_*` environment variables; see the
 
 The developer notes in
 [`ref/TOOLS.md`](https://github.com/jackiesogi/CJTrade/blob/master/ref/TOOLS.md)
-(Chinese) describe every entry point in more detail.
+(Chinese) cover every entry point in more detail.
