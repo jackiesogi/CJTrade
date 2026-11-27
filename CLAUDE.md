@@ -48,9 +48,10 @@ ArenaX has four backends (`--backend=`):
 uv sync                                   # install
 source .venv/bin/activate
 
-uv run pytest                            # unit + integration (integration auto-skips without arenaxd)
-uv run pytest tests/unit/ -q              # ~850 tests, ~50s, no network
+uv run pytest                            # unit + integration (arenax/ skips without arenaxd; cjtrade/ starts its own)
+uv run pytest tests/unit/ -q              # ~1,400 tests, ~65s, no network
 bash tests/run_broker_stability_tests.sh --broker=arenax   # starts arenaxd :8801, runs tests/integration/arenax
+uv run pytest tests/integration/cjtrade  # engine end to end, offline (~45s, starts arenaxd :8802)
 uv run arenaxd --backend=demo             # ArenaX broker-side server (demo :8801, backtest :8802)
 uv run cjshell --broker=arenax            # interactive shell (CJShell)
 uv run cjtrade --broker=arenax --mode=backtest  # the trading app (engine + bots)
@@ -64,8 +65,8 @@ uv run --group docs mkdocs build --strict -d /tmp/site                  # docs s
 ```
 
 Never run `bash tests/test_cjtrade_integration.sh --broker=sinopac` (the
-`sinopac-shell` pre-commit hook) on your own: it places **real** odd-lot
-orders on the user's account. Commit with `SKIP=sinopac-shell git commit ...`
+`integration-cjshell-sinopac` pre-commit hook) on your own: it places **real** odd-lot
+orders on the user's account. Commit with `SKIP=integration-cjshell-sinopac git commit ...`
 unless the user asks for it. `/verify` (`.claude/commands/verify.md`) runs
 the safe checks in CI order.
 
@@ -216,13 +217,14 @@ env vars  >  ./.env  >  ./**/*.cjconf (depth, then alpha)  >  <user config dir>/
 |---|---|---|
 | `tests/unit/` | pure, no network, no disk | nothing |
 | `tests/integration/arenax/` | real HTTP against ArenaX | `arenaxd` on :8801 (auto-skips if absent) |
+| `tests/integration/cjtrade/` | `arenaxd` + `cjtrade` on 10 recorded days of 2357, fills compared exactly | ports 8802/5555/5556/8898 free (skips if not) |
 | `tests/manual/` | scripts a human runs | credentials; not in `testpaths` |
 
 Conventions in `tests/unit/`: mirror the source tree
 (`tests/unit/pkgs/brokers/arenax/test_arenax_middleware.py`), one `class
 TestX:` per unit under test, `@pytest.fixture` for setup, plain `assert`.
 `tests/integration/conftest.py` is the reference for fixture style — it has a
-session-scoped auto-skip, a `client` fixture with per-test `tmp_path`
+`client` fixture with per-test `tmp_path`
 isolation, a `make_order()` factory, and `likely_fill_*_price()` helpers.
 
 Markers: `unit`, `integration`, applied by directory in `tests/conftest.py`
@@ -500,13 +502,12 @@ class BalanceCommand(CommandBase):
   `nacl ValueError`) if you point pytest at them. They are scripts; run them
   by hand.
 - The pre-commit config runs the Sinopac shell test, which **places real
-  orders**. Use `SKIP=sinopac-shell` unless the user asked for it; never set
+  orders**. Use `SKIP=integration-cjshell-sinopac` unless the user asked for it; never set
   `SIMULATION=y` in that hook to make it safe — the user keeps it real on
   purpose.
-- `_is_sufficient_account_inventory` / `_is_sufficient_account_balance`
-  (`base_backend.py`) compare against **filled** position and cash
-  only. Resting orders reserve nothing, so N identical sells all pass and the
-  account can oversell. Same hole for cash on the buy side.
+- ArenaX fills every order in full at its limit price: no partial fills,
+  `PriceType.MKT` is matched as a limit, and the slippage setting is never
+  applied.
 - `AX_INITIAL_BALANCE` sets ArenaX's starting cash for a fresh account
   (no `AX_STATE_FILE`); FinHub sets it from the run's fund. The engine's
   `--fund` cannot change the server's balance, and only warns when they
@@ -548,7 +549,7 @@ class BalanceCommand(CommandBase):
 ## 11. Branches, commits and PRs
 
 **Branches.** `type/short-desc`, cut from the latest `origin/master`:
-`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `poc/` (e.g.
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `test/`, `poc/` (e.g.
 `feat/market-data`, `chore/release-automation`). The prefix sets the PR's
 type label (`.github/labeler.yml`). One topic per branch.
 
@@ -562,7 +563,7 @@ saying what changed and why in plain sentences; no bullet lists, no
 ```sh
 printf '%s\n' "Subject line" "" "Body line one," "body line two." > /tmp/msg.txt
 awk 'length > 72' /tmp/msg.txt          # must print nothing
-SKIP=sinopac-shell git commit -F /tmp/msg.txt
+SKIP=integration-cjshell-sinopac git commit -F /tmp/msg.txt
 ```
 
 If the `reorder-python-imports` or `end-of-file-fixer` hook fails, it has

@@ -15,28 +15,36 @@ repos:
       # command no longer starts -- and because a reader hitting that is worse
       # off than having no docs at all. Set CJ_CHECK_NO_SMOKE=1 to keep only
       # the static half, which takes well under a second.
-      - id: "readme-examples"
+      # Ids are `kind-target` and match the CI job ids in
+      # .github/workflows/ci.yml; names say what the hook does.
+      - id: "docs-readme"
         name: "Check the README examples still start"
         entry: uv run python scripts/check_readme_examples.py
         language: system
         pass_filenames: false
-      - id: "unit-tests"
-        name: "Run unit tests (tests/unit/)"
+      - id: "unit"
+        name: "Run the unit tests"
         entry: uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit
         language: system
         pass_filenames: false
-      - id: "ArenaX-broker-integration-test"  # We skip the sinopac integration test
-        name: "Run integration test: ArenaX (tests/integration/arenax/)"
+      - id: "integration-arenax"
+        name: "Run the ArenaX API integration tests"
         entry: bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
         language: system
         pass_filenames: false
-      - id: "arenax-shell"
-        name: "Run CJTrade shell test: ArenaX"
+      - id: "integration-engine"
+        name: "Run the CJTrade engine integration tests"
+        entry: uv run pytest tests/integration/cjtrade -q
+        language: system
+        pass_filenames: false
+      - id: "integration-cjshell-arenax"
+        name: "Run the CJShell integration tests on ArenaX"
         entry: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all
         language: system
         pass_filenames: false
-      - id: "sinopac-shell"
-        name: "Run CJTrade shell test: Sinopac"
+      # Logs in to the real Sinopac account and places real odd-lot orders.
+      - id: "integration-cjshell-sinopac"
+        name: "Run the CJShell integration tests on Sinopac (real orders)"
         entry: bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all
         language: system
         pass_filenames: false

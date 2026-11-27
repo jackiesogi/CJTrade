@@ -1,8 +1,9 @@
 # Runs every hook in .pre-commit-config.yaml, one job per hook (the
 # whitespace/import hooks share one job), so a red check names what broke.
+# A job has the id of its hook (`kind-target`) and a name `kind: target`.
 #
 # Secrets (Settings > Secrets and variables > Actions) are needed only by the
-# sinopac-shell job, which skips itself when they are absent:
+# integration-cjshell-sinopac job, which skips itself when they are absent:
 #   SINOPAC_API_KEY, SINOPAC_SECRET_KEY, SINOPAC_CA_CERT_BASE64,
 #   SINOPAC_CA_PASSWORD
 name: CI
@@ -27,8 +28,8 @@ env:
   UV_LOCKED: "1"   # fail instead of silently re-resolving if uv.lock is stale
 
 jobs:
-  file-hooks:
-    name: whitespace, EOF, YAML, import order
+  lint:
+    name: "lint: whitespace, EOF, YAML, import order"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,7 +46,7 @@ jobs:
       # thing here: the files this push or pull request changed.
       - name: Run the file hooks on the changed files
         env:
-          SKIP: readme-examples,unit-tests,ArenaX-broker-integration-test,arenax-shell,sinopac-shell
+          SKIP: docs-readme,unit,integration-arenax,integration-engine,integration-cjshell-arenax,integration-cjshell-sinopac
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
@@ -66,8 +67,8 @@ jobs:
           echo "Checking files changed in $base...HEAD"
           uv run pre-commit run --show-diff-on-failure --from-ref "$base" --to-ref HEAD
 
-  readme-examples:
-    name: README examples still start
+  docs-readme:
+    name: "docs: README examples start"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -79,8 +80,8 @@ jobs:
       - run: uv sync
       - run: uv run python scripts/check_readme_examples.py
 
-  unit-tests:
-    name: unit tests
+  unit:
+    name: "unit: tests/unit"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -100,8 +101,8 @@ jobs:
           path: htmlcov/unit
           if-no-files-found: ignore
 
-  arenax-integration:
-    name: integration tests (ArenaX)
+  integration-arenax:
+    name: "integration: ArenaX API"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -122,8 +123,23 @@ jobs:
             LAST_BROKER_STABILITY_TEST.log
           if-no-files-found: ignore
 
-  arenax-shell:
-    name: shell test (ArenaX)
+  # Starts its own arenaxd on 8802 with prices from a file in the repo; no
+  # network, no secrets, so Dependabot PRs run it too.
+  integration-engine:
+    name: "integration: CJTrade engine"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest tests/integration/cjtrade -v
+
+  integration-cjshell-arenax:
+    name: "integration: CJShell on ArenaX"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -170,15 +186,15 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-  sinopac-shell:
-    name: shell test (Sinopac, simulation)
+  integration-cjshell-sinopac:
+    name: "integration: CJShell on Sinopac, simulation"
     needs: sinopac-secrets
     if: needs.sinopac-secrets.outputs.present == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # One Sinopac login at a time across all branches.
     concurrency:
-      group: sinopac-shell
+      group: integration-cjshell-sinopac
       cancel-in-progress: false
     env:
       # Never real orders from CI: SIMULATION=y logs in to Sinopac's sandbox.

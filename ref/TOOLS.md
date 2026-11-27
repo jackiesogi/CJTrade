@@ -602,13 +602,14 @@ uv run python scripts/price_db_report.py --db exp.db
 
 ### 測試
 
-`pyproject.toml` 設定 `testpaths = ["tests/unit", "tests/integration"]`、`addopts = "-v --tb=short"`。`tests/manual/` 不會被收集（需要真券商）。`tests/conftest.py` 依所在目錄自動加上 `unit` 或 `integration` marker。整合測試在 `localhost:8801` 沒有服務時會自動 skip。
+`pyproject.toml` 設定 `testpaths = ["tests/unit", "tests/integration"]`、`addopts = "-v --tb=short"`。`tests/manual/` 不會被收集（需要真券商）。`tests/conftest.py` 依所在目錄自動加上 `unit` 或 `integration` marker。`tests/integration/arenax` 在 `localhost:8801` 沒有服務時會自動 skip；`tests/integration/cjtrade` 會自己起 arenaxd（8802，offline），用 repo 內 2357 的 10 天 1m 資料跑 `cjtrade`，逐筆比對成交，約 45 秒。
 
 ```sh
 uv run pytest                                       # unit + integration
 uv run pytest -m "not integration"
 uv run pytest tests/unit/ --cov=src/cjtrade --cov-report=term-missing
 bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
+uv run pytest tests/integration/cjtrade             # 引擎端到端，不需網路
 ```
 
 | 指令 | 說明 |
@@ -630,18 +631,21 @@ bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
 |---|---|
 | `trailing-whitespace`、`end-of-file-fixer`、`check-yaml` | pre-commit-hooks v4.6.0 |
 | `reorder-python-imports` | v3.16.0 |
-| `readme-examples` | `uv run python scripts/check_readme_examples.py`（smoke 模式會啟動範例，需網路） |
-| `unit-tests` | `uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit` |
-| `ArenaX-broker-integration-test` | `bash tests/run_broker_stability_tests.sh --broker=arenax --coverage`（會起 arenaxd，yfinance 需網路） |
-| `arenax-shell` | `bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all` |
-| `sinopac-shell` | `bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all`（會登入永豐並下單） |
+| `docs-readme` | `uv run python scripts/check_readme_examples.py`（smoke 模式會啟動範例，需網路） |
+| `unit` | `uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit` |
+| `integration-arenax` | `bash tests/run_broker_stability_tests.sh --broker=arenax --coverage`（會起 arenaxd，yfinance 需網路） |
+| `integration-engine` | `uv run pytest tests/integration/cjtrade -q`（起 arenaxd 8802，offline） |
+| `integration-cjshell-arenax` | `bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all` |
+| `integration-cjshell-sinopac` | `bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all`（會登入永豐並下**真單**） |
+
+命名規則：hook id 是 `類別-對象`，name 是動詞開頭的一句話（`Run the unit tests`）；CI 的 job 用同一個 id，name 是 `類別: 對象`（`unit: tests/unit`、`integration: ArenaX API`）。
 
 跳過特定 hook 用 `SKIP`（逗號分隔 hook id）：
 
 ```sh
-SKIP=sinopac-shell git commit -m "..."
-SKIP=sinopac-shell,arenax-shell,ArenaX-broker-integration-test git commit -m "..."
-CJ_CHECK_NO_SMOKE=1 SKIP=sinopac-shell git commit -m "..."
+SKIP=integration-cjshell-sinopac git commit -m "..."
+SKIP=integration-cjshell-sinopac,integration-cjshell-arenax,integration-arenax git commit -m "..."
+CJ_CHECK_NO_SMOKE=1 SKIP=integration-cjshell-sinopac git commit -m "..."
 ```
 
 ### 文件
@@ -659,7 +663,7 @@ FinHub 預設也是 8000，兩者同時開時其中一個要換 port（例如 `u
 
 | Workflow | 觸發 | 內容 |
 |---|---|---|
-| `ci.yml` | push、pull_request、手動 | 各 hook 一個 job：`file-hooks`（只對本次變更檔案跑 whitespace/EOF/YAML/import order）、`readme-examples`、`unit-tests`（上傳 `htmlcov/unit`）、`arenax-integration`、`arenax-shell`、`sinopac-shell`（需 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_BASE64`、`SINOPAC_CA_PASSWORD` secrets，缺就跳過；強制 `SIMULATION=y`，所以 CI 只下沙盒單；fork 的 PR 不跑；同時只允許一個 Sinopac 登入）。全部 `TZ=Asia/Taipei`、Python 3.12、`UV_LOCKED=1` |
+| `ci.yml` | push、pull_request、手動 | 各 hook 一個同名 job：`lint`（只對本次變更檔案跑 whitespace/EOF/YAML/import order）、`docs-readme`、`unit`（上傳 `htmlcov/unit`）、`integration-arenax`、`integration-engine`、`integration-cjshell-arenax`、`integration-cjshell-sinopac`（需 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_BASE64`、`SINOPAC_CA_PASSWORD` secrets，缺就跳過；強制 `SIMULATION=y`，所以 CI 只下沙盒單；fork 的 PR 不跑；同時只允許一個 Sinopac 登入）。全部 `TZ=Asia/Taipei`、Python 3.12、`UV_LOCKED=1` |
 | `codeql.yml` | 對 `master` 的 push/PR、每週一 03:17（台北）、手動 | CodeQL `security-extended`，語言 python、actions 與 javascript-typescript；忽略 `poc/experiments`、`ref`、`tests`、`src/cjtrade/apps/FinHub/static/vendor` |
 | `docs.yml` | push、pull_request、手動 | `uv sync --locked --only-group docs` 後 `mkdocs build --strict`；只有 `master` 的 push 會部署到 GitHub Pages |
 | `labeler.yml` | `pull_request_target` | 依分支名與變更檔案自動加 label（規則在 `.github/labeler.yml`，label 定義在 `.github/labels.yml`） |
@@ -794,10 +798,10 @@ uv run python scripts/check_readme_examples.py              # 會實際啟動範
 ```sh
 uv run pytest tests/unit/ -q
 uv run python scripts/check_readme_examples.py --no-smoke
-SKIP=sinopac-shell git commit -m "..."
+SKIP=integration-cjshell-sinopac git commit -m "..."
 ```
 
-沒有永豐憑證，或不想下真單時，一定要 `SKIP=sinopac-shell`。離線時再加 `arenax-shell,ArenaX-broker-integration-test` 與 `CJ_CHECK_NO_SMOKE=1`。
+沒有永豐憑證，或不想下真單時，一定要 `SKIP=integration-cjshell-sinopac`。離線時再加 `integration-cjshell-arenax,integration-arenax` 與 `CJ_CHECK_NO_SMOKE=1`。
 
 ---
 

@@ -1,14 +1,14 @@
 # tests/integration/conftest.py
 #
 # Shared fixtures for all integration tests.
-# All tests in this directory are skipped automatically if the ArenaX server
-# is not reachable (no manual marking required).
+# tests/integration/arenax skips itself when no arenaxd is on :8801;
+# tests/integration/cjtrade starts its own server.
 #
 # Run commands:
 #   pytest tests/integration/           # all integration tests
 #   pytest tests/integration/arenax/   # ArenaX-specific only
+#   pytest tests/integration/cjtrade/  # the trading engine, offline
 import pytest
-import requests
 from cjtrade.pkgs.brokers.account_client import AccountClient
 from cjtrade.pkgs.brokers.account_client import BrokerType
 from cjtrade.pkgs.models.order import Order
@@ -19,23 +19,6 @@ from cjtrade.pkgs.models.order import PriceType
 from cjtrade.pkgs.models.product import Exchange
 from cjtrade.pkgs.models.product import Product
 from cjtrade.pkgs.models.product import ProductType
-
-
-# ── Server availability ───────────────────────────────────────────────────────
-
-def _is_arenax_running() -> bool:
-    try:
-        requests.get("http://localhost:8801/health", timeout=1)
-        return True
-    except Exception:
-        return False
-
-
-@pytest.fixture(scope="session", autouse=True)
-def require_arenax():
-    """Skip the entire integration suite when ArenaX server is not running."""
-    if not _is_arenax_running():
-        pytest.skip("ArenaX server not running — start it with `arenaxd` first")
 
 
 # ── Client fixture ────────────────────────────────────────────────────────────
