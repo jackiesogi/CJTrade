@@ -141,7 +141,10 @@ print(report.metrics()["pnl_pct"])          # every number as a dict
 ```
 
 `report.html` is a full performance report (a *tearsheet*) with charts of
-the account value, drawdowns and monthly returns. Open it in a browser.
+the account value, drawdowns and monthly returns. Open it in a browser:
+
+![The top of a tearsheet](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/quantstats.png)
+
 `report.full_report()` writes the same file and opens it for you; pass
 `open_browser=False` on a machine without a browser.
 

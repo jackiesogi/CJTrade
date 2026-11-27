@@ -93,6 +93,29 @@ Then open <http://127.0.0.1:8000>, register a user (it stays on your
 computer), and sign in. FinHub starts the ArenaX server and the engine
 itself, so nothing else needs to be running.
 
+Press **New Run**, choose symbols, dates and speed, and start. The
+**Dashboard** follows the run: how far the replay has got, the account's
+equity and profit, round trips, the risk gate, and the equity curve.
+
+![FinHub dashboard during a run](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
+
+**Bots** shows each bot. Open one to see why it did what it did on every
+bar, the numbers its strategy watches, and the lines it plots over the
+price:
+
+![A bot's detail page in FinHub](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_bot_detail.png)
+
+**Strategies** is where you write and edit your own strategy files. A new
+account starts with the three example strategies; **Check** runs the same
+checks as `strategy-tool check`, and only strategies marked **Enabled** take
+part in a run:
+
+![FinHub's strategy editor](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_editor.png)
+
+**Runs** keeps every run with its result and its full log:
+
+![FinHub's list of runs with a run log](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_runs.png)
+
 FinHub only listens on your own computer (`127.0.0.1`). To open it from
 another machine, forward the port over SSH:
 `ssh -L 8000:127.0.0.1:8000 <host>`.

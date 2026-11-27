@@ -44,6 +44,11 @@ arenaxd [--backend=demo|backtest|paper|real] [--port=N] [--data=SOURCES] [--pric
 | `paper` | 8803 | `sinopac` | real time | ArenaX |
 | `real` | 8888 | `sinopac` | real time | **real Sinopac account**; refuses to start without `I_UNDERSTAND_REAL_TRADING_RISKS=y` |
 
+While it runs, every endpoint is documented, and can be tried, at
+`http://127.0.0.1:<port>/docs`:
+
+![ArenaX's API page](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/arenax_api_docs.png)
+
 The backend's other settings are the `AX_*` keys in
 [Configuration and paths](config.md#arenax-server-settings).
 

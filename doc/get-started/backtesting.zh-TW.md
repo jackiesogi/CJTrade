@@ -124,7 +124,11 @@ report.save_html("report.html")
 print(report.metrics()["pnl_pct"])          # 所有數字，以 dict 形式取得
 ```
 
-`report.html` 是一份完整的績效報告（tearsheet），裡面有帳戶價值、回撤和每月報酬的圖表。用瀏覽器打開就能看。`report.full_report()` 會寫出同一個檔案並幫你打開；在沒有瀏覽器的機器上，請傳入 `open_browser=False`。
+`report.html` 是一份完整的績效報告（tearsheet），裡面有帳戶價值、回撤和每月報酬的圖表。用瀏覽器打開就能看：
+
+![績效報告的開頭](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/quantstats.png)
+
+`report.full_report()` 會寫出同一個檔案並幫你打開；在沒有瀏覽器的機器上，請傳入 `open_browser=False`。
 
 ## 交易成本
 

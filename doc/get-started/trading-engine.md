@@ -187,6 +187,8 @@ Then add `--roster=roster.json` to the command in step 3.
 | `paper` | `uv run arenaxd --backend=paper` | the real clock, during market hours, with live Sinopac prices |
 
 The [FinHub web UI](shell-and-finhub.md#finhub) starts ArenaX and the engine
-for you, and shows the same run in a browser.
+for you, and shows the same run in a browser:
+
+![A run in FinHub's dashboard](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
 
 Next: [CJShell and FinHub](shell-and-finhub.md).

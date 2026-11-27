@@ -41,6 +41,10 @@ arenaxd [--backend=demo|backtest|paper|real] [--port=N] [--data=SOURCES] [--pric
 | `paper` | 8803 | `sinopac` | 實際時間 | ArenaX |
 | `real` | 8888 | `sinopac` | 實際時間 | **Sinopac 正式帳戶**；沒有設定 `I_UNDERSTAND_REAL_TRADING_RISKS=y` 就拒絕啟動 |
 
+執行時，可以在 `http://127.0.0.1:<port>/docs` 查看每個 API 端點的說明，也能直接試用：
+
+![ArenaX 的 API 頁面](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/arenax_api_docs.png)
+
 backend 的其他設定是[設定與路徑](config.md#arenax-server-settings)中的 `AX_*` 鍵。
 
 ## `cjtrade` {#cjtrade}

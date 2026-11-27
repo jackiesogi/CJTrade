@@ -88,6 +88,22 @@ uv run finhub
 ```
 
 接著打開 <http://127.0.0.1:8000>，註冊一個使用者（資料只存在你的電腦上）並登入。
+
+按 **New Run**，選好股票代號、日期和速度後開始執行。**Dashboard** 會即時顯示這次執行的狀況：回放進度、帳戶權益與損益、一買一賣的次數、風控閘門的狀態，以及權益曲線。
+
+![執行中的 FinHub Dashboard](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
+
+**Bots** 頁列出每個 bot。點開一個 bot，可以看到它在每一根 K 棒上為什麼這樣做、策略關注的數值，以及畫在價格上的線：
+
+![FinHub 的 bot 詳細頁](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_bot_detail.png)
+
+**Strategies** 頁用來撰寫和修改你自己的策略檔。新帳戶會先附上三個範例策略；**Check** 會做和 `strategy-tool check` 一樣的檢查，而且只有勾選 **Enabled** 的策略才會參與執行：
+
+![FinHub 的策略編輯器](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_editor.png)
+
+**Runs** 頁保留每一次執行的結果和完整 log：
+
+![FinHub 的執行列表與執行 log](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_runs.png)
 FinHub 會自己啟動 ArenaX 伺服器和交易引擎，不需要事先執行其他程式。
 
 FinHub 只在你自己的電腦上監聽（`127.0.0.1`）。要從其他機器開啟，請用 SSH 轉送埠（port）：

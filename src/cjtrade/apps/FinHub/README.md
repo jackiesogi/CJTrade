@@ -1,6 +1,8 @@
 # FinHub
 
-![finhub](./img/finhub.png)
+![FinHub dashboard during a run](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
+
+![A bot's detail page](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_bot_detail.png)
 
 The web UI for the CJTrade app. Start a backtest, watch the bots while they
 run, and trade by hand.

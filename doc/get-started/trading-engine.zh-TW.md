@@ -159,6 +159,8 @@ Run be329ab8 — 13 fill(s), 9 round trip(s), net -76,768.08
 | `demo` | `uv run arenaxd` | demo 伺服器自己的快轉時鐘 |
 | `paper` | `uv run arenaxd --backend=paper` | 真實時鐘，在交易時段內，使用 Sinopac 的即時價格 |
 
-[FinHub 網頁介面](shell-and-finhub.md#finhub)會幫你啟動 ArenaX 和引擎，並在瀏覽器裡顯示同樣的執行過程。
+[FinHub 網頁介面](shell-and-finhub.md#finhub)會幫你啟動 ArenaX 和引擎，並在瀏覽器裡顯示同樣的執行過程：
+
+![在 FinHub Dashboard 上的一次執行](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
 
 下一步：[CJShell 和 FinHub](shell-and-finhub.md)。
