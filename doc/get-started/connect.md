@@ -18,18 +18,21 @@ flowchart LR
     AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
     AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
     AC -- "BrokerType.FUBON" --> FBA["FubonBrokerAPI"]
+    AC -- "BrokerType.YUANTA" --> YTA["YuantaBrokerAPI"]
     AC -. "client.market" .-> MD["MarketData"]
     AXA -- "HTTP, 127.0.0.1" --> AXS["ArenaX server<br/>(arenaxd)"]
     SPA -- "shioaji SDK" --> SPS["Sinopac"]
     FBA -- "fubon_neo SDK" --> FBS["Fubon"]
+    YTA -- "Spark API (.NET)" --> YTS["Yuanta"]
     subgraph Adapters["Adapters: subclasses of BrokerAPIBase"]
         AXA
         SPA
         FBA
+        YTA
     end
 ```
 
-Adding a broker means writing one more adapter, as Fubon's was; see the
+Adding a broker means writing one more adapter, as Fubon's and Yuanta's were; see the
 [Broker interface](../reference/broker-base.md).
 
 ## Step 1: start ArenaX
@@ -117,8 +120,9 @@ market time.
 ## Live brokers
 
 Switching to a real account changes only the `AccountClient` constructor:
-`BrokerType.SINOPAC` or `BrokerType.FUBON`, and that broker's credentials.
-[Live brokers](live-brokers.md) has the connection code for both, what
+`BrokerType.SINOPAC`, `BrokerType.FUBON` or `BrokerType.YUANTA`, and that
+broker's credentials.
+[Live brokers](live-brokers.md) has the connection code for each, what
 each adapter converts, and which features each broker supports.
 
 Keep secrets out of code by putting them in a settings file; see

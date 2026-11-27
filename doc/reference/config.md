@@ -40,11 +40,16 @@ with `bash scripts/gen_config.sh arenax` or `... sinopac`.
 | `FUBON_API_KEY` or `FUBON_PASSWORD` | Fubon | API-key login, or password login |
 | `FUBON_CERT_PATH`, `FUBON_CERT_PASSWORD` | Fubon | the `.pfx` certificate and its password |
 | `FUBON_ACCOUNT` | Fubon | optional: the account number to trade when the login returns several |
+| `YUANTA_ACCOUNT` | Yuanta | `S` + branch (4) + account (7), e.g. `S98875005091` |
+| `YUANTA_PASSWORD` | Yuanta | the account's electronic password |
+| `YUANTA_CERT_PATH`, `YUANTA_CERT_PASSWORD` | Yuanta | the `.pfx` certificate and its password; required on Linux and macOS |
+| `YUANTA_DLL_DIR` | Yuanta | the folder with Yuanta's Spark API files (`YuantaSparkAPI.dll`, ...) |
+| `YUANTA_ENVIRONMENT` | Yuanta | `UAT` (Yuanta's test environment, the default) or `PROD` (your **real account**) |
 | `LLM_MODEL`, `LLM_API_KEY`, `GEMINI_API_KEY` | LLM clients, CJShell `llm` | which model and its key |
 | `FINMIND_TOKEN` | FinMind price source | optional; raises the request limit |
 
-`bash scripts/gen_config.sh sinopac` and `... fubon` write files with these
-keys. `cjtrade.pkgs.config.broker_settings` turns them into `AccountClient`
+`bash scripts/gen_config.sh sinopac`, `... fubon` and `... yuanta` write
+files with these keys. `cjtrade.pkgs.config.broker_settings` turns them into `AccountClient`
 arguments: `AccountClient(BrokerType.FUBON, **fubon_config())`.
 
 !!! note "Old Sinopac names"

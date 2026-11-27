@@ -64,6 +64,7 @@ Linux 是 `~/.local/share/cjtrade`、`~/.cache/cjtrade` 等。`arenaxd` 啟動�
 bash scripts/gen_config.sh arenax     # API_KEY = testkey123
 bash scripts/gen_config.sh sinopac    # SINOPAC_*，需要自行填入永豐憑證
 bash scripts/gen_config.sh fubon      # FUBON_*，需要自行填入富邦憑證
+bash scripts/gen_config.sh yuanta     # YUANTA_*，需要元大帳號、憑證與 Spark API 檔案路徑
 ```
 
 ### 其他環境變數
@@ -231,7 +232,8 @@ uv run aresh --port 8802 set-time 2025-09-01
 |---|---|
 | `arenax` | 連 ArenaX，`api_key` 固定 `testkey123` |
 | `sinopac` | 永豐；`SINOPAC_SIMULATION=y` 進模擬環境；mirror DB 在 `<data>/mirrors/sinopac_<USERNAME>.db` |
-| `fubon` | 富邦（**沒有模擬環境，一律真單**）；設定為 `FUBON_*`；mirror DB 在 `<data>/mirrors/fubon_<USERNAME>.db`；K 棒類指令需要另外的行情來源 |
+| `fubon` | 富邦（**沒有模擬環境，一律真單**；測試中）；設定為 `FUBON_*`；mirror DB 在 `<data>/mirrors/fubon_<USERNAME>.db`；K 棒類指令需要另外的行情來源 |
+| `yuanta` | 元大（預設 UAT 測試環境，`YUANTA_ENVIRONMENT=PROD` 才是正式帳戶；測試中）；設定為 `YUANTA_*`，需要 .NET 8 與元大 Spark API 檔案；mirror DB 在 `<data>/mirrors/yuanta_<USERNAME>.db` |
 | `arenax_legacy` | ArenaX ＋ 永豐真實帳戶，需要永豐憑證（不檢查是否缺 key） |
 | `cathay`、`ibkr`、`mega` | 印「coming soon」後離開 |
 | 其他 | 印支援清單後離開（exit 0） |

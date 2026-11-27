@@ -4,9 +4,10 @@ The `fubon_neo` adapter behind `AccountClient(BrokerType.FUBON)`. Needs the
 `fubon` extra. See [Live brokers](../get-started/live-brokers.md#fubon) for
 how to connect.
 
-!!! danger
-    Fubon has no sandbox: `place_order`, `cancel_order`, `buy_stock` and
-    `sell_stock` act on your real account.
+!!! danger "Testing in progress: use at your own risk"
+    Not yet run against a Fubon account. Fubon has no sandbox:
+    `place_order`, `cancel_order`, `buy_stock` and `sell_stock` act on your
+    real account.
 
 ::: cjtrade.pkgs.brokers.fubon.fubon_broker_api.FubonBrokerAPI
 

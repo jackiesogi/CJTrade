@@ -12,18 +12,21 @@ flowchart LR
     AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
     AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
     AC -- "BrokerType.FUBON" --> FBA["FubonBrokerAPI"]
+    AC -- "BrokerType.YUANTA" --> YTA["YuantaBrokerAPI"]
     AC -. "client.market" .-> MD["MarketData"]
     AXA -- "HTTP，127.0.0.1" --> AXS["ArenaX 伺服器<br/>（arenaxd）"]
     SPA -- "shioaji SDK" --> SPS["Sinopac"]
     FBA -- "fubon_neo SDK" --> FBS["Fubon"]
+    YTA -- "Spark API (.NET)" --> YTS["Yuanta"]
     subgraph Adapters["轉接層：BrokerAPIBase 的子類別"]
         AXA
         SPA
         FBA
+        YTA
     end
 ```
 
-新增一家券商，只要多寫一個轉接層，Fubon 就是這樣加入的；見[券商介面](../reference/broker-base.md)。
+新增一家券商，只要多寫一個轉接層，Fubon 和 Yuanta 就是這樣加入的；見[券商介面](../reference/broker-base.md)。
 
 ## 步驟 1：啟動 ArenaX
 
@@ -97,7 +100,7 @@ market time: 2026-11-13 09:24:43.668600
 
 ## 實盤券商
 
-改用正式帳戶時，只需更換 `AccountClient` 的建構參數：`BrokerType.SINOPAC` 或 `BrokerType.FUBON`，以及該券商的登入資訊。兩家券商的連線程式碼、各轉接層負責的轉換，以及各券商支援的功能，請見[實盤券商](live-brokers.md)。
+改用正式帳戶時，只需更換 `AccountClient` 的建構參數：`BrokerType.SINOPAC`、`BrokerType.FUBON` 或 `BrokerType.YUANTA`，以及該券商的登入資訊。各券商的連線程式碼、各轉接層負責的轉換，以及各券商支援的功能，請見[實盤券商](live-brokers.md)。
 
 密鑰不要寫在程式碼裡，請放在設定檔中，詳見[設定與路徑](../reference/config.md)。
 

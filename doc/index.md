@@ -8,8 +8,9 @@ in three modes:
 2. **Paper trading**: against ArenaX, a simulated broker that runs locally,
    with no money at risk.
 3. **Live**: against a real brokerage account. Sinopac (永豐金證券) and
-   Fubon (富邦證券) are supported; the broker is one argument, so moving
-   between them changes no strategy code.
+   Fubon (富邦證券) and Yuanta (元大證券) are supported, Fubon and Yuanta as
+   testing in progress; the broker is one argument, so moving between them
+   changes no strategy code.
 
 No brokerage account is required for any of
 [Get started](get-started/install.md); it runs locally on free price data.
@@ -25,7 +26,7 @@ No brokerage account is required for any of
 ```mermaid
 flowchart LR
     S["Strategy file<br/><code>on_bar → buy / sell / hold</code>"] --> C["CJTrade code<br/><code>AccountClient</code> or the trading engine"]
-    C -- "orders, account queries" --> B["Broker adapter<br/>ArenaX (simulated) · Sinopac · Fubon"]
+    C -- "orders, account queries" --> B["Broker adapter<br/>ArenaX (simulated) · Sinopac · Fubon · Yuanta"]
     B -- "fills, balance, positions" --> C
     M["Market data<br/>Sinopac · FinMind · Yahoo Finance · local price file"] -- "bars, quotes" --> C
 ```
@@ -38,7 +39,7 @@ flowchart LR
 - **`AccountClient`**: the single object your code uses to talk to a broker.
   Each broker sits behind an adapter that converts CJTrade's orders,
   statuses and positions to its SDK, so the same calls work on ArenaX,
-  Sinopac and Fubon. See [Live brokers](get-started/live-brokers.md).
+  Sinopac, Fubon and Yuanta. See [Live brokers](get-started/live-brokers.md).
 
 [Key ideas](get-started/concepts.md) defines CJTrade's terms and conventions.
 
@@ -49,7 +50,7 @@ flowchart LR
 | Install CJTrade and verify the install | [Install](get-started/install.md) | 5 min |
 | CJTrade terms and conventions | [Key ideas](get-started/concepts.md) | 10 min |
 | Place a first order on ArenaX from Python | [Connect to a broker](get-started/connect.md), then [Account and orders](get-started/account-and-orders.md) | 15 min |
-| Connect a Sinopac or Fubon account | [Live brokers](get-started/live-brokers.md) | 10 min |
+| Connect a Sinopac, Fubon or Yuanta account | [Live brokers](get-started/live-brokers.md) | 10 min |
 | Fetch prices and compute an indicator | [Market data](get-started/market-data.md) | 10 min |
 | Write a strategy and backtest it over a year | [Write a strategy](get-started/strategy.md), then [Backtesting](get-started/backtesting.md) | 20 min |
 | Run several bots minute by minute, as in live trading | [Run the trading engine](get-started/trading-engine.md) | 15 min |

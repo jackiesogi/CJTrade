@@ -7,7 +7,7 @@ Conventions and terms used throughout these pages.
 | Term | CJTrade convention |
 |---|---|
 | Symbol (股票代號) | Bare exchange code: `2330` (TSMC), `0050` (Yuanta Taiwan 50 ETF). Never `2330.TW`. |
-| Broker (券商) | Anything that accepts orders: the simulated broker **ArenaX**, or a real broker, **Sinopac** or **Fubon**, each behind its own adapter. |
+| Broker (券商) | Anything that accepts orders: the simulated broker **ArenaX**, or a real broker, **Sinopac**, **Fubon** or **Yuanta**, each behind its own adapter. |
 | Order (委託) | A request. Placing it does not mean it filled. |
 | Fill (成交) | Only fills change cash and positions. |
 | Limit price (限價) | A limit order the market never reaches stays open. |

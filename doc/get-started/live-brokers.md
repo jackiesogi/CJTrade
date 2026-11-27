@@ -6,12 +6,22 @@ the broker's SDK and back. Moving a strategy from ArenaX to a live account, or
 from one brokerage to another, changes that argument and the credentials, and
 nothing else.
 
+!!! warning "Fubon and Yuanta: testing in progress, use at your own risk"
+    The Fubon and Yuanta adapters are written against each broker's official
+    SDK and documentation and are unit-tested, but have **not yet placed an
+    order on a live account**. Order statuses, units and reports may differ
+    from what the documentation says. Start with odd-lot orders far from the
+    market, check every result against the broker's own app, and do not
+    trade size until you have. Sinopac is the only live broker tested with
+    real orders.
+
 ```mermaid
 flowchart LR
     Code["Strategy, engine,<br/>CJShell, your code"] --> AC["AccountClient"]
     AC --> AX["ArenaXBrokerAPI_v2"] -- "HTTP" --> AXS["ArenaX<br/>(simulated)"]
     AC --> SP["SinopacBrokerAPI"] -- "shioaji" --> SPS["Sinopac 永豐金證券"]
     AC --> FB["FubonBrokerAPI"] -- "fubon_neo" --> FBS["Fubon 富邦證券"]
+    AC --> YT["YuantaBrokerAPI"] -- "Spark API (.NET)" --> YTS["Yuanta 元大證券"]
     AC -. "client.market" .-> MD["MarketData<br/>FinMind · Yahoo · Sinopac · file"]
 ```
 
@@ -19,17 +29,17 @@ flowchart LR
 
 Every adapter maps the same things, so the rest of CJTrade sees one model:
 
-| CJTrade | Sinopac (`shioaji`) | Fubon (`fubon_neo`) |
-|---|---|---|
-| `Order.action` BUY / SELL | `Action.Buy` / `Sell` | `BSAction.Buy` / `Sell` |
-| `Order.order_lot` Common / IntraDayOdd | `StockOrderLot.Common` / `IntradayOdd` | `MarketType.Common` / `IntradayOdd` |
-| `Order.quantity` (lots for Common, shares for odd lots) | the same units | always shares: Common × 1,000 |
-| `Order.price` (float) | float | string (`"66.5"`) |
-| `Order.price_type` LMT / MKT | `StockPriceType.LMT` / `MKT` | `PriceType.Limit` / `Market` |
-| `Order.order_type` ROD / IOC / FOK | `OrderType.ROD` / `IOC` / `FOK` | `TimeInForce.ROD` / `IOC` / `FOK` |
-| `OrderStatus` | from `Status` (PendingSubmit, Submitted, Filled, ...) | from the numeric `status` (0, 10, 30, 40, 50, 90, ...) and the filled quantity |
-| CJTrade order id ↔ broker id | shioaji order id, in the mirror database | `<date>:<seq_no>`, in the mirror database, plus a `user_def` tag |
-| Fill reports → `OrderEvent` | order and deal callbacks | `set_on_order`, `set_on_order_changed`, `set_on_filled` |
+| CJTrade | Sinopac (`shioaji`) | Fubon (`fubon_neo`) | Yuanta (Spark API) |
+|---|---|---|---|
+| `Order.action` BUY / SELL | `Action.Buy` / `Sell` | `BSAction.Buy` / `Sell` | `BuySell` `"B"` / `"S"` |
+| `Order.order_lot` Common / IntraDayOdd | `StockOrderLot.Common` / `IntradayOdd` | `MarketType.Common` / `IntradayOdd` | `APCode` 0 / 4 |
+| `Order.quantity` (lots for Common, shares for odd lots) | the same units | always shares: Common × 1,000 | the same units (`OrderQty`) |
+| `Order.price` (float) | float | string (`"66.5"`) | float, 0 for market orders |
+| `Order.price_type` LMT / MKT | `StockPriceType.LMT` / `MKT` | `PriceType.Limit` / `Market` | `PriceFlag` `" "` / `"M"` |
+| `Order.order_type` ROD / IOC / FOK | `OrderType.ROD` / `IOC` / `FOK` | `TimeInForce.ROD` / `IOC` / `FOK` | `Time_in_force` `"0"` / `"3"` / `"4"` |
+| `OrderStatus` | from `Status` (PendingSubmit, Submitted, Filled, ...) | from the numeric `status` (0, 10, 30, 40, 50, 90, ...) and the filled quantity | from `OrderStatus` (0, 5, 10, 20, 24, 25, 30) and `OkQty` / `AfterQty` |
+| CJTrade order id ↔ broker id | shioaji order id, in the mirror database | `<date>:<seq_no>`, in the mirror database, plus a `user_def` tag | `<date>:<OrderNo>`, in the mirror database; the whole CJTrade id travels in `BasketNo` |
+| Fill reports → `OrderEvent` | order and deal callbacks | `set_on_order`, `set_on_order_changed`, `set_on_filled` | `RR_RealReport` (order reports 50, fill reports 51) |
 
 The mirror database (`paths.mirror_db_path("<broker>")`) records every order
 placed through CJTrade and the broker id it maps to, so orders can still be
@@ -37,17 +47,17 @@ found, listed and cancelled after a restart.
 
 ## Capabilities
 
-| | ArenaX | Sinopac | Fubon |
-|---|---|---|---|
-| Extra | none | `sinopac` | `fubon` |
-| Orders: place, cancel, list, `sync_state` | ✓ | ✓ | ✓ |
-| Balance and positions | ✓ | ✓ | ✓ |
-| Quotes (`get_snapshots`, `get_bid_ask`) | ✓ | ✓, five levels | ✓, best level only |
-| Historical bars (`client.market`) | ✓ | ✓ | – pass `market=` (FinMind, Yahoo, ...) |
-| Fill and status callbacks | – poll `sync_state()` | ✓ | ✓ |
-| Sandbox | it is one | `simulation=True` | none: every order is real |
-| Partial fills reported as `PARTIAL` | – fills in full | ✓ | ✓ |
-| Tested against a live account | n/a | ✓ | not yet |
+| | ArenaX | Sinopac | Fubon | Yuanta |
+|---|---|---|---|---|
+| Extra | none | `sinopac` | `fubon` | `yuanta`, plus .NET 8 and Yuanta's Spark API files |
+| Orders: place, cancel, list, `sync_state` | ✓ | ✓ | ✓ | ✓ |
+| Balance and positions | ✓ | ✓ | ✓ | ✓ |
+| Quotes (`get_snapshots`, `get_bid_ask`) | ✓ | ✓, five levels | ✓, best level only | ✓, best level only |
+| Historical bars (`client.market`) | ✓ | ✓ | – pass `market=` (FinMind, Yahoo, ...) | – pass `market=` |
+| Fill and status callbacks | – poll `sync_state()` | ✓ | ✓ | ✓ |
+| Sandbox | it is one | `simulation=True` | none: every order is real | `environment="UAT"`, the default (needs API access and a whitelisted IP) |
+| Partial fills reported as `PARTIAL` | – fills in full | ✓ | ✓ | ✓ |
+| Tested with real orders | n/a | ✓ | not yet: testing in progress | not yet: testing in progress |
 
 ## Sinopac
 
@@ -129,11 +139,65 @@ Behaviour specific to Fubon:
 - `list_orders()` returns today's orders on the account, including ones
   placed elsewhere; those have `id='N/A'`.
 
-!!! danger "There is no Fubon sandbox"
+!!! danger "There is no Fubon sandbox; testing in progress"
     `fubon_neo` has no simulation flag, so every order placed through
     `BrokerType.FUBON` is a real order. The adapter is unit-tested against
     the SDK's own order and enum types, but has not yet been run against a
-    live account: start with odd-lot orders far from the market.
+    live account: use at your own risk, and start with odd-lot orders far
+    from the market.
+
+## Yuanta
+
+Yuanta's Spark API is a .NET 8 assembly (`YuantaSparkAPI.dll`) that Yuanta
+distributes itself; it is not on PyPI. You need:
+
+1. API access, which your Yuanta sales representative enables; the test
+   environment (UAT) also needs a fixed IP whitelisted;
+2. Yuanta's Spark API files (the folder with the `.dll`, `.so` and `.dylib`
+   files from the sample code), see
+   [Yuanta's Spark API documentation](https://www.yuanta.com.tw/file-repository/content/sparkapi_docs/);
+3. the .NET 8 runtime, and the `yuanta` extra (`pip install 'cjtrade[yuanta]'`,
+   which installs `pythonnet`).
+
+```python
+from cjtrade.pkgs.brokers.account_client import AccountClient, BrokerType
+from cjtrade.pkgs.marketdata import Cached, Fallback, FinMindMarketData, YFinanceMarketData
+
+client = AccountClient(
+    BrokerType.YUANTA,
+    account="S98875005091",          # S + branch (4) + account (7)
+    password="...",
+    cert_path="/path/to/cert.pfx",   # required on Linux and macOS
+    cert_pass="...",
+    dll_dir="/path/to/YuantaSparkAPI",
+    environment="UAT",               # Yuanta's test environment; "PROD" is your real account
+    market=Cached(Fallback([FinMindMarketData(), YFinanceMarketData()])),
+)
+client.connect()
+```
+
+From settings: `AccountClient(BrokerType.YUANTA, **yuanta_config())` with
+`YUANTA_ACCOUNT`, `YUANTA_PASSWORD`, `YUANTA_CERT_PATH`,
+`YUANTA_CERT_PASSWORD`, `YUANTA_DLL_DIR` and `YUANTA_ENVIRONMENT`
+(`bash scripts/gen_config.sh yuanta` writes them).
+
+Behaviour specific to Yuanta:
+
+- The Spark API is asynchronous: each call returns at once and its result
+  arrives through an `OnResponse` event. The adapter waits for the response
+  (`timeout`, default 10 s), so its methods block like every other broker's.
+- Calls of the same function are spaced to stay under Yuanta's limit of 3
+  account queries a second.
+- A symbol is quoted as listed (TWSE) first, then as OTC (TWOTC).
+- Reports state quantities in shares; a board-lot order's quantity is shown
+  in lots.
+- In UAT, fills follow Yuanta's test rules (the last character of the order
+  number decides whether it fills), not the market.
+
+!!! danger "`environment=\"PROD\"` is your real account; testing in progress"
+    Keep `environment="UAT"` until the adapter has worked for you in the
+    test environment. The Yuanta adapter has not yet placed an order on a
+    live account: use at your own risk.
 
 ## Adding a broker
 

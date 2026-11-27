@@ -46,6 +46,7 @@
     |---|---|---|
     | `sinopac` | `shioaji` SDK | 在 Sinopac 交易，以及從 Sinopac 讀取價格 |
     | `fubon` | `fubon-neo` SDK | 在 Fubon 交易 |
+    | `yuanta` | `pythonnet`（另需 .NET 8 與元大的 Spark API 檔案） | 在 Yuanta 交易 |
     | `finhub` | FastAPI 等相關套件 | FinHub 網頁介面 |
     | `llm` | Gemini 和 Azure OpenAI 用戶端 | shell 的 `llm` 指令、LLM 輔助功能 |
     | `news` | NewsAPI 用戶端 | NewsAPI 新聞來源 |

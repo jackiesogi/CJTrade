@@ -2,8 +2,8 @@
 
 `AccountClient(BrokerType.FUBON)` 背後的 `fubon_neo` 轉接層。需要安裝 `fubon` 選用套件。連線方式見[實盤券商](../get-started/live-brokers.md#fubon)。
 
-!!! danger
-    Fubon 沒有沙盒：`place_order`、`cancel_order`、`buy_stock` 和 `sell_stock` 會作用在你的正式帳戶上。
+!!! danger "測試中（testing in progress），使用風險請自行承擔"
+    尚未在富邦帳戶上執行過。Fubon 沒有沙盒：`place_order`、`cancel_order`、`buy_stock` 和 `sell_stock` 會作用在你的正式帳戶上。
 
 ::: cjtrade.pkgs.brokers.fubon.fubon_broker_api.FubonBrokerAPI
 

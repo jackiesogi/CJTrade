@@ -251,8 +251,8 @@ Write tests when changing `pkgs/`. Don't add tests to `poc/` unless asked.
 - Shell commands: `XxxCommand(CommandBase)`. The user-facing `name` is either
   a full word (`balance`, `help`, `kbars`) or a terse abbreviation
   (`lsodr`, `lspos`, `mvrs`) — match whichever family the neighbours use.
-- Config keys: `AX_*` (ArenaX server), `FINHUB_*` (FinHub), `SINOPAC_*` and
-  `FUBON_*` (broker credentials, read through `pkgs/config/broker_settings.py`;
+- Config keys: `AX_*` (ArenaX server), `FINHUB_*` (FinHub), `SINOPAC_*`,
+  `FUBON_*` and `YUANTA_*` (broker credentials, read through `pkgs/config/broker_settings.py`;
   Sinopac's old unprefixed names still work with a warning), uppercase in
   `.cjconf`. `API_KEY` is ArenaX's key.
 - Console scripts are lowercase (`cjtrade`, `cjshell`, `finhub`); app
@@ -365,9 +365,12 @@ client.market                              # MarketData: get_kbars(symbol, start
 client.disconnect()
 ```
 
-`BrokerType` is `SINOPAC`, `FUBON`, `ARENAX`, and the unimplemented `YUANTA` / `CATHAY`.
-`FUBON` (`pkgs/brokers/fubon/`, `fubon` extra) has no sandbox and serves quotes
-but no bars; it has not been run against a live account.
+`BrokerType` is `SINOPAC`, `FUBON`, `YUANTA`, `ARENAX`, and the unimplemented `CATHAY`.
+`FUBON` (`pkgs/brokers/fubon/`, `fubon` extra) has no sandbox; `YUANTA`
+(`pkgs/brokers/yuanta/`, `yuanta` extra plus .NET 8 and Yuanta's DLL, async
+Spark API bridged to blocking calls) defaults to Yuanta's UAT environment.
+Both serve quotes but no bars, and neither has been run against a live
+account: docs call them "testing in progress, use at your own risk".
 
 ### Kbar
 

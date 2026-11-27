@@ -19,7 +19,7 @@ bash scripts/gen_config.sh arenax
 
 This writes `arenax_system.cjconf` to the current directory with
 `API_KEY = testkey123` set and the LLM keys blank; those are only needed
-for the `llm` command. `bash scripts/gen_config.sh sinopac` and `... fubon`
+for the `llm` command. `bash scripts/gen_config.sh sinopac`, `... fubon` and `... yuanta`
 write the files for the live brokers.
 
 ### Run one command, or many
@@ -74,11 +74,13 @@ Total Unrealized PnL: -57.400 (-2.37%)
 ```
 
 !!! danger "On a live broker, CJShell places real orders without asking"
-    `uv run cjshell --broker=sinopac` and `--broker=fubon` read the settings
-    written by `bash scripts/gen_config.sh sinopac` / `fubon` (fill in your
+    `uv run cjshell --broker=sinopac`, `--broker=fubon` and `--broker=yuanta`
+    read the settings written by `bash scripts/gen_config.sh sinopac` /
+    `fubon` / `yuanta` (fill in your
     keys). `buy` sends a real order immediately, with no confirmation. The
     Sinopac file sets `SINOPAC_SIMULATION = n`, which is your real account;
-    set it to `y` to use Sinopac's sandbox. Fubon has no sandbox.
+    set it to `y` to use Sinopac's sandbox. Fubon has no sandbox; Yuanta
+    uses its test environment until `YUANTA_ENVIRONMENT = PROD`.
 
 ## FinHub {#finhub}
 

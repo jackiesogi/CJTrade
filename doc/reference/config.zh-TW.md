@@ -36,10 +36,15 @@
 | `FUBON_API_KEY` 或 `FUBON_PASSWORD` | Fubon | API 金鑰登入，或密碼登入 |
 | `FUBON_CERT_PATH`、`FUBON_CERT_PASSWORD` | Fubon | `.pfx` 憑證及其密碼 |
 | `FUBON_ACCOUNT` | Fubon | 選填：登入回傳多個帳號時要交易的帳號 |
+| `YUANTA_ACCOUNT` | Yuanta | `S` + 分公司代號（4）+ 帳號（7），例如 `S98875005091` |
+| `YUANTA_PASSWORD` | Yuanta | 帳戶的電子密碼 |
+| `YUANTA_CERT_PATH`、`YUANTA_CERT_PASSWORD` | Yuanta | `.pfx` 憑證及其密碼；Linux 與 macOS 必填 |
+| `YUANTA_DLL_DIR` | Yuanta | 元大 Spark API 檔案（`YuantaSparkAPI.dll` 等）所在的資料夾 |
+| `YUANTA_ENVIRONMENT` | Yuanta | `UAT`（元大的測試環境，預設）或 `PROD`（你的**正式帳戶**） |
 | `LLM_MODEL`、`LLM_API_KEY`、`GEMINI_API_KEY` | LLM 用戶端、CJShell `llm` | 使用的模型及其金鑰 |
 | `FINMIND_TOKEN` | FinMind 價格來源 | 選填；可提高請求次數上限 |
 
-`bash scripts/gen_config.sh sinopac` 和 `... fubon` 會寫出包含這些鍵的設定檔。`cjtrade.pkgs.config.broker_settings` 會把它們轉成 `AccountClient` 的參數，例如 `AccountClient(BrokerType.FUBON, **fubon_config())`。
+`bash scripts/gen_config.sh sinopac`、`... fubon` 和 `... yuanta` 會寫出包含這些鍵的設定檔。`cjtrade.pkgs.config.broker_settings` 會把它們轉成 `AccountClient` 的參數，例如 `AccountClient(BrokerType.FUBON, **fubon_config())`。
 
 !!! note "Sinopac 的舊名稱"
     Sinopac 的鍵以前沒有前綴（`API_KEY`、`SECRET_KEY`、`CA_CERT_PATH`、`CA_PASSWORD`、`SIMULATION`）。在 `SINOPAC_` 名稱未設定時仍會讀取舊名稱，並記錄一則警告。`SINOPAC_SIMULATION` 或 `SIMULATION` 任一個為 `y` 時，就會使用沙盒。

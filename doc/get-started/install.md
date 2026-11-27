@@ -52,6 +52,7 @@ Supported on Linux and macOS. Not tested on Windows.
     |---|---|---|
     | `sinopac` | the `shioaji` SDK | trading on Sinopac, and reading prices from Sinopac |
     | `fubon` | the `fubon-neo` SDK | trading on Fubon |
+    | `yuanta` | `pythonnet` (plus .NET 8 and Yuanta's Spark API files) | trading on Yuanta |
     | `finhub` | FastAPI and friends | the FinHub web UI |
     | `llm` | Gemini and Azure OpenAI clients | the shell's `llm` command, LLM helpers |
     | `news` | NewsAPI client | the NewsAPI news source |
