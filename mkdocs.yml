@@ -48,7 +48,11 @@ markdown_extensions:
   - attr_list
   - pymdownx.details
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed: {alternate_style: true}
 
 plugins:
@@ -72,6 +76,7 @@ plugins:
             Install: 安裝
             Key ideas: 基本概念
             Connect to a broker: 連線到券商
+            Live brokers: 實盤券商
             Account and orders: 帳戶與委託
             Market data: 行情資料
             Write a strategy: 撰寫策略
@@ -94,6 +99,8 @@ plugins:
             Broker interface: 券商介面
             ArenaX client: ArenaX 用戶端
             Sinopac adapter: 永豐金轉接層
+            Fubon adapter: 富邦轉接層
+            Yuanta adapter: 元大轉接層
             Models: 資料模型
             Cost model: 交易成本模型
             Risk gate: 風控閘門
@@ -132,6 +139,7 @@ nav:
       - Install: get-started/install.md
       - Key ideas: get-started/concepts.md
       - Connect to a broker: get-started/connect.md
+      - Live brokers: get-started/live-brokers.md
       - Account and orders: get-started/account-and-orders.md
       - Market data: get-started/market-data.md
       - Write a strategy: get-started/strategy.md
@@ -149,6 +157,8 @@ nav:
           - Broker interface: reference/broker-base.md
           - ArenaX client: reference/arenax-client.md
           - Sinopac adapter: reference/sinopac.md
+          - Fubon adapter: reference/fubon.md
+          - Yuanta adapter: reference/yuanta.md
       - Strategies:
           - Strategy authoring: reference/strategy-authoring.md
           - Loading strategy files: reference/user-strategy.md

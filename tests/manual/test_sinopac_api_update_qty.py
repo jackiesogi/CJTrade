@@ -1,18 +1,19 @@
 import os
 
 import shioaji as sj
+from cjtrade.pkgs.config.broker_settings import setting
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 
 load_supported_config_files()
 
 api = sj.Shioaji(simulation=False)
 api.login(
-    api_key=os.environ.get("API_KEY", ""),
-    secret_key=os.environ.get("SECRET_KEY", ""),
+    api_key=setting("SINOPAC_API_KEY", "API_KEY"),
+    secret_key=setting("SINOPAC_SECRET_KEY", "SECRET_KEY"),
 )
 api.activate_ca(
-    ca_path=os.environ.get("CA_CERT_PATH", ""),
-    ca_passwd=os.environ.get("CA_PASSWORD", ""),
+    ca_path=setting("SINOPAC_CA_CERT_PATH", "CA_CERT_PATH"),
+    ca_passwd=setting("SINOPAC_CA_PASSWORD", "CA_PASSWORD"),
 )
 
 def get_unfilled_trades(api):

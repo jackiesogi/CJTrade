@@ -61,8 +61,10 @@ Linux 是 `~/.local/share/cjtrade`、`~/.cache/cjtrade` 等。`arenaxd` 啟動�
 產生範本（寫到目前目錄的 `<template>_system.cjconf`）：
 
 ```sh
-bash scripts/gen_config.sh arenax     # API_KEY = testkey123，其他空白
-bash scripts/gen_config.sh sinopac    # 需要自行填入永豐憑證
+bash scripts/gen_config.sh arenax     # API_KEY = testkey123
+bash scripts/gen_config.sh sinopac    # SINOPAC_*，需要自行填入永豐憑證
+bash scripts/gen_config.sh fubon      # FUBON_*，需要自行填入富邦憑證
+bash scripts/gen_config.sh yuanta     # YUANTA_*，需要元大帳號、憑證與 Spark API 檔案路徑
 ```
 
 ### 其他環境變數
@@ -223,13 +225,15 @@ uv run aresh --port 8802 set-time 2025-09-01
 ### 啟動
 
 - 必要選項 `-B/--broker`。
-- 會載入 `.cjconf`，但只有 `--broker=sinopac` 會檢查 `API_KEY`、`SECRET_KEY`、`CA_CERT_PATH`、`CA_PASSWORD`，缺了就印出缺哪些並 exit 1。arenax 不需要任何設定檔。
+- 會載入 `.cjconf`，但`--broker=sinopac` 會檢查 `SINOPAC_API_KEY`、`SINOPAC_SECRET_KEY`、`SINOPAC_CA_CERT_PATH`、`SINOPAC_CA_PASSWORD`（舊的無前綴名稱仍可用，會印警告），`--broker=fubon` 會檢查 `FUBON_PERSONAL_ID`、`FUBON_CERT_PATH` 與 `FUBON_API_KEY` 或 `FUBON_PASSWORD`，缺了就印出缺哪些並 exit 1。arenax 不需要任何設定檔。
 - 不會自己啟動 ArenaX，要先跑 `uv run arenaxd`。連線位址取 `ARENAX_HOST`（localhost）與 `ARENAX_PORT`（8801）。
 
 | `--broker` | 行為 |
 |---|---|
 | `arenax` | 連 ArenaX，`api_key` 固定 `testkey123` |
-| `sinopac` | 永豐；`SIMULATION=y` 進模擬環境；mirror DB 在 `<data>/mirrors/sinopac_<USERNAME>.db` |
+| `sinopac` | 永豐；`SINOPAC_SIMULATION=y` 進模擬環境；mirror DB 在 `<data>/mirrors/sinopac_<USERNAME>.db` |
+| `fubon` | 富邦（**沒有模擬環境，一律真單**；測試中）；設定為 `FUBON_*`；mirror DB 在 `<data>/mirrors/fubon_<USERNAME>.db`；K 棒類指令需要另外的行情來源 |
+| `yuanta` | 元大（預設 UAT 測試環境，`YUANTA_ENVIRONMENT=PROD` 才是正式帳戶；測試中）；設定為 `YUANTA_*`，需要 .NET 8 與元大 Spark API 檔案；mirror DB 在 `<data>/mirrors/yuanta_<USERNAME>.db` |
 | `arenax_legacy` | ArenaX ＋ 永豐真實帳戶，需要永豐憑證（不檢查是否缺 key） |
 | `cathay`、`ibkr`、`mega` | 印「coming soon」後離開 |
 | 其他 | 印支援清單後離開（exit 0） |
@@ -841,7 +845,7 @@ SKIP=integration-cjshell-sinopac git commit -m "..."
 - shell 測試腳本的說明與 `--help` 只列實際支援的 broker；`run_broker_stability_tests.sh` 不再寫出沒人讀的帳戶檔。
 - `python -m cjtrade.pkgs.ui` 接受欄位旗標（`parse_known_args`）。
 - `cjshell -B arenax_legacy` 缺永豐憑證時先提示並結束。
-- `scripts/quick_imports.py` 預設連永豐模擬環境（`SIMULATION=n` 才連正式帳戶）。
+- `scripts/quick_imports.py` 預設連永豐模擬環境（`SINOPAC_SIMULATION=n` 才連正式帳戶）。
 - CI 的 ArenaX shell job 不再跑 `gen_config.sh arenax`。
 
 ## 仍待處理

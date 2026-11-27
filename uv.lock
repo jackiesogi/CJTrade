@@ -427,6 +427,7 @@ all = [
     { name = "bcrypt" },
     { name = "email-validator" },
     { name = "fastapi" },
+    { name = "fubon-neo" },
     { name = "google-genai" },
     { name = "httpx" },
     { name = "jinja2" },
@@ -436,6 +437,7 @@ all = [
     { name = "pydantic-settings" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
+    { name = "pythonnet" },
     { name = "shioaji" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -453,6 +455,9 @@ finhub = [
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
+fubon = [
+    { name = "fubon-neo" },
+]
 llm = [
     { name = "google-genai" },
     { name = "openai" },
@@ -462,6 +467,9 @@ news = [
 ]
 sinopac = [
     { name = "shioaji" },
+]
+yuanta = [
+    { name = "pythonnet" },
 ]
 
 [package.dev-dependencies]
@@ -483,11 +491,12 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.0" },
     { name = "apiflask", specifier = ">=2.2.0" },
     { name = "bcrypt", marker = "extra == 'finhub'", specifier = "==4.0.1" },
-    { name = "cjtrade", extras = ["sinopac", "llm", "news", "finhub"], marker = "extra == 'all'" },
+    { name = "cjtrade", extras = ["sinopac", "fubon", "yuanta", "llm", "news", "finhub"], marker = "extra == 'all'" },
     { name = "duckdb", specifier = ">=1.4.3" },
     { name = "email-validator", marker = "extra == 'finhub'", specifier = ">=2.3.0" },
     { name = "fastapi", marker = "extra == 'finhub'", specifier = ">=0.136.1" },
     { name = "flask", specifier = ">=3.1.2" },
+    { name = "fubon-neo", marker = "extra == 'fubon'", specifier = ">=2.5.0" },
     { name = "google-genai", marker = "extra == 'llm'", specifier = ">=1.56.0" },
     { name = "httpx", marker = "extra == 'finhub'", specifier = ">=0.28.1" },
     { name = "jinja2", marker = "extra == 'finhub'", specifier = ">=3.1.6" },
@@ -504,6 +513,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "python-jose", extras = ["cryptography"], marker = "extra == 'finhub'", specifier = ">=3.5.0" },
     { name = "python-multipart", marker = "extra == 'finhub'", specifier = ">=0.0.27" },
+    { name = "pythonnet", marker = "extra == 'yuanta'", specifier = ">=3.0.5" },
     { name = "pyzmq", specifier = ">=26.0" },
     { name = "quantstats", specifier = ">=0.0.81" },
     { name = "requests", specifier = ">=2.32" },
@@ -514,7 +524,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'finhub'", specifier = ">=0.46.0" },
     { name = "yfinance", specifier = ">=0.2.66" },
 ]
-provides-extras = ["sinopac", "llm", "news", "finhub", "all"]
+provides-extras = ["sinopac", "fubon", "yuanta", "llm", "news", "finhub", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -540,6 +550,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/46/61/de6cd827efad202d7057d93e0fed9294b96952e188f7384832791c7b2254/click-8.3.0.tar.gz", hash = "sha256:e7b8232224eba16f4ebe410c25ced9f7875cb5f3263ffc93cc3e8da705e229c4", size = 276943, upload-time = "2025-09-18T17:32:23.696Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/d3/9dcc0f5797f070ec8edf30fbadfb200e71d9db6b84d211e3b2085a7589a0/click-8.3.0-py3-none-any.whl", hash = "sha256:9b9f285302c6e3064f4330c05f05b81945b2a39544279343e6e7c5f27a9baddc", size = 107295, upload-time = "2025-09-18T17:32:22.42Z" },
+]
+
+[[package]]
+name = "clr-loader"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/46/7eea92b6aa2d68af78e049cbecec5f757f1aad44ecdecdc16bbad7eead51/clr_loader-0.3.1.tar.gz", hash = "sha256:2e073e9aaf49d1ae2f56ecba27987ad5fb68be4bcd9dd34a5bed8f0e4e128366", size = 86805, upload-time = "2026-04-18T17:49:44.287Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/da/ec1a6e36624000b6df0dd61183c42342ee5814c073315e802cadaad04d2f/clr_loader-0.3.1-py3-none-any.whl", hash = "sha256:cbad189de20d202a7d621956b0fc38049e13c9bf7ca2923441eff725cd121aa1", size = 55730, upload-time = "2026-04-18T17:49:42.99Z" },
 ]
 
 [[package]]
@@ -1122,6 +1144,36 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/89/76/c615883b7b521ead2944bb3480398cbb07e12b7b4e4d073d3752eb721558/frozenlist-1.8.0-cp314-cp314t-win_amd64.whl", hash = "sha256:06be8f67f39c8b1dc671f5d83aaefd3358ae5cdcf8314552c57e7ed3e6475bdd", size = 49451, upload-time = "2025-10-06T05:37:53.425Z" },
     { url = "https://files.pythonhosted.org/packages/e0/a3/5982da14e113d07b325230f95060e2169f5311b1017ea8af2a29b374c289/frozenlist-1.8.0-cp314-cp314t-win_arm64.whl", hash = "sha256:102e6314ca4da683dca92e3b1355490fed5f313b768500084fbe6371fddfdb79", size = 42507, upload-time = "2025-10-06T05:37:54.513Z" },
     { url = "https://files.pythonhosted.org/packages/9a/9a/e35b4a917281c0b8419d4207f4334c8e8c5dbf4f3f5f9ada73958d937dcc/frozenlist-1.8.0-py3-none-any.whl", hash = "sha256:0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d", size = 13409, upload-time = "2025-10-06T05:38:16.721Z" },
+]
+
+[[package]]
+name = "fubon-neo"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fugle-marketdata" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/7b/8d5e98699ef516107c35ad23ac6544cd95974a7a7ccd168bdf38b16827f1/fubon_neo-2.5.0-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:77fd49ac957557366edd3756e9c3de3faad10440f7fed1cd55d7fb215fc3e52e", size = 3064015, upload-time = "2026-11-12T08:14:50.903Z" },
+    { url = "https://files.pythonhosted.org/packages/85/0e/49f6fe9e68151903007df7a87b88f9d37d8f0fdde9e3f9dde401670400e8/fubon_neo-2.5.0-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:d96c59c32b392f9e68fcf09bef507e2d56760c012ef593995c11ec30a605f317", size = 2925957, upload-time = "2026-11-12T08:15:01.025Z" },
+    { url = "https://files.pythonhosted.org/packages/85/af/08448743b31c4f8152109cde708ce3c73e73ff4c67290dbfdfb4be66580e/fubon_neo-2.5.0-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:43b0a4400df24553ae10a91fbd9eccaac428ddfad5487ef02257a012f68b788e", size = 5160779, upload-time = "2026-11-12T08:15:15.481Z" },
+    { url = "https://files.pythonhosted.org/packages/46/00/71d01a3f4780b6560c6462e6fe345b61c98b40aafbf089847957b03888a2/fubon_neo-2.5.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:eba2b632b0c963d806b77dc06b4996fd4478435a7f61cc4c2dbd0fb1daa0c4c6", size = 5032713, upload-time = "2026-11-12T08:15:27.758Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/59/2af284756bc107656074ce31d77d5ee2f518bbf902b6456eb71436b76161/fubon_neo-2.5.0-cp37-abi3-win_amd64.whl", hash = "sha256:0b08ee203a6ac33be65a56c93ff7c58e1d1abebf437b2b8873aa6b94805095b1", size = 3199558, upload-time = "2026-11-12T08:15:36.443Z" },
+]
+
+[[package]]
+name = "fugle-marketdata"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "orjson" },
+    { name = "pyee" },
+    { name = "requests" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/92/84a9de552308f519f7c830e89ebf35f127d30c7da54714820a24ec8c03a8/fugle_marketdata-2.8.0.tar.gz", hash = "sha256:65cfe5bd28662890afe0a4b0162f1738190ba123b29a9f4719457cba26b5d677", size = 12038, upload-time = "2026-10-15T04:40:46.035Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/c1/a7eeb581e67ae7329fa29b2577304ec7e9c1c2bc98eb6fccc5236d6ca9e0/fugle_marketdata-2.8.0-py3-none-any.whl", hash = "sha256:6cc8765fe1bfc34e62ebb7f9b59840583f23a12a243b283a17fba80994e81a9d", size = 18280, upload-time = "2026-10-15T04:40:44.998Z" },
 ]
 
 [[package]]
@@ -2522,6 +2574,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyee"
+version = "11.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/20/3e646860d5a2f9c24b23b1964fb7c65312236883fa7b62d0f64456addc93/pyee-11.1.1.tar.gz", hash = "sha256:82e1eb1853f8497c4ff1a0c7fa26b9cd2f1253e2b6ffb93b4700fda907017302", size = 30002, upload-time = "2024-08-30T19:15:39.282Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/99/7e80837f60b13227f03334e3b0537d650dea2c0cea44c543b0a2e719a48f/pyee-11.1.1-py3-none-any.whl", hash = "sha256:9e4cdd7c2f9fcf247db94bad39a260aceffefdbe52286ce71be01959de34a5c2", size = 15300, upload-time = "2024-08-30T19:15:37.73Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2724,6 +2788,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/c0/c753d487a83d873f6946cee6cbc26cea3fe59a476ad0de99a14938a2fbd8/python_multipart-0.0.34.tar.gz", hash = "sha256:b998ae90ca6e1e363261ce2e0e230281b8af53867b757970abd69ee9edcd843a", size = 52456, upload-time = "2026-11-16T10:40:38.261Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/0e/090c52b122d8ec5fa37942c1410fea9cf04ce98bca0c84dde7f0aa11594d/python_multipart-0.0.34-py3-none-any.whl", hash = "sha256:ebacd224bd686eee2f9aa1066a657affe07435a185834e05e5235e2e59173e91", size = 32585, upload-time = "2026-11-16T10:40:37.119Z" },
+]
+
+[[package]]
+name = "pythonnet"
+version = "3.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "clr-loader" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/34/98f38d7ca1e9eb684d297d1d6a9420f3f3a32f411eae82a7f25a2b783539/pythonnet-3.2.1.tar.gz", hash = "sha256:c86e8dd31268f6e0c48fcc4d6030041316d49ed2764a1cb6ea8c37876e07c572", size = 257852, upload-time = "2026-10-08T12:23:35.866Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/dc/c96a542079a69d3d091e91808fc8aaf9a0d5e2f8e73a63560e4379134bb6/pythonnet-3.2.1-cp311.cp312.cp313.cp314.cp315-none-any.whl", hash = "sha256:dd5668b74b0c903d9a24e1ba86f728fc490f8e919d56b3c24bf06739b9ee2b7f", size = 222572, upload-time = "2026-10-08T12:23:34.129Z" },
 ]
 
 [[package]]
@@ -3441,6 +3517,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/37/64/17afc4e6f47eef154a553c6e56adcc9f1ac3003305c7df978d11aa62937e/webargs-8.7.1.tar.gz", hash = "sha256:799bf9039c76c23fd8dc1951107a75a9e561203c15d6ae8f89c1e46e234636c1", size = 97351, upload-time = "2025-10-29T16:07:50.066Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/ef/b0d17f3943429358184449771b592e0e1d33bbeaa6ed326434a95eac187b/webargs-8.7.1-py3-none-any.whl", hash = "sha256:a184aed9d2509e6e14ab99ee3e9dc3a614c7070affe94cd4dfdb0d002e0a6e5f", size = 32500, upload-time = "2025-10-29T16:07:47.895Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/cb/a5abcc2891249f393827c650c6296660ce40374ac22d99ab9aea41f9d2a2/websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0", size = 84110, upload-time = "2026-08-31T14:08:40.964Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/d2/cc4dc1271e464942db7ee278baae2daa99ee77cb2af744025c04da585a3e/websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce", size = 95786, upload-time = "2026-08-31T14:08:39.899Z" },
 ]
 
 [[package]]

@@ -19,6 +19,7 @@ from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_order
 from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_product
 from cjtrade.pkgs.brokers.sinopac._internal_func import _to_sinopac_ranktype
 from cjtrade.pkgs.brokers.sinopac._internal_func import cj_sj_order_map
+from cjtrade.pkgs.config.broker_settings import sinopac_credentials
 from cjtrade.pkgs.db.db_api import *
 from cjtrade.pkgs.logger import get_logger
 from cjtrade.pkgs.models.event import *
@@ -1134,10 +1135,7 @@ if __name__ == "__main__":
 
     client = AccountClient(
         BrokerType.SINOPAC,
-        api_key=os.environ.get("API_KEY", ""),
-        secret_key=os.environ.get("SECRET_KEY", ""),
-        ca_path=os.environ.get("CA_CERT_PATH", ""),
-        ca_passwd=os.environ.get("CA_PASSWORD", ""),
+        **sinopac_credentials(),
         simulation=False
     )
     client.connect()

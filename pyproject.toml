@@ -7,7 +7,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Shou-Chi Chen", email = "tuxsogi@gmail.com" }]
-keywords = ["trading", "backtesting", "taiwan", "twse", "sinopac", "shioaji", "quant"]
+keywords = ["trading", "backtesting", "taiwan", "twse", "sinopac", "shioaji", "fubon", "yuanta", "quant"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -50,6 +50,10 @@ Issues = "https://github.com/jackiesogi/CJTrade/issues"
 # see src/cjtrade/pkgs/utils/extras.py for how a missing one is reported.
 [project.optional-dependencies]
 sinopac = ["shioaji>=1.2.8"]
+fubon = ["fubon-neo>=2.5.0"]
+# Yuanta's Spark API is a .NET 8 assembly that Yuanta distributes itself;
+# this installs only the bridge to it.
+yuanta = ["pythonnet>=3.0.5"]
 llm = ["google-genai>=1.56.0", "openai>=2.26.0"]
 news = ["newsapi-python>=0.2.7"]
 # The FinHub web UI (apps/FinHub).
@@ -67,7 +71,7 @@ finhub = [
     "sqlalchemy>=2.0.49",
     "uvicorn[standard]>=0.46.0",
 ]
-all = ["cjtrade[sinopac,llm,news,finhub]"]
+all = ["cjtrade[sinopac,fubon,yuanta,llm,news,finhub]"]
 
 [project.scripts]
 cjtrade = "cjtrade.apps.CJTrade.main:cli"

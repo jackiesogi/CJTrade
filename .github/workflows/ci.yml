@@ -149,7 +149,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
       - run: uv sync
-      # The shell reads API_KEY etc. from a *.cjconf; ArenaX's needs no secret.
+      # The shell reads ArenaX's API_KEY from a *.cjconf; it needs no secret.
       - run: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all
       - uses: actions/upload-artifact@v4
         if: always()
@@ -197,9 +197,10 @@ jobs:
       group: integration-cjshell-sinopac
       cancel-in-progress: false
     env:
-      # Never real orders from CI: SIMULATION=y logs in to Sinopac's sandbox.
+      # Never real orders from CI: SINOPAC_SIMULATION=y logs in to Sinopac's
+      # sandbox, and no other setting can turn it off (either name saying y wins).
       # Set here, not from a secret, so no repository setting can turn it off.
-      SIMULATION: "y"
+      SINOPAC_SIMULATION: "y"
     # The secrets are handed only to the steps that read them, so checkout,
     # setup-uv and `uv sync` (third-party code) never see them.
     steps:
@@ -215,11 +216,11 @@ jobs:
         run: |
           umask 077
           printf '%s' "$CA_CERT_BASE64" | base64 -d > "$RUNNER_TEMP/Sinopac.pfx"
-          echo "CA_CERT_PATH=$RUNNER_TEMP/Sinopac.pfx" >> "$GITHUB_ENV"
+          echo "SINOPAC_CA_CERT_PATH=$RUNNER_TEMP/Sinopac.pfx" >> "$GITHUB_ENV"
       - env:
-          API_KEY: ${{ secrets.SINOPAC_API_KEY }}
-          SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
-          CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
+          SINOPAC_API_KEY: ${{ secrets.SINOPAC_API_KEY }}
+          SINOPAC_SECRET_KEY: ${{ secrets.SINOPAC_SECRET_KEY }}
+          SINOPAC_CA_PASSWORD: ${{ secrets.SINOPAC_CA_PASSWORD }}
         run: bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all
       # No log artifact here: the shell prints account details, and artifacts
       # of a public repository can be downloaded by anyone.

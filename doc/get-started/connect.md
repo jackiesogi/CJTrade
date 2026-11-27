@@ -4,6 +4,37 @@ This page starts ArenaX, the simulated broker, and connects to it from
 Python to read the account balance. Use two terminals: one for ArenaX, one
 for your code.
 
+## How `AccountClient` reaches a broker {#how-accountclient-reaches-a-broker}
+
+`AccountClient` is the only class your code uses. `BrokerType` picks an
+adapter that implements `BrokerAPIBase`; the adapter converts CJTrade's
+models (`Order`, `Position`, `Kbar`, ...) to and from the broker's own API.
+Prices go through `client.market`, a `MarketData` source chosen
+independently of the broker.
+
+```mermaid
+flowchart LR
+    Code["Your code"] --> AC["AccountClient"]
+    AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
+    AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
+    AC -- "BrokerType.FUBON" --> FBA["FubonBrokerAPI"]
+    AC -- "BrokerType.YUANTA" --> YTA["YuantaBrokerAPI"]
+    AC -. "client.market" .-> MD["MarketData"]
+    AXA -- "HTTP, 127.0.0.1" --> AXS["ArenaX server<br/>(arenaxd)"]
+    SPA -- "shioaji SDK" --> SPS["Sinopac"]
+    FBA -- "fubon_neo SDK" --> FBS["Fubon"]
+    YTA -- "Spark API (.NET)" --> YTS["Yuanta"]
+    subgraph Adapters["Adapters: subclasses of BrokerAPIBase"]
+        AXA
+        SPA
+        FBA
+        YTA
+    end
+```
+
+Adding a broker means writing one more adapter, as Fubon's and Yuanta's were; see the
+[Broker interface](../reference/broker-base.md).
+
 ## Step 1: start ArenaX
 
 In the first terminal, from the `CJTrade` folder:
@@ -86,28 +117,15 @@ market time.
     shows `sim env started`, then retry. See
     [Troubleshooting](troubleshooting.md) for other errors.
 
-## Sinopac (a real broker)
+## Live brokers
 
-Switching to Sinopac changes only the client constructor. It requires the
-`sinopac` extra and the API key, secret and certificate from
-[Sinopac's API portal](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4):
-
-```python
-client = AccountClient(
-    BrokerType.SINOPAC,
-    api_key="...", secret_key="...",
-    ca_path="/path/to/Sinopac.pfx", ca_passwd="...",
-    simulation=True,      # Sinopac's sandbox: orders are not real
-)
-client.connect()
-```
-
-!!! danger "`simulation=False` is your real account"
-    With `simulation=False` every order is a real order with real money.
-    Keep `simulation=True` until your code has run correctly on ArenaX and
-    on the sandbox.
+Switching to a real account changes only the `AccountClient` constructor:
+`BrokerType.SINOPAC`, `BrokerType.FUBON` or `BrokerType.YUANTA`, and that
+broker's credentials.
+[Live brokers](live-brokers.md) has the connection code for each, what
+each adapter converts, and which features each broker supports.
 
 Keep secrets out of code by putting them in a settings file; see
 [Configuration and paths](../reference/config.md).
 
-Next: [Account and orders](account-and-orders.md).
+Next: [Live brokers](live-brokers.md), or [Account and orders](account-and-orders.md).

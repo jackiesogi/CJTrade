@@ -2,6 +2,7 @@
 # rather than storing it in one file and mantain manually...
 
 GeneralImport = """\
+from cjtrade.pkgs.config.broker_settings import sinopac_config
 import os
 from cjtrade.pkgs import paths
 from cjtrade.pkgs.analytics.fundamental import *
@@ -17,11 +18,7 @@ from cjtrade.pkgs.models import *
 loaded = load_supported_config_files()
 
 config = {
-    'api_key': os.environ.get("API_KEY", ""),
-    'secret_key': os.environ.get("SECRET_KEY", ""),
-    'ca_path': os.environ.get("CA_CERT_PATH", ""),
-    'ca_passwd': os.environ.get("CA_PASSWORD", ""),
-    'simulation': True if os.environ.get("SIMULATION") == "y" else False,
+    **sinopac_config(),
 
     'username': os.environ.get('USERNAME', 'user000'),
     'news_source': os.environ.get('NEWS_SOURCE', 'cnyes'),

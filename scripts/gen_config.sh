@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Templates: arenax, sinopac
+# Templates: arenax, sinopac, fubon, yuanta
 TEMPLATE=$1
 OUTPUT_PATH="${TEMPLATE}_system.cjconf"
 
@@ -25,10 +25,7 @@ function write_line() {
 
 function generate_arenax_config() {
     write_line "# Broker-specific configuration"
-    write_line "API_KEY = testkey123"
-    write_line "SECRET_KEY = "
-    write_line "CA_CERT_PATH = "
-    write_line "CA_PASSWORD = "
+    write_line "API_KEY = testkey123   # the key every ArenaX server accepts"
     write_line ""
 
     write_line "# LLM-specific configuration"
@@ -48,11 +45,11 @@ function generate_arenax_config() {
 
 function generate_sinopac_config() {
     write_line "# Broker-specific configuration"
-    write_line "API_KEY = "
-    write_line "SECRET_KEY = "
-    write_line "CA_CERT_PATH = "
-    write_line "CA_PASSWORD = "
-    write_line "SIMULATION = n  # to see your real account status."
+    write_line "SINOPAC_API_KEY = "
+    write_line "SINOPAC_SECRET_KEY = "
+    write_line "SINOPAC_CA_CERT_PATH = "
+    write_line "SINOPAC_CA_PASSWORD = "
+    write_line "SINOPAC_SIMULATION = n  # n: your real account; y: Sinopac's sandbox"
     write_line ""
 
     echo "---- Note start ----"
@@ -74,10 +71,44 @@ function generate_sinopac_config() {
 
     echo "Sinopac configuration generated at $OUTPUT_PATH"
 }
+function generate_fubon_config() {
+    write_line "# Broker-specific configuration. Fubon has no sandbox: every order is real."
+    write_line "FUBON_PERSONAL_ID = "
+    write_line "# FUBON_API_KEY for an API-key login, or FUBON_PASSWORD for a password login."
+    write_line "FUBON_API_KEY = "
+    write_line "FUBON_CERT_PATH = "
+    write_line "FUBON_CERT_PASSWORD = "
+    write_line "# Optional: the account number to trade, if the login returns several."
+    write_line "FUBON_ACCOUNT = "
+    write_line ""
+    echo "---- Note start ----"
+    echo "Apply for Fubon Trade API access and get your certificate at https://www.fbs.com.tw/TradeAPI/"
+    echo "----  Note end  ----"
+    echo "Fubon configuration generated at $OUTPUT_PATH"
+}
+function generate_yuanta_config() {
+    write_line "# Broker-specific configuration. Testing in progress: use at your own risk."
+    write_line "# The account is S + branch (4) + account (7), e.g. S98875005091."
+    write_line "YUANTA_ACCOUNT = "
+    write_line "YUANTA_PASSWORD = "
+    write_line "# The .pfx certificate; required on Linux and macOS."
+    write_line "YUANTA_CERT_PATH = "
+    write_line "YUANTA_CERT_PASSWORD = "
+    write_line "# The folder with Yuanta's Spark API files (YuantaSparkAPI.dll and friends)."
+    write_line "YUANTA_DLL_DIR = "
+    write_line "# UAT: Yuanta's test environment. PROD: your real account."
+    write_line "YUANTA_ENVIRONMENT = UAT"
+    write_line ""
+    echo "---- Note start ----"
+    echo "Ask your Yuanta sales representative to enable API access, then get the Spark API files at"
+    echo "https://www.yuanta.com.tw/file-repository/content/sparkapi_docs/ (needs .NET 8)"
+    echo "----  Note end  ----"
+    echo "Yuanta configuration generated at $OUTPUT_PATH"
+}
 
 if [ -z "$TEMPLATE" ]; then
     echo "Usage: $0 <template>"
-    echo "Supported templates: [arenax, sinopac]"
+    echo "Supported templates: [arenax, sinopac, fubon, yuanta]"
     exit 1
 fi
 
@@ -85,6 +116,10 @@ function main() {
     create_file
     if [ "$TEMPLATE" == "sinopac" ]; then
         generate_sinopac_config
+    elif [ "$TEMPLATE" == "yuanta" ]; then
+        generate_yuanta_config
+    elif [ "$TEMPLATE" == "fubon" ]; then
+        generate_fubon_config
     elif [ "$TEMPLATE" == "arenax" ]; then
         generate_arenax_config
     else

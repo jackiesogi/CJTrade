@@ -48,14 +48,13 @@ preloaded price file with no network.
 ## How the pieces fit
 
 <!-- cjcheck: skip reason="a diagram" -->
-```
-   browser
-      │  only ever talks to FinHub
-      ▼
-   FinHub  :8000
-      ├── HTTP ──▶  engine status API   127.0.0.1:8898   (per-run token)
-      ├── HTTP ──▶  ArenaX broker       127.0.0.1:8802   (account, orders, market)
-      └── spawn ─▶  arenaxd  +  cjtrade  →  bot subprocesses
+```mermaid
+flowchart TB
+    U["Browser"] -- "only ever talks to FinHub" --> F["FinHub :8000"]
+    F -- "HTTP, per-run token" --> S["Engine status API<br/>127.0.0.1:8898"]
+    F -- "HTTP: account, orders, market" --> A["ArenaX broker<br/>127.0.0.1:8802"]
+    F -- "spawns" --> P["arenaxd + cjtrade"]
+    P --> Bots["Bot subprocesses"]
 ```
 
 Three sources, each the only one that can answer its own questions:

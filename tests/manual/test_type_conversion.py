@@ -5,6 +5,7 @@ from pathlib import Path
 
 from cjtrade.pkgs.brokers.account_client import *
 from cjtrade.pkgs.brokers.sinopac._internal_func import _from_sinopac_product
+from cjtrade.pkgs.config.broker_settings import setting
 from dotenv import load_dotenv
 from shioaji import Shioaji as sj
 
@@ -15,10 +16,10 @@ logging.getLogger('shioaji').setLevel(logging.WARNING)
 logging.getLogger().setLevel(logging.WARNING)
 
 config = {
-    'api_key': os.environ["API_KEY"],
-    'secret_key': os.environ["SECRET_KEY"],
-    'ca_path': os.environ["CA_CERT_PATH"],
-    'ca_passwd': os.environ["CA_PASSWORD"],
+    'api_key': setting("SINOPAC_API_KEY", "API_KEY"),
+    'secret_key': setting("SINOPAC_SECRET_KEY", "SECRET_KEY"),
+    'ca_path': setting("SINOPAC_CA_CERT_PATH", "CA_CERT_PATH"),
+    'ca_passwd': setting("SINOPAC_CA_PASSWORD", "CA_PASSWORD"),
     'simulation': False  # Use production environment to see actual holdings
 }
 

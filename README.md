@@ -16,8 +16,11 @@ changing it.
 
 ## Features
 
-- **One broker API.** `AccountClient` covers accounts, orders, quotes and
-  historical bars, the same way for every broker.
+- **One broker API, any broker.** `AccountClient` covers accounts, orders,
+  quotes and bars the same way for every broker. Each broker is an adapter
+  that converts CJTrade's orders, statuses and positions to its SDK, so a
+  strategy moves from the simulator to Sinopac, Fubon or Yuanta by changing
+  one argument.
 - **ArenaX, a built-in simulated broker.** A local server for demos, paper
   trading and backtests, with TWSE commission and tax applied to every fill.
 - **Reproducible backtesting.** A fast in-memory backtester, and a trading
@@ -31,11 +34,23 @@ changing it.
 - **Analytics.** Technical indicators (TA-Lib), TWSE fundamentals, news,
   LLM clients, quantstats reports and run diagnostics.
 
-| Broker | Status |
-|---|---|
-| **ArenaX** (simulated) | `demo`, `backtest`, `paper` backends |
-| **Sinopac** 永豐金證券 | Live trading and market data through `shioaji` |
-| Cathay, Yuanta, Mega, Interactive Brokers | Planned |
+| Broker | `BrokerType` | Status |
+|---|---|---|
+| **ArenaX** (simulated) | `ARENAX` | `demo`, `backtest`, `paper` backends |
+| **Sinopac** 永豐金證券 | `SINOPAC` | Live trading and market data through `shioaji`; sandbox available |
+| **Fubon** 富邦證券 | `FUBON` | Live trading and quotes through `fubon_neo`; **testing in progress, use at your own risk** |
+| **Yuanta** 元大證券 | `YUANTA` | Live trading and quotes through the Spark API (.NET); **testing in progress, use at your own risk** |
+| Cathay, Mega, Interactive Brokers | | Planned |
+
+<!-- cjcheck: skip reason="a diagram" -->
+```mermaid
+flowchart LR
+    Code["Your strategy / code"] --> AC["AccountClient"]
+    AC --> AX["ArenaX adapter"] --> AXS["ArenaX (simulated)"]
+    AC --> SP["Sinopac adapter"] --> SPS["Sinopac"]
+    AC --> FB["Fubon adapter"] --> FBS["Fubon"]
+    AC --> YT["Yuanta adapter"] --> YTS["Yuanta"]
+```
 
 ## Installation
 
@@ -63,6 +78,8 @@ a checkout for those.
 | Extra | Adds |
 |---|---|
 | `sinopac` | The Sinopac broker (`shioaji`), also needed by ArenaX's `backtest` and `paper` backends |
+| `fubon` | The Fubon broker (`fubon-neo`) |
+| `yuanta` | The Yuanta broker (`pythonnet`; also needs .NET 8 and Yuanta's Spark API files) |
 | `llm` | Gemini and Azure OpenAI clients |
 | `news` | The NewsAPI news source |
 | `finhub` | The FinHub web UI |
@@ -110,9 +127,23 @@ uv run cjshell --broker=arenax
 The [Get started guide](https://jackiesogi.github.io/CJTrade/get-started/connect/)
 walks through accounts, orders, market data, strategies and backtests.
 
-### Sinopac
+### Live brokers
 
-Generate a config file, fill in the credentials from
+The same client connects to a real account; only the constructor changes:
+
+<!-- cjcheck: static -->
+```python
+client = AccountClient(BrokerType.SINOPAC, api_key="...", secret_key="...",
+                       ca_path="Sinopac.pfx", ca_passwd="...", simulation=True)
+client = AccountClient(BrokerType.FUBON, personal_id="A123456789", api_key="...",
+                       cert_path="A123456789.pfx", cert_pass="...")
+client = AccountClient(BrokerType.YUANTA, account="S98875005091", password="...",
+                       cert_path="cert.pfx", cert_pass="...", dll_dir="YuantaSparkAPI",
+                       environment="UAT")
+```
+
+For the interactive shell on Sinopac, generate a config file, fill in the
+credentials from
 [Sinopac's API portal](https://ai.sinotrade.com.tw/python/Main/index.aspx#pag4),
 and connect:
 
@@ -123,9 +154,20 @@ uv run cjshell --broker=sinopac
 ```
 
 > [!CAUTION]
-> A Sinopac session places **real orders**, and the shell does not ask for
-> confirmation. Set `SIMULATION = y` in the config file to use Sinopac's
-> sandbox.
+> A live session places **real orders**, and the shell does not ask for
+> confirmation. Set `SINOPAC_SIMULATION = y` in the config file to use
+> Sinopac's sandbox. Fubon has no sandbox; Yuanta uses its test environment
+> until `YUANTA_ENVIRONMENT = PROD`. Their settings are `FUBON_*` and
+> `YUANTA_*` (`bash scripts/gen_config.sh fubon` / `yuanta`).
+
+> [!WARNING]
+> **Fubon and Yuanta: testing in progress, use at your own risk.** Both
+> adapters follow the brokers' official SDKs and are unit-tested, but have
+> not yet placed an order on a live account. Start with small odd-lot
+> orders and check every result against the broker's own app.
+
+[Live brokers](https://jackiesogi.github.io/CJTrade/get-started/live-brokers/)
+compares the brokers and shows what each adapter converts.
 
 ## Backtesting
 
@@ -240,4 +282,5 @@ commit and PR conventions are in [`CLAUDE.md`](https://github.com/jackiesogi/CJT
 CJTrade is not investment advice, and nothing it prints is a recommendation to
 buy or sell. It can place real orders on a real account; you are responsible
 for every order it sends and for any loss that follows. Test a strategy on
-ArenaX, then on Sinopac's sandbox, before trading real money.
+ArenaX, then with small orders on a live account (Sinopac's sandbox where
+available), before trading real money.

@@ -11,7 +11,7 @@ CJTrade 安裝的所有指令及其用途和選項。在原始碼目錄中，每
 | [`insight`](#insight) | 針對已完成的執行產生診斷報告 | 不需要 | |
 | [`strategy-tool`](#strategy-tool) | 策略檔的範本、檢查和可用詞彙 | 不需要 | |
 | [`backtest`](#backtest) | 從命令列對內建策略做一次性回測（oneshot） | 不需要，在 ArenaX 上執行 | 使用 ArenaX 的埠 |
-| [`cjshell`](#cjshell) | 操作帳戶的互動式命令列 | 只有 Sinopac 需要 | 使用 ArenaX 的埠 |
+| [`cjshell`](#cjshell) | 操作帳戶的互動式命令列 | 只有 Sinopac、Fubon 和 Yuanta 需要 | 使用 ArenaX 的埠 |
 | [`finhub`](#finhub) | 交易引擎的網頁介面 | 不需要 | 8000 |
 | `aresh` | 管理執行中 ArenaX 伺服器的 shell | 不需要 | 使用 ArenaX 的埠 |
 
@@ -122,12 +122,12 @@ backend 的其他設定見[設定與路徑](config.md#arenax-server-settings)中
 ## `cjshell` {#cjshell}
 
 ```sh
-cjshell --broker=arenax|sinopac [COMMAND [ARGS...]]
+cjshell --broker=arenax|sinopac|fubon|yuanta [COMMAND [ARGS...]]
 ```
 
 指定指令時執行一次後結束；未指定則開啟提示字元。讀取
-`arenax_system.cjconf` 或 `sinopac_system.cjconf`（用
-`bash scripts/gen_config.sh arenax|sinopac` 建立）。`help` 會列出所有指令；
+`*.cjconf` 設定檔（用
+`bash scripts/gen_config.sh arenax|sinopac|fubon|yuanta` 建立）。`help` 會列出所有指令；
 常用指令見 [CJShell 與 FinHub](../get-started/shell-and-finhub.md#cjshell)。
 
 ## `finhub` {#finhub}
@@ -144,7 +144,7 @@ cjshell --broker=arenax|sinopac [COMMAND [ARGS...]]
 
 | 腳本 | 作用 |
 |---|---|
-| `bash scripts/gen_config.sh arenax|sinopac` | 為 CJShell 寫出設定檔 |
+| `bash scripts/gen_config.sh arenax|sinopac|fubon|yuanta` | 為 CJShell 寫出設定檔 |
 | `bash poc/backtest.sh` | 以表單操作的一次性回測（oneshot）工具；必要時會啟動 `arenaxd` |
 | `bash tests/run_broker_stability_tests.sh --broker=arenax` | ArenaX 整合測試 |
 | `uv run pytest tests/unit` | 單元測試 |

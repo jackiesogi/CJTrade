@@ -9,7 +9,7 @@ table below.
 | Connect, read the account, place orders | [AccountClient](account-client.md) |
 | Write your own broker adapter | [Broker interface](broker-base.md) |
 | Talk to ArenaX directly, including its clock | [ArenaX client](arenax-client.md) |
-| Know what the Sinopac adapter does | [Sinopac adapter](sinopac.md) |
+| Know what a live-broker adapter does | [Sinopac adapter](sinopac.md), [Fubon adapter](fubon.md), [Yuanta adapter](yuanta.md) |
 | Write a strategy file | [Strategy authoring](strategy-authoring.md), [Loading strategy files](user-strategy.md) |
 | Write a class-based strategy | [BaseStrategy](base-strategy.md), [Built-in strategies](strategies.md), [Strategy parameters](strategy-parameters.md) |
 | Get prices from any source | [Market data](market-data.md) |

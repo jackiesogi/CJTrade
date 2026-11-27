@@ -15,8 +15,7 @@ CJShell 從 `.cjconf` 設定檔讀取連線設定。為 ArenaX 產生一份：
 bash scripts/gen_config.sh arenax
 ```
 
-這會在目前目錄寫出 `arenax_system.cjconf`，`API_KEY = testkey123` 已設定，其餘
-鍵留空。只有使用 `llm` 指令或永豐金證券 Sinopac 時才需要填寫其餘的鍵。
+這會在目前目錄寫出 `arenax_system.cjconf`，`API_KEY = testkey123` 已設定，LLM 相關的鍵留空，只有使用 `llm` 指令時才需要填寫。實盤券商的設定檔由 `bash scripts/gen_config.sh sinopac`、`... fubon` 和 `... yuanta` 產生。
 
 ### 執行一個指令，或連續執行多個
 
@@ -67,11 +66,8 @@ Market Value: 2,360.000
 Total Unrealized PnL: -57.400 (-2.37%)
 ```
 
-!!! danger "在 Sinopac 上，CJShell 會直接下真的委託，不會再確認"
-    `uv run cjshell --broker=sinopac` 讀取 `sinopac_system.cjconf`（以
-    `bash scripts/gen_config.sh sinopac` 產生，再填入金鑰）。`buy` 會立即送出
-    真實委託，不經確認。產生的檔案預設為 `SIMULATION = n`，即正式帳戶；改為
-    `SIMULATION = y` 才會使用永豐的沙盒（模擬環境）。
+!!! danger "在實盤券商上，CJShell 會直接下真的委託，不會再確認"
+    `uv run cjshell --broker=sinopac`、`--broker=fubon` 和 `--broker=yuanta` 讀取 `bash scripts/gen_config.sh sinopac` / `fubon` / `yuanta` 產生的設定（再填入金鑰）。`buy` 會立即送出真實委託，不經確認。Sinopac 的設定檔預設為 `SINOPAC_SIMULATION = n`，即正式帳戶；改為 `y` 才會使用永豐的沙盒（模擬環境）。Fubon 沒有沙盒；Yuanta 在設定 `YUANTA_ENVIRONMENT = PROD` 之前都使用元大的測試環境。
 
 ## FinHub {#finhub}
 

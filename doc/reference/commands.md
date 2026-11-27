@@ -12,7 +12,7 @@ checkout, prefix each with `uv run` (`uv run arenaxd`); after
 | [`insight`](#insight) | diagnostic report for a finished run | no | |
 | [`strategy-tool`](#strategy-tool) | templates, checks and the vocabulary for strategy files | no | |
 | [`backtest`](#backtest) | oneshot backtest of a built-in strategy from the command line | no, on ArenaX | uses ArenaX's port |
-| [`cjshell`](#cjshell) | interactive command line for an account | Sinopac only | uses ArenaX's port |
+| [`cjshell`](#cjshell) | interactive command line for an account | Sinopac, Fubon and Yuanta only | uses ArenaX's port |
 | [`finhub`](#finhub) | web UI for the trading engine | no | 8000 |
 | `aresh` | admin shell for a running ArenaX server | no | uses ArenaX's port |
 
@@ -131,12 +131,12 @@ ArenaX server.
 ## `cjshell` {#cjshell}
 
 ```sh
-cjshell --broker=arenax|sinopac [COMMAND [ARGS...]]
+cjshell --broker=arenax|sinopac|fubon|yuanta [COMMAND [ARGS...]]
 ```
 
 With a command, runs it once and exits; without, opens a prompt. Reads
-`arenax_system.cjconf` or `sinopac_system.cjconf` (create them with
-`bash scripts/gen_config.sh arenax|sinopac`). `help` lists every command;
+the `*.cjconf` settings files (create them with
+`bash scripts/gen_config.sh arenax|sinopac|fubon|yuanta`). `help` lists every command;
 the common ones are in [CJShell and FinHub](../get-started/shell-and-finhub.md#cjshell).
 
 ## `finhub` {#finhub}
@@ -153,7 +153,7 @@ Settings are `FINHUB_*` environment variables; see the
 
 | Script | Does |
 |---|---|
-| `bash scripts/gen_config.sh arenax|sinopac` | writes a settings file for CJShell |
+| `bash scripts/gen_config.sh arenax|sinopac|fubon|yuanta` | writes a settings file for CJShell |
 | `bash poc/backtest.sh` | the oneshot backtester driven by a form; starts `arenaxd` if needed |
 | `bash tests/run_broker_stability_tests.sh --broker=arenax` | ArenaX integration tests |
 | `uv run pytest tests/unit` | unit tests |

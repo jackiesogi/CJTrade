@@ -7,6 +7,8 @@ from cjtrade.pkgs.brokers.account_client import BrokerType
 from cjtrade.pkgs.brokers.sinopac.sinopac_broker_api import SinopacBrokerAPI
 from cjtrade.pkgs.chart.kbar_client import KbarChartClient
 from cjtrade.pkgs.chart.kbar_client import KbarChartType
+from cjtrade.pkgs.config.broker_settings import setting
+from cjtrade.pkgs.config.broker_settings import sinopac_config
 from cjtrade.pkgs.models.kbar import Kbar
 from cjtrade.pkgs.models.order import *
 from cjtrade.pkgs.models.position import Position
@@ -19,11 +21,9 @@ load_dotenv()
 
 def get_config():
     return {
-        'api_key': os.getenv('API_KEY'),
-        'secret_key': os.getenv('SECRET_KEY'),
-        'ca_path': os.getenv('CA_CERT_PATH'),
-        'ca_passwd': os.getenv('CA_PASSWORD'),
-        'simulation': os.getenv('SIMULATION', 'y') == 'y',   # sandbox unless SIMULATION=n
+        **sinopac_config(),
+        # Sandbox unless SINOPAC_SIMULATION=n says otherwise.
+        'simulation': setting('SINOPAC_SIMULATION', 'SIMULATION').lower() != 'n',
     }
 
 def get_client(broker_type=BrokerType.SINOPAC):

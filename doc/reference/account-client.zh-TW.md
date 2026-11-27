@@ -1,9 +1,9 @@
 # AccountClient
 
-使用者唯一需要面對的券商 API。同一組呼叫可以用在 ArenaX 和永豐，用 `BrokerType` 選擇券商。
+使用者唯一需要面對的券商 API。同一組呼叫可以用在 ArenaX、永豐、富邦和元大，用 `BrokerType` 選擇券商。詳見[實盤券商](../get-started/live-brokers.md)。
 
 !!! danger
-    使用 `BrokerType.SINOPAC` 且 `simulation=False` 時，下單相關的方法會作用在真實帳戶上。
+    使用 `BrokerType.SINOPAC` 且 `simulation=False`，或使用 `BrokerType.FUBON`（沒有沙盒），或 `BrokerType.YUANTA` 且 `environment="PROD"` 時，下單相關的方法會作用在真實帳戶上。Fubon 與 Yuanta 仍在測試中，使用風險請自行承擔。
 
 ::: cjtrade.pkgs.brokers.account_client.AccountClient
 
