@@ -40,6 +40,15 @@ FUBON_SETTINGS = {
     "account": "FUBON_ACCOUNT",
 }
 
+YUANTA_SETTINGS = {
+    "account": "YUANTA_ACCOUNT",
+    "password": "YUANTA_PASSWORD",
+    "cert_path": "YUANTA_CERT_PATH",
+    "cert_pass": "YUANTA_CERT_PASSWORD",
+    "dll_dir": "YUANTA_DLL_DIR",
+    "environment": "YUANTA_ENVIRONMENT",
+}
+
 _warned: set[str] = set()
 
 
@@ -116,3 +125,23 @@ def fubon_missing(env: Optional[Mapping[str, str]] = None) -> list[str]:
     if not (env.get("FUBON_API_KEY") or env.get("FUBON_PASSWORD")):
         missing.append("FUBON_API_KEY or FUBON_PASSWORD")
     return missing
+
+
+def yuanta_config(env: Optional[Mapping[str, str]] = None) -> dict:
+    """``AccountClient(BrokerType.YUANTA, **...)`` arguments from ``YUANTA_*`` settings.
+
+    ``YUANTA_ENVIRONMENT`` defaults to ``UAT`` (Yuanta's test environment) in
+    the adapter; set it to ``PROD`` for the real account.
+    """
+    env = _env(env)
+    return {arg: env[name] for arg, name in YUANTA_SETTINGS.items() if env.get(name)}
+
+
+def yuanta_missing(env: Optional[Mapping[str, str]] = None, windows: bool = False) -> list[str]:
+    """The ``YUANTA_*`` settings that are needed and unset. The certificate is
+    needed on Linux and macOS only."""
+    env = _env(env)
+    needed = ["YUANTA_ACCOUNT", "YUANTA_PASSWORD", "YUANTA_DLL_DIR"]
+    if not windows:
+        needed += ["YUANTA_CERT_PATH", "YUANTA_CERT_PASSWORD"]
+    return [n for n in needed if not env.get(n)]

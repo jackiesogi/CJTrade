@@ -6,6 +6,7 @@ SDK are extras in pyproject.toml:
 
     sinopac   shioaji                    the Sinopac broker
     fubon     fubon-neo                  the Fubon broker
+    yuanta    pythonnet                  the Yuanta broker (plus .NET 8 and Yuanta's DLL)
     llm       google-genai, openai       Gemini and Azure OpenAI clients
     news      newsapi-python             the NewsAPI news provider
     all       every extra above

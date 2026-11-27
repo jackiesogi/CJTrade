@@ -25,6 +25,8 @@ from cjtrade.pkgs.config.broker_settings import fubon_config
 from cjtrade.pkgs.config.broker_settings import fubon_missing
 from cjtrade.pkgs.config.broker_settings import sinopac_config
 from cjtrade.pkgs.config.broker_settings import sinopac_missing
+from cjtrade.pkgs.config.broker_settings import yuanta_config
+from cjtrade.pkgs.config.broker_settings import yuanta_missing
 from cjtrade.pkgs.config.config_loader import load_supported_config_files
 from cjtrade.pkgs.logger import get_console
 from cjtrade.pkgs.logger import get_logger
@@ -1004,6 +1006,17 @@ def main():
         fubon.update(fubon_config())
         fubon["mirror_db_path"] = str(paths.mirror_db_path("fubon", config["username"]))
         client = AccountClient(BrokerType.FUBON, **fubon)
+    elif args.broker == 'yuanta':
+        missing = yuanta_missing(windows=sys.platform == "win32")
+        if missing:
+            out.info(f"--broker=yuanta needs {', '.join(missing)} "
+                     f"(in a .cjconf file or the environment)")
+            exit(1)
+        yuanta = {k: v for k, v in config.items()
+                  if k not in ('api_key', 'secret_key', 'ca_path', 'ca_passwd', 'simulation')}
+        yuanta.update(yuanta_config())
+        yuanta["mirror_db_path"] = str(paths.mirror_db_path("yuanta", config["username"]))
+        client = AccountClient(BrokerType.YUANTA, **yuanta)
     elif args.broker == 'arenax_legacy':
         missing = sinopac_missing()
         if missing:

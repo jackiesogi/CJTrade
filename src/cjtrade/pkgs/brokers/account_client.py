@@ -24,8 +24,9 @@ class BrokerType(Enum):
 
     Warnings
     --------
-    YUANTA and CATHAY are not implemented; AccountClient raises
-    NotImplementedError for them. ArenaX is the simulated broker.
+    CATHAY is not implemented; AccountClient raises NotImplementedError for
+    it. FUBON and YUANTA are new and not yet run against a live account
+    (testing in progress, use at your own risk). ArenaX is the simulated broker.
     """
     SINOPAC = "sinopac"  # 永豐金
     FUBON   = "fubon"    # 富邦
@@ -77,7 +78,7 @@ class AccountClient:
         BrokerType.SINOPAC or BrokerType.FUBON is chosen but its extra
         (``sinopac`` / ``fubon``) is not installed.
     NotImplementedError
-        BrokerType.YUANTA or BrokerType.CATHAY is chosen.
+        BrokerType.CATHAY is chosen.
     ValueError
         The broker type is not supported.
     """
@@ -102,7 +103,10 @@ class AccountClient:
             except ImportError as e:
                 raise missing_extra("fubon", e) from e
             return FubonBrokerAPI(**config)
-        elif broker_type in (BrokerType.YUANTA, BrokerType.CATHAY):
+        elif broker_type == BrokerType.YUANTA:
+            from cjtrade.pkgs.brokers.yuanta.yuanta_broker_api import YuantaBrokerAPI
+            return YuantaBrokerAPI(**config)
+        elif broker_type == BrokerType.CATHAY:
             raise NotImplementedError(
                 f"The {broker_type.value} broker is not implemented yet")
         elif broker_type == BrokerType.ARENAX:

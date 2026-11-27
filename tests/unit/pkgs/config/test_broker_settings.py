@@ -59,3 +59,16 @@ class TestFubon:
     def test_missing_settings_are_named(self):
         assert bs.fubon_missing({}) == ["FUBON_PERSONAL_ID", "FUBON_CERT_PATH",
                                         "FUBON_API_KEY or FUBON_PASSWORD"]
+
+
+class TestYuanta:
+    def test_set_settings_become_arguments(self):
+        env = {"YUANTA_ACCOUNT": "S1", "YUANTA_PASSWORD": "p", "YUANTA_DLL_DIR": "/d",
+               "YUANTA_ENVIRONMENT": "PROD", "YUANTA_CERT_PATH": ""}
+        assert bs.yuanta_config(env) == {"account": "S1", "password": "p", "dll_dir": "/d",
+                                         "environment": "PROD"}
+
+    def test_the_certificate_is_needed_off_windows_only(self):
+        env = {"YUANTA_ACCOUNT": "S1", "YUANTA_PASSWORD": "p", "YUANTA_DLL_DIR": "/d"}
+        assert bs.yuanta_missing(env, windows=True) == []
+        assert bs.yuanta_missing(env) == ["YUANTA_CERT_PATH", "YUANTA_CERT_PASSWORD"]

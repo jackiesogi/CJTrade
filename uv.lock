@@ -437,6 +437,7 @@ all = [
     { name = "pydantic-settings" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
+    { name = "pythonnet" },
     { name = "shioaji" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -467,6 +468,9 @@ news = [
 sinopac = [
     { name = "shioaji" },
 ]
+yuanta = [
+    { name = "pythonnet" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -487,7 +491,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.0" },
     { name = "apiflask", specifier = ">=2.2.0" },
     { name = "bcrypt", marker = "extra == 'finhub'", specifier = "==4.0.1" },
-    { name = "cjtrade", extras = ["sinopac", "fubon", "llm", "news", "finhub"], marker = "extra == 'all'" },
+    { name = "cjtrade", extras = ["sinopac", "fubon", "yuanta", "llm", "news", "finhub"], marker = "extra == 'all'" },
     { name = "duckdb", specifier = ">=1.4.3" },
     { name = "email-validator", marker = "extra == 'finhub'", specifier = ">=2.3.0" },
     { name = "fastapi", marker = "extra == 'finhub'", specifier = ">=0.136.1" },
@@ -509,6 +513,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "python-jose", extras = ["cryptography"], marker = "extra == 'finhub'", specifier = ">=3.5.0" },
     { name = "python-multipart", marker = "extra == 'finhub'", specifier = ">=0.0.27" },
+    { name = "pythonnet", marker = "extra == 'yuanta'", specifier = ">=3.0.5" },
     { name = "pyzmq", specifier = ">=26.0" },
     { name = "quantstats", specifier = ">=0.0.81" },
     { name = "requests", specifier = ">=2.32" },
@@ -519,7 +524,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'finhub'", specifier = ">=0.46.0" },
     { name = "yfinance", specifier = ">=0.2.66" },
 ]
-provides-extras = ["sinopac", "fubon", "llm", "news", "finhub", "all"]
+provides-extras = ["sinopac", "fubon", "yuanta", "llm", "news", "finhub", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -545,6 +550,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/46/61/de6cd827efad202d7057d93e0fed9294b96952e188f7384832791c7b2254/click-8.3.0.tar.gz", hash = "sha256:e7b8232224eba16f4ebe410c25ced9f7875cb5f3263ffc93cc3e8da705e229c4", size = 276943, upload-time = "2025-09-18T17:32:23.696Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/d3/9dcc0f5797f070ec8edf30fbadfb200e71d9db6b84d211e3b2085a7589a0/click-8.3.0-py3-none-any.whl", hash = "sha256:9b9f285302c6e3064f4330c05f05b81945b2a39544279343e6e7c5f27a9baddc", size = 107295, upload-time = "2025-09-18T17:32:22.42Z" },
+]
+
+[[package]]
+name = "clr-loader"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/46/7eea92b6aa2d68af78e049cbecec5f757f1aad44ecdecdc16bbad7eead51/clr_loader-0.3.1.tar.gz", hash = "sha256:2e073e9aaf49d1ae2f56ecba27987ad5fb68be4bcd9dd34a5bed8f0e4e128366", size = 86805, upload-time = "2026-04-18T17:49:44.287Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/da/ec1a6e36624000b6df0dd61183c42342ee5814c073315e802cadaad04d2f/clr_loader-0.3.1-py3-none-any.whl", hash = "sha256:cbad189de20d202a7d621956b0fc38049e13c9bf7ca2923441eff725cd121aa1", size = 55730, upload-time = "2026-04-18T17:49:42.99Z" },
 ]
 
 [[package]]
@@ -2771,6 +2788,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/c0/c753d487a83d873f6946cee6cbc26cea3fe59a476ad0de99a14938a2fbd8/python_multipart-0.0.34.tar.gz", hash = "sha256:b998ae90ca6e1e363261ce2e0e230281b8af53867b757970abd69ee9edcd843a", size = 52456, upload-time = "2026-11-16T10:40:38.261Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/0e/090c52b122d8ec5fa37942c1410fea9cf04ce98bca0c84dde7f0aa11594d/python_multipart-0.0.34-py3-none-any.whl", hash = "sha256:ebacd224bd686eee2f9aa1066a657affe07435a185834e05e5235e2e59173e91", size = 32585, upload-time = "2026-11-16T10:40:37.119Z" },
+]
+
+[[package]]
+name = "pythonnet"
+version = "3.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "clr-loader" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/34/98f38d7ca1e9eb684d297d1d6a9420f3f3a32f411eae82a7f25a2b783539/pythonnet-3.2.1.tar.gz", hash = "sha256:c86e8dd31268f6e0c48fcc4d6030041316d49ed2764a1cb6ea8c37876e07c572", size = 257852, upload-time = "2026-10-08T12:23:35.866Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/dc/c96a542079a69d3d091e91808fc8aaf9a0d5e2f8e73a63560e4379134bb6/pythonnet-3.2.1-cp311.cp312.cp313.cp314.cp315-none-any.whl", hash = "sha256:dd5668b74b0c903d9a24e1ba86f728fc490f8e919d56b3c24bf06739b9ee2b7f", size = 222572, upload-time = "2026-10-08T12:23:34.129Z" },
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Templates: arenax, sinopac, fubon
+# Templates: arenax, sinopac, fubon, yuanta
 TEMPLATE=$1
 OUTPUT_PATH="${TEMPLATE}_system.cjconf"
 
@@ -86,10 +86,29 @@ function generate_fubon_config() {
     echo "----  Note end  ----"
     echo "Fubon configuration generated at $OUTPUT_PATH"
 }
+function generate_yuanta_config() {
+    write_line "# Broker-specific configuration. Testing in progress: use at your own risk."
+    write_line "# The account is S + branch (4) + account (7), e.g. S98875005091."
+    write_line "YUANTA_ACCOUNT = "
+    write_line "YUANTA_PASSWORD = "
+    write_line "# The .pfx certificate; required on Linux and macOS."
+    write_line "YUANTA_CERT_PATH = "
+    write_line "YUANTA_CERT_PASSWORD = "
+    write_line "# The folder with Yuanta's Spark API files (YuantaSparkAPI.dll and friends)."
+    write_line "YUANTA_DLL_DIR = "
+    write_line "# UAT: Yuanta's test environment. PROD: your real account."
+    write_line "YUANTA_ENVIRONMENT = UAT"
+    write_line ""
+    echo "---- Note start ----"
+    echo "Ask your Yuanta sales representative to enable API access, then get the Spark API files at"
+    echo "https://www.yuanta.com.tw/file-repository/content/sparkapi_docs/ (needs .NET 8)"
+    echo "----  Note end  ----"
+    echo "Yuanta configuration generated at $OUTPUT_PATH"
+}
 
 if [ -z "$TEMPLATE" ]; then
     echo "Usage: $0 <template>"
-    echo "Supported templates: [arenax, sinopac, fubon]"
+    echo "Supported templates: [arenax, sinopac, fubon, yuanta]"
     exit 1
 fi
 
@@ -97,6 +116,8 @@ function main() {
     create_file
     if [ "$TEMPLATE" == "sinopac" ]; then
         generate_sinopac_config
+    elif [ "$TEMPLATE" == "yuanta" ]; then
+        generate_yuanta_config
     elif [ "$TEMPLATE" == "fubon" ]; then
         generate_fubon_config
     elif [ "$TEMPLATE" == "arenax" ]; then

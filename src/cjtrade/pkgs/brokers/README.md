@@ -15,14 +15,16 @@ dashboard — can be pointed at another broker without being rewritten.
 ### Currently available
 - **Sinopac** (永豐金證券) — full implementation with real-time data and trading
 - **Fubon** (富邦證券) — orders, account and quotes through `fubon_neo`
-  (`fubon/`); bars come from a separate MarketData. Not yet run against a
-  live account
+  (`fubon/`); bars come from a separate MarketData. Testing in progress:
+  not yet run against a live account, use at your own risk
+- **Yuanta** (元大證券) — orders, account and quotes through the Spark API
+  (`yuanta/`, a .NET 8 assembly loaded with pythonnet). Testing in progress:
+  not yet run against a live account, use at your own risk
 - **ArenaX** (模擬環境) — the built-in simulator: paper trading (模擬交易) and
   backtesting (回測)
 
 ### Coming soon
 - **Cathay** (國泰證券) — directory exists, methods not implemented
-- **Yuanta** (元大證券) — directory exists, methods not implemented
 - **Mega** (兆豐證券)
 - **Interactive Brokers** (盈透證券)
 

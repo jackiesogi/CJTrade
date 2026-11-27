@@ -10,8 +10,9 @@ Usage::
     client.connect()
     print(client.get_balance())
 
-Every order method acts on a real account: Fubon has no sandbox flag in the
-SDK. Prices for bars come from a separate MarketData (``AccountClient(...,
+Testing in progress, use at your own risk: not yet run against a Fubon
+account. Every order method acts on a real account: Fubon has no sandbox flag
+in the SDK. Prices for bars come from a separate MarketData (``AccountClient(...,
 market=...)``); this adapter serves quotes only.
 """
 from __future__ import annotations
