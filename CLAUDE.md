@@ -49,7 +49,7 @@ uv sync                                   # install
 source .venv/bin/activate
 
 uv run pytest                            # unit + integration (arenax/ skips without arenaxd; cjtrade/ starts its own)
-uv run pytest tests/unit/ -q              # ~850 tests, ~50s, no network
+uv run pytest tests/unit/ -q              # ~1,400 tests, ~65s, no network
 bash tests/run_broker_stability_tests.sh --broker=arenax   # starts arenaxd :8801, runs tests/integration/arenax
 uv run pytest tests/integration/cjtrade  # engine end to end, offline (~45s, starts arenaxd :8802)
 uv run arenaxd --backend=demo             # ArenaX broker-side server (demo :8801, backtest :8802)
@@ -505,10 +505,9 @@ class BalanceCommand(CommandBase):
   orders**. Use `SKIP=integration-cjshell-sinopac` unless the user asked for it; never set
   `SIMULATION=y` in that hook to make it safe — the user keeps it real on
   purpose.
-- `_is_sufficient_account_inventory` / `_is_sufficient_account_balance`
-  (`base_backend.py`) compare against **filled** position and cash
-  only. Resting orders reserve nothing, so N identical sells all pass and the
-  account can oversell. Same hole for cash on the buy side.
+- ArenaX fills every order in full at its limit price: no partial fills,
+  `PriceType.MKT` is matched as a limit, and the slippage setting is never
+  applied.
 - `AX_INITIAL_BALANCE` sets ArenaX's starting cash for a fresh account
   (no `AX_STATE_FILE`); FinHub sets it from the run's fund. The engine's
   `--fund` cannot change the server's balance, and only warns when they
