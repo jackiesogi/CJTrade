@@ -16,6 +16,9 @@ from typing import Optional
 import httpx
 from cjtrade.pkgs.logger import get_logger
 
+from ._segments import BOT_ID
+from ._segments import segment
+
 log = get_logger("FinHub.engine")
 
 
@@ -84,7 +87,7 @@ class EngineClient:
                 "no control token for this run, so there is nothing to "
                 "authorise a stop with — only a run FinHub started can be "
                 "controlled from here")
-        url = f"{self.base_url}/bots/{bot_id}/stop"
+        url = f"{self.base_url}/bots/{segment(bot_id, BOT_ID, 'bot id')}/stop"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, headers=self._headers(),
@@ -125,7 +128,7 @@ class EngineClient:
         The engine's buffer is shared across bots and bounded, so this answers
         "what was it doing just before that", not "replay the run".
         """
-        return await self._get(f"/bots/{bot_id}/history", {"limit": limit})
+        return await self._get(f"/bots/{segment(bot_id, BOT_ID, 'bot id')}/history", {"limit": limit})
 
     async def equity(self, limit: int = 1000) -> dict:
         """The equity curve, newest `limit` samples. 0 means all of it."""

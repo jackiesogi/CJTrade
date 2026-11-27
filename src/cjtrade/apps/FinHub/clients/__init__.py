@@ -28,6 +28,7 @@ Three pieces:
 * `RunSupervisor` -- starts and stops the broker server and the engine as
   child processes, so a run's lifetime is tied to FinHub's.
 """
+from ._segments import BadSegment  # noqa: F401  (re-exported)
 from .arenax_client import ArenaXClient
 from .arenax_client import BrokerError
 from .engine_client import EngineClient

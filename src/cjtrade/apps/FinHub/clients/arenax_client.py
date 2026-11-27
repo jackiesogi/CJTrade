@@ -25,6 +25,10 @@ from typing import Optional
 import httpx
 from cjtrade.pkgs.logger import get_logger
 
+from ._segments import ORDER_ID
+from ._segments import segment
+from ._segments import SYMBOL
+
 log = get_logger("FinHub.arenax")
 
 # Order field values, copied from cjtrade.pkgs.models. Spelled out rather than
@@ -199,7 +203,7 @@ class ArenaXClient:
         }
 
     async def cancel_order(self, order_id: str) -> dict:
-        body = await self._request("DELETE", f"/api/v1/orders/{order_id}")
+        body = await self._request("DELETE", f"/api/v1/orders/{segment(order_id, ORDER_ID, 'order id')}")
         result = body.get("result") or {}
         return {"order_id": order_id,
                 "status": result.get("status", "UNKNOWN"),
@@ -207,7 +211,7 @@ class ArenaXClient:
 
     async def refresh_order(self, order_id: str) -> dict:
         """Re-check one order against the market. A read, despite the effect."""
-        body = await self._request("GET", f"/api/v1/orders/{order_id}")
+        body = await self._request("GET", f"/api/v1/orders/{segment(order_id, ORDER_ID, 'order id')}")
         return body.get("result") or {}
 
     async def cancel_all(self) -> list:
@@ -245,7 +249,7 @@ class ArenaXClient:
         `timestamp` are this moment's, but open/high/low are the TRADING DAY's
         so far. It is not a one-minute bar.
         """
-        body = await self._request("GET", f"/api/v1/market/{symbol}/snapshot")
+        body = await self._request("GET", f"/api/v1/market/{segment(symbol, SYMBOL, 'symbol')}/snapshot")
         return body.get("price")
 
     async def snapshots(self, symbols: list) -> list:
@@ -272,7 +276,7 @@ class ArenaXClient:
             raise BrokerError(f"unsupported interval {interval!r}; "
                               f"use 1m, 5m, 1h or 1d")
         body = await self._request(
-            "GET", f"/api/v1/market/{symbol}/kbars",
+            "GET", f"/api/v1/market/{segment(symbol, SYMBOL, 'symbol')}/kbars",
             params={"start": start, "end": end, "interval": interval})
         return body.get("result") or []
 

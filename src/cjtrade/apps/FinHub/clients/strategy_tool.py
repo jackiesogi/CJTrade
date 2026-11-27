@@ -28,6 +28,7 @@ from typing import List
 from typing import Optional
 
 from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import one_line
 
 log = get_logger("FinHub.strategy")
 
@@ -116,8 +117,8 @@ class StrategyTool:
             # non-zero status means the tool itself failed: a broken checkout,
             # a missing dependency, an import error in cjtrade.
             detail = (proc.stderr or b"").decode("utf-8", "replace").strip()
-            log.error("strategy-tool %s exited %d: %s", args[0],
-                      proc.returncode, detail[-2000:])
+            log.error("strategy-tool %s exited %d: %s", one_line(args[0]),
+                      proc.returncode, one_line(detail[-2000:]))
             raise StrategyToolError(
                 f"the strategy checker failed: "
                 f"{detail.splitlines()[-1] if detail else 'no output'}")

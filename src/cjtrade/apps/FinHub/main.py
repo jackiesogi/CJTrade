@@ -22,6 +22,7 @@ from cjtrade.apps.FinHub import models
 from cjtrade.apps.FinHub import schemas
 from cjtrade.apps.FinHub.auth import get_current_user
 from cjtrade.apps.FinHub.clients import ArenaXClient
+from cjtrade.apps.FinHub.clients import BadSegment
 from cjtrade.apps.FinHub.clients import BrokerError
 from cjtrade.apps.FinHub.clients import EngineClient
 from cjtrade.apps.FinHub.clients import EngineUnavailable
@@ -370,12 +371,34 @@ def _absent(reason: str = "no run in flight") -> dict:
     return {"available": False, "reason": reason}
 
 
+# What a page is told when an upstream fails. Fixed text: the exception's own
+# message names URLs, ports and upstream errors, which belong in FinHub's log,
+# not in a response.
+ENGINE_DOWN = "the engine is not reachable; see FinHub's log for why"
+BROKER_DOWN = "the broker is not reachable; see FinHub's log for why"
+TOOL_DOWN = "strategy-tool is not available; see FinHub's log for why"
+
+
+def _engine_absent(exc: Exception) -> dict:
+    log.warning("engine status API: %s", exc)
+    return _absent(ENGINE_DOWN)
+
+
+@app.exception_handler(BadSegment)
+async def _bad_segment(request: Request, exc: BadSegment):
+    """A symbol, order id or bot id that cannot be used in an upstream URL."""
+    from fastapi.responses import JSONResponse
+    log.warning("rejected %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=422,
+                        content={"detail": "invalid symbol, order id or bot id"})
+
+
 @app.get("/api/v1/engine/status", tags=["Engine"])
 async def engine_status(current_user: models.User = Depends(get_current_user)):
     try:
         status = await engine_client.status()
     except EngineUnavailable as exc:
-        return _absent(str(exc))
+        return _engine_absent(exc)
     return {"available": True, "status": status,
             "supervisor": supervisor.describe()}
 
@@ -385,7 +408,7 @@ async def engine_bots(current_user: models.User = Depends(get_current_user)):
     try:
         return {"available": True, "bots": await engine_client.bots()}
     except EngineUnavailable as exc:
-        return _absent(str(exc))
+        return _engine_absent(exc)
 
 
 @app.get("/api/v1/bots", tags=["Engine"])
@@ -410,7 +433,8 @@ async def bots_overview(db: Session = Depends(get_db),
         live = await engine_client.bots() or {}
     except EngineUnavailable as exc:
         engine_available = False
-        engine_reason = str(exc)
+        log.warning("engine status API: %s", exc)
+        engine_reason = ENGINE_DOWN
 
     # bot_id -> the most recent slot that used it, across this user's runs.
     # Most recent, because a bot id is reused from run to run and the live
@@ -484,7 +508,7 @@ async def engine_bot_history(bot_id: str, limit: int = 120,
     try:
         history = await engine_client.bot_history(bot_id, limit=limit)
     except EngineUnavailable as exc:
-        return _absent(str(exc))
+        return _engine_absent(exc)
     if history is None:
         raise HTTPException(status_code=404, detail=f"no such bot: {bot_id}")
     return {"available": True, **history}
@@ -496,7 +520,7 @@ async def engine_equity(limit: int = 1000,
     try:
         return {"available": True, **(await engine_client.equity(limit=limit))}
     except EngineUnavailable as exc:
-        return _absent(str(exc))
+        return _engine_absent(exc)
 
 
 @app.get("/api/v1/engine/roundtrips", tags=["Engine"])
@@ -504,7 +528,7 @@ async def engine_roundtrips(current_user: models.User = Depends(get_current_user
     try:
         return {"available": True, **(await engine_client.roundtrips())}
     except EngineUnavailable as exc:
-        return _absent(str(exc))
+        return _engine_absent(exc)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -530,7 +554,8 @@ async def broker_health(current_user: models.User = Depends(get_current_user)):
     try:
         return {"available": True, **(await broker_client.health())}
     except BrokerError as exc:
-        return _absent(str(exc))
+        log.warning("broker: %s", exc)
+        return _absent(BROKER_DOWN)
 
 
 @app.get("/api/v1/broker/account", tags=["Broker"])
@@ -889,7 +914,7 @@ def strategy_api_reference(
         # The editor is still usable without this -- it falls back to
         # CodeMirror's own Python completion -- so this is not a 500.
         log.warning("could not load the strategy API reference: %s", exc)
-        return {"entries": [], "error": str(exc)}
+        return {"entries": [], "error": TOOL_DOWN}
 
 
 @app.get("/api/v1/strategies/templates", tags=["Strategies"])
@@ -904,7 +929,7 @@ def strategy_templates(current_user: models.User = Depends(get_current_user)):
         return {"templates": strategy_tool.templates()}
     except StrategyToolError as exc:
         log.warning("could not list the strategy templates: %s", exc)
-        return {"templates": [], "error": str(exc)}
+        return {"templates": [], "error": TOOL_DOWN}
 
 
 @app.get("/api/v1/strategies/{strategy_id}",
@@ -1021,7 +1046,7 @@ async def set_strategy_enabled(strategy_id: int, payload: schemas.EnabledPatch,
                 result["error"] = (
                     f"{strategy.name} is switched off for the next run, but "
                     f"its bot {bot_id} could NOT be stopped in the run that "
-                    f"is going: {exc}")
+                    f"is going; see FinHub's log for why")
 
     _audit(db, current_user,
            "strategy.enable" if payload.enabled else "strategy.disable",

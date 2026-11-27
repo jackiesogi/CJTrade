@@ -672,7 +672,8 @@ def test_a_missing_api_reference_does_not_break_the_editor(client, authed,
     res = client.get("/api/v1/strategies/api-reference", headers=authed)
     assert res.status_code == 200
     assert res.json()["entries"] == []
-    assert "checker" in res.json()["error"]
+    # Said, but not with the tool's own error text: that stays in the log.
+    assert res.json()["error"] == main.TOOL_DOWN
 
 
 def test_an_oversized_source_is_refused_before_it_reaches_a_subprocess(
@@ -940,7 +941,7 @@ def test_a_stop_that_fails_is_reported_loudly(client, authed, fake_checker,
     assert body["enabled"] is False        # the flag still changed
     assert body["stopped_now"] is False
     assert "could NOT be stopped" in body["error"]
-    assert "not answering" in body["error"]
+    assert "not answering" not in body["error"], "the upstream error stays in the log"
 
 
 def test_enabling_does_not_pretend_to_start_a_bot(client, authed,
@@ -1103,3 +1104,24 @@ def test_an_engine_that_reports_no_price_is_not_invented(client, authed,
     entry = next(b for b in client.get("/api/v1/bots", headers=authed).json()
                  ["bots"] if b["bot_id"] == "Bot_S1")
     assert "close" not in entry["status"] or not entry["status"]["close"]
+
+
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/broker/snapshot?symbols=2330/../orders",
+    "/api/v1/engine/bots/Bot%3Flimit%3D1/history",
+])
+def test_a_value_that_would_change_the_upstream_url_is_refused(client, authed, path):
+    """A symbol or bot id goes into an upstream path only if it has the right
+    shape, so it cannot point FinHub at another route of the engine or broker."""
+    res = client.get(path, headers=authed)
+    assert res.status_code == 422
+    assert res.json()["detail"] == "invalid symbol, order id or bot id"
+
+
+def test_identifiers_with_the_right_shape_pass():
+    from cjtrade.apps.FinHub.clients import _segments as seg
+    assert seg.segment("00632R", seg.SYMBOL, "symbol") == "00632R"
+    assert seg.segment("Bot_U1", seg.BOT_ID, "bot id") == "Bot_U1"
+    with pytest.raises(seg.BadSegment):
+        seg.segment("2330?x=1", seg.SYMBOL, "symbol")
