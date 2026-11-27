@@ -202,6 +202,8 @@ shows each bot while it runs, and keeps a record of every run:
 uv run finhub             # http://127.0.0.1:8000, loopback only
 ```
 
+![FinHub dashboard during a run](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/finhub_dashboard.png)
+
 See [`src/cjtrade/apps/FinHub/README.md`](https://github.com/jackiesogi/CJTrade/blob/master/src/cjtrade/apps/FinHub/README.md)
 for its settings.
 

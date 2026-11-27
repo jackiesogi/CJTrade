@@ -33,8 +33,12 @@ markdown_extensions:
   - admonition
   - tables
   - toc: {permalink: true}
+  - def_list
+  - attr_list
+  - pymdownx.details
   - pymdownx.highlight
   - pymdownx.superfences
+  - pymdownx.tabbed: {alternate_style: true}
 
 plugins:
   - search
@@ -54,11 +58,19 @@ plugins:
           nav_translations:
             Home: 首頁
             Get started: 開始使用
+            Install: 安裝
+            Key ideas: 基本概念
             Connect to a broker: 連線到券商
             Account and orders: 帳戶與委託
             Market data: 行情資料
             Write a strategy: 撰寫策略
             Backtesting: 回測
+            Run the trading engine: 執行交易引擎
+            CJShell and FinHub: CJShell 與 FinHub
+            Troubleshooting: 疑難排解
+            Reference: 參考
+            Commands: 指令
+            Overview: 總覽
             API reference: API 參考
             Brokers: 券商
             Strategies: 策略
@@ -106,12 +118,21 @@ plugins:
 nav:
   - Home: index.md
   - Get started:
+      - Install: get-started/install.md
+      - Key ideas: get-started/concepts.md
       - Connect to a broker: get-started/connect.md
       - Account and orders: get-started/account-and-orders.md
       - Market data: get-started/market-data.md
       - Write a strategy: get-started/strategy.md
       - Backtesting: get-started/backtesting.md
+      - Run the trading engine: get-started/trading-engine.md
+      - CJShell and FinHub: get-started/shell-and-finhub.md
+      - Troubleshooting: get-started/troubleshooting.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Configuration and paths: reference/config.md
   - API reference:
+      - Overview: reference/index.md
       - Brokers:
           - AccountClient: reference/account-client.md
           - Broker interface: reference/broker-base.md
@@ -136,5 +157,4 @@ nav:
           - LLM clients: reference/llm.md
           - Charts: reference/charts.md
       - Infrastructure:
-          - Configuration and paths: reference/config.md
           - Forms: reference/forms.md
