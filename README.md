@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jackiesogi/CJTrade/actions/workflows/ci.yml/badge.svg)](https://github.com/jackiesogi/CJTrade/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-jackiesogi.github.io%2FCJTrade-blue)](https://jackiesogi.github.io/CJTrade/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/jackiesogi/CJTrade/blob/master/LICENSE)
 
 A Python framework for building trading systems for the Taiwan Stock Exchange
 (TWSE). Write a strategy once against the CJTrade API, then run it against a
@@ -52,16 +52,20 @@ uv sync
 `uv sync` installs everything, including the optional integrations. To use
 CJTrade as a library instead, install the core and the extras you need:
 
-<!-- cjcheck: skip reason="installs from GitHub into the current environment" -->
+<!-- cjcheck: skip reason="installs from PyPI into the current environment" -->
 ```sh
-pip install 'cjtrade[sinopac,llm] @ git+https://github.com/jackiesogi/CJTrade'
+pip install 'cjtrade[sinopac,llm]'
 ```
+
+The shell scripts (`scripts/`, `poc/`, `tests/`) are not in the package; use
+a checkout for those.
 
 | Extra | Adds |
 |---|---|
 | `sinopac` | The Sinopac broker (`shioaji`), also needed by ArenaX's `backtest` and `paper` backends |
 | `llm` | Gemini and Azure OpenAI clients |
 | `news` | The NewsAPI news source |
+| `finhub` | The FinHub web UI |
 | `all` | All of the above |
 
 Reports, account snapshots and the price cache are written to per-user
@@ -150,11 +154,11 @@ command line. Built-in strategies: `BollingerStrategy`, `ADXAdaptiveStrategy`,
 
 ### Trading engine
 
-`cjtrade` is the trading app. Each strategy runs as its own process; only the master process holds the
-broker session and the risk gate. Every bar, the master publishes each
-symbol's closed 1m bars (`client.market.get_kbars`) to its bots. Before
-stepping to the next bar, it waits for every bot to answer the current one,
-so `--speed=0` and `--speed=60` produce the same bars, orders and fills.
+`cjtrade` is the trading app. Each strategy runs as its own process; only
+the main process holds the broker session and the risk gate. Every bar, the
+main process publishes each symbol's closed 1m bars
+(`client.market.get_kbars`) to its bots. Before stepping to the next bar, it
+waits for every bot to answer the current one, so `--speed=0` and `--speed=60` produce the same bars, orders and fills.
 
 <!-- cjcheck: static -->
 ```sh
@@ -166,7 +170,7 @@ uv run cjtrade --broker=arenax \
 ```
 
 The bots that run are listed in `BOT_ROSTER` in
-[`src/cjtrade/apps/CJTrade/main.py`](./src/cjtrade/apps/CJTrade/main.py), or in a file
+[`src/cjtrade/apps/CJTrade/main.py`](https://github.com/jackiesogi/CJTrade/blob/master/src/cjtrade/apps/CJTrade/main.py), or in a file
 passed with `--roster=`. A status page is served on
 `http://127.0.0.1:8898/status` while a run is in progress, loopback only.
 
@@ -198,7 +202,7 @@ shows each bot while it runs, and keeps a record of every run:
 uv run finhub             # http://127.0.0.1:8000, loopback only
 ```
 
-See [`src/cjtrade/apps/FinHub/README.md`](./src/cjtrade/apps/FinHub/README.md)
+See [`src/cjtrade/apps/FinHub/README.md`](https://github.com/jackiesogi/CJTrade/blob/master/src/cjtrade/apps/FinHub/README.md)
 for its settings.
 
 ## Writing a strategy
@@ -223,11 +227,13 @@ uv run --group docs mkdocs serve                    # docs at http://127.0.0.1:8
 ```
 
 The same checks run as pre-commit hooks and in CI. Developer notes, design
-records and the to-do list are in [`ref/`](./ref/).
+records and the to-do list are in [`ref/`](https://github.com/jackiesogi/CJTrade/tree/master/ref/); every command and
+script is listed in [`ref/TOOLS.md`](https://github.com/jackiesogi/CJTrade/blob/master/ref/TOOLS.md), and the branch,
+commit and PR conventions are in [`CLAUDE.md`](https://github.com/jackiesogi/CJTrade/blob/master/CLAUDE.md) §11.
 
 ## License
 
-[MIT](./LICENSE).
+[MIT](https://github.com/jackiesogi/CJTrade/blob/master/LICENSE).
 
 CJTrade is not investment advice, and nothing it prints is a recommendation to
 buy or sell. It can place real orders on a real account; you are responsible
