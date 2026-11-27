@@ -1,0 +1,40 @@
+/* The header and tabs in FinHub's slate-900, in light and dark mode alike. */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0f172a;
+  --md-primary-fg-color--light: #1e293b;
+  --md-primary-fg-color--dark: #020617;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #cbd5e1;
+}
+
+/* The logo is a rounded square already; keep it at FinHub's size. */
+.md-header__button.md-logo img {
+  height: 1.6rem;
+  width: 1.6rem;
+}
+
+/* Links and the active page keep their own colour: slate-900 would vanish on
+   the dark scheme and read as body text on the light one. */
+[data-md-color-scheme="default"][data-md-color-primary="custom"] {
+  --md-typeset-a-color: #2563eb;
+  --md-accent-fg-color: #1d4ed8;
+}
+[data-md-color-scheme="slate"][data-md-color-primary="custom"] {
+  --md-typeset-a-color: #93c5fd;
+  --md-accent-fg-color: #bfdbfe;
+}
+
+/* The footer carries only the copyright line, centred, on the header's colour. */
+:root {
+  --md-footer-bg-color--dark: #0f172a;
+}
+.md-footer-meta__inner {
+  justify-content: center;
+}
+.md-copyright {
+  width: 100%;
+  margin: auto;
+  text-align: center;
+}
