@@ -43,9 +43,13 @@ class TestLifecycle:
 
     def test_cancelling_one_order_leaves_the_others_committed(self, client):
         """Place 3 orders, commit all, cancel the middle one; verify independent statuses."""
-        order1 = make_order(symbol="0050")
-        order2 = make_order(symbol="0056")
-        order3 = make_order(symbol="2330")
+        # Priced below the market so none of them fills before the cancel. A
+        # fixed 50.0 used to: 0056 trades around 44-54 and 0050 near 50 after
+        # its split, so order2 sometimes filled first, the cancel was refused,
+        # and the test failed depending on where the simulated clock landed.
+        order1, order2, order3 = (
+            make_order(symbol=s, price=unlikely_fill_buy_price(client, s))
+            for s in ("0050", "0056", "2330"))
 
         client.place_order(order1)
         client.place_order(order2)

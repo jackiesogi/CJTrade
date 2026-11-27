@@ -1,0 +1,15 @@
+# How GitHub groups merged PRs in a release's generated notes, by label
+# (the labels are in .github/labels.yml). A PR lands in the first category
+# whose labels it has.
+changelog:
+  categories:
+    - title: Features
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Maintenance
+      labels: [chore, refactor, ci, dependencies, poc]
+    - title: Other changes
+      labels: ["*"]

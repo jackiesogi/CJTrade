@@ -27,17 +27,18 @@ paper / demo all speak the same HTTP API as a real broker. That is why
 
 ArenaX has four backends (`--backend=`):
 
-| backend | market data | orders go to | real broker session |
+| backend | default prices (`--data`) | orders go to | port |
 |---|---|---|---|
-| `backtest` | historical replay | ArenaX matching | yes (Sinopac, for data only) |
-| `paper` | live feed | ArenaX matching | yes (data only) |
-| `demo` | synthetic / cached | ArenaX matching | no |
-| `real` | live feed | **real Sinopac** | yes — needs `I_UNDERSTAND_REAL_TRADING_RISKS=y` |
+| `demo` | `yfinance` | ArenaX matching | 8801 |
+| `backtest` | `sinopac,yfinance` (historical replay) | ArenaX matching | 8802 |
+| `paper` | `sinopac` (live) | ArenaX matching | 8803 |
+| `real` | `sinopac` (live) | **real Sinopac** — needs `I_UNDERSTAND_REAL_TRADING_RISKS=y` | 8888 |
 
-> `backtest` and `paper` **do log in to the real Sinopac account** to read
-> prices, balance and positions. They never place real orders (only
-> `real_backend.py` overrides `place_order`), but they burn API quota. For
-> throwaway work use `demo`.
+> A Sinopac price source **logs in to the real Sinopac account**. It never
+> places orders (only `real_backend.py` overrides `place_order`), but it burns
+> API quota. Choose sources with `--data` / `AX_DATA_SOURCES`:
+> `--data=finmind,yfinance` needs no account, and `--data=offline
+> --price-db=FILE` reads only a file filled by `preload-prices`.
 
 ---
 
@@ -48,14 +49,25 @@ uv sync                                   # install
 source .venv/bin/activate
 
 uv run pytest                            # unit + integration (integration auto-skips without arenaxd)
-uv run pytest tests/unit/ -q              # ~700 tests, ~90s, no network
-uv run pytest tests/integration/arenax/   # needs arenaxd on :8801
-uv run arenaxd --backend=demo --port=8802 # ArenaX broker-side server
-uv run cjshell --broker=arenax            # interactive shell
+uv run pytest tests/unit/ -q              # ~850 tests, ~50s, no network
+bash tests/run_broker_stability_tests.sh --broker=arenax   # starts arenaxd :8801, runs tests/integration/arenax
+uv run arenaxd --backend=demo             # ArenaX broker-side server (demo :8801, backtest :8802)
+uv run cjshell --broker=arenax            # interactive shell (CJShell)
 uv run cjtrade --broker=arenax --mode=backtest  # the trading app (engine + bots)
+uv run finhub                             # web UI on http://127.0.0.1:8000
 uv run backtest --symbol=2330             # one-shot vectorised backtest
+uv run preload-prices --price-db exp.db --symbols 2330 --start 2026-10-01
+uv run insight                            # diagnose the latest run
 bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all  # shell smoke test (ArenaX)
+CJ_CHECK_NO_SMOKE=1 uv run python scripts/check_readme_examples.py      # README examples
+uv run --group docs mkdocs build --strict -d /tmp/site                  # docs site
 ```
+
+Never run `bash tests/test_cjtrade_integration.sh --broker=sinopac` (the
+`sinopac-shell` pre-commit hook) on your own: it places **real** odd-lot
+orders on the user's account. Commit with `SKIP=sinopac-shell git commit ...`
+unless the user asks for it. `/verify` (`.claude/commands/verify.md`) runs
+the safe checks in CI order.
 
 `testpaths` is `tests/unit` + `tests/integration`; `tests/manual/` is never
 collected because its scripts read credentials at import time.
@@ -85,6 +97,7 @@ src/cjtrade/
     ui/             FormEngine — TOML-declared forms, cli/zenity/web renderers
     config/         *.cjconf discovery and precedence
     paths.py        where user data lives (platformdirs)
+    logger.py       get_logger / get_console / setup_logging
     llm/            unified LLM client (gemini / azure / ollama / mock)
     chart/          plotly kbar charts
   apps/
@@ -93,13 +106,17 @@ src/cjtrade/
     CJTrade/        the trading app (`cjtrade`): engine, bots, status API
     FinHub/         web UI for the trading app (`finhub`, FastAPI, 127.0.0.1 only)
     CJEdit/ CJNews/ smaller apps
-poc/                scratch space: form-driven backtest script, experiments/
-tests/              unit / integration / manual
-ref/                design notes and captured logs, not code
-scripts/            config and account-state generators
+    oneshot_backtest.py, insight.py, preload_prices.py, strategy_tool.py
+poc/                scratch space: poc/backtest.sh, experiments/ (research scripts)
+tests/              unit / integration / manual, plus the shell test scripts
+ref/                developer notes; ref/TOOLS.md lists every entry point
+scripts/            config generators, README checker, price-db report
+doc/                the docs site (mkdocs, en + zh-TW); images in doc/assets/img
+.github/            CI, CodeQL, labeler + labels, release, Dependabot
+.claude/            shared Claude Code settings and commands
 ```
 
-Optional SDKs are extras (`sinopac`, `llm`, `news`, `all`) — see
+Optional SDKs are extras (`sinopac`, `llm`, `news`, `finhub`, `all`) — see
 `pkgs/utils/extras.py`. Import one inside `try`, and raise `missing_extra()`
 where it is used, never at import time. `uv sync` installs them all through the
 `dev` group.
@@ -188,7 +205,8 @@ env vars  >  ./.env  >  ./**/*.cjconf (depth, then alpha)  >  <user config dir>/
 
 `config_sources()` / `describe_sources()` tell you where a key came from.
 `*.cjconf` = secrets and user config. `*.cjsys` = app/server settings
-(dotenv format, `AX_*` for the ArenaX server, `CJSYS_*` for the launcher).
+(dotenv format, `AX_*` for the ArenaX server). FinHub's settings are
+`FINHUB_*` env vars or `<config dir>/finhub.env`.
 
 ---
 
@@ -231,17 +249,18 @@ Write tests when changing `pkgs/`. Don't add tests to `poc/` unless asked.
 - Shell commands: `XxxCommand(CommandBase)`. The user-facing `name` is either
   a full word (`balance`, `help`, `kbars`) or a terse abbreviation
   (`lsodr`, `lspos`, `mvrs`) — match whichever family the neighbours use.
-- Config keys: `AX_*` (ArenaX server), `CJSYS_*` (launcher), uppercase in
+- Config keys: `AX_*` (ArenaX server), `FINHUB_*` (FinHub), uppercase in
   `.cjconf`.
-- Commit messages: one short imperative line, ~5–9 words, no body unless it
-  earns one. `Fix sync_state() semantics: place_order auto-commits`,
-  `Add SignalCalculator as strategy base class`, `[Hotfix] Fix lsodr command`.
+- Console scripts are lowercase (`cjtrade`, `cjshell`, `finhub`); app
+  directories under `apps/` are the product name (`CJTrade`, `CJShell`,
+  `FinHub`, `ArenaX`).
+- Commits, branches and PRs: see §11.
 
 ---
 
 ## 7. Comment style — match this, not the recent commits
 
-Recent commits (2026-11, `Jackie Chen`) were largely AI-written and the
+Many 2026-11 commits were largely AI-written and the
 comments there are far too long. **Do not imitate them.** Write like the
 2026-01..2026-06 code.
 
@@ -337,12 +356,12 @@ client.sync_state()                        # refresh committed orders
 client.cancel_order(order_id)
 client.get_market_time()                   # dict, same keys for every broker
 client.control_plane                       # ArenaXMiddleWare, or None for a live broker
+client.market                              # MarketData: get_kbars(symbol, start, end, interval)
 
 client.disconnect()
 ```
 
-`BrokerType.MOCK` is **broken** (`cjtrade.pkgs.brokers.arenax.legacy` does not
-exist).
+`BrokerType` is `SINOPAC`, `ARENAX`, and the unimplemented `YUANTA` / `CATHAY`.
 
 ### Kbar
 
@@ -352,7 +371,7 @@ exist).
 ```python
 Kbar(ts, o, h, l, c, v, symbol="2317")
 kbar.tagged("2317")             # copy with symbol set, for sources that know it one level up
-Kbar.from_snapshot(snapshot)    # live/replay runners: one Snapshot = one closed bar
+Kbar.from_snapshot(snapshot)    # only for a caller that has nothing but a quote
 ```
 
 `get_kbars()` on every broker already tags what it returns. Don't wrap `Kbar`
@@ -407,8 +426,9 @@ engine = BacktestEngine(kbars=kbars, symbol="2330", initial_balance=1_000_000,
 result = engine.run(BollingerStrategy())     # BacktestResult
 ```
 
-In-memory, no HTTP, no clock. This is the reproducible path — use it as the
-baseline when checking whether the full-simulation path is correct.
+In-memory, no HTTP, no clock. Use it as the baseline when checking whether
+the trading engine (`cjtrade`) is correct; the two fill orders differently, so
+compare trends, not exact numbers.
 
 ### Costs
 
@@ -469,8 +489,7 @@ class BalanceCommand(CommandBase):
         self.example = "balance"
 
     def execute(self, client: AccountClient, *args, **kwargs) -> None:
-        balance = client.get_balance()
-        print(f"Account Balance: {balance}")
+        out.info(f"Account Balance: {client.get_balance()}")   # out = get_console("CJShell")
 ```
 
 ---
@@ -480,16 +499,12 @@ class BalanceCommand(CommandBase):
 - `tests/manual/test_*.py` — 4 files fail collection (`KeyError: 'API_KEY'`,
   `nacl ValueError`) if you point pytest at them. They are scripts; run them
   by hand.
-- `BrokerType.MOCK` → `ModuleNotFoundError`.
-- The pre-commit config runs the Sinopac shell test, which **hits the real
-  broker**. Know that before `git commit` without `--no-verify`.
-- `base_backend.py:_check_price_in_time_range` indexes bars on a uniform
-  minute grid from `start_date` and wraps with `idx = minute % n`. It drifts
-  across days and wraps silently. `_calculate_kbar_index` in the same file
-  does it correctly (binary search). This is the biggest open correctness
-  issue in ArenaX.
+- The pre-commit config runs the Sinopac shell test, which **places real
+  orders**. Use `SKIP=sinopac-shell` unless the user asked for it; never set
+  `SIMULATION=y` in that hook to make it safe — the user keeps it real on
+  purpose.
 - `_is_sufficient_account_inventory` / `_is_sufficient_account_balance`
-  (`base_backend.py:843-851`) compare against **filled** position and cash
+  (`base_backend.py`) compare against **filled** position and cash
   only. Resting orders reserve nothing, so N identical sells all pass and the
   account can oversell. Same hole for cash on the buy side.
 - `AX_INITIAL_BALANCE` sets ArenaX's starting cash for a fresh account
@@ -498,8 +513,9 @@ class BalanceCommand(CommandBase):
   differ. Otherwise you get `DEFAULT_INITIAL_BALANCE = 100_000.0`.
 - `seed_from_live` is never passed by any caller, so paper/real do **not**
   seed from the real account despite what the scripts' comments claim.
-- `db_api.py:386` has a mutable default evaluated at import
-  (`updated_at: datetime = datetime.utcnow() + timedelta(hours=8)`).
+- Integration tests run against a random simulated start date. An order
+  priced off a fixed number can fill or not depending on where the clock
+  lands; price it from the market (`unlikely_fill_buy_price` and friends).
 - `ArenaXBrokerAPI.register_order_callback` is a no-op placeholder. There is
   no fill callback; poll `list_orders()` or `sync_state()`.
 - `sync_state()` only refreshes orders still in a `COMMITTED_*` status. An
@@ -512,13 +528,76 @@ class BalanceCommand(CommandBase):
 ---
 
 ## 10. Working agreements
-- `.claude/settings.json` denies reading credentials and running anything
-  that reaches a real Sinopac account; `/verify` runs the CI checks locally
-  and `/offline-backtest` replays the engine on cached bars.
 
-- One commit per package when a change spans several.
+- `.claude/settings.json` denies reading credentials and running anything
+  that reaches a real Sinopac account; `/verify` runs the CI checks locally,
+  `/offline-backtest` replays the engine on cached bars, and `/pr` follows §11.
+- Answer the user in Traditional Chinese (繁體中文); code, comments, commit
+  messages and PR text are in English.
 - Don't reformat or "tidy" files you aren't changing. The star imports and
   the existing lint noise are deliberate background.
 - Prefer fixing the root cause over the symptom, and say so in the commit.
 - When adding a model-shaped concept, check `pkgs/models/` first. Don't ship a
   raw dict where a model exists.
+- Leave the user's uncommitted experiment files (`exp/` in the main worktree,
+  `poc/experiments/` outputs) alone: do not commit, move or delete them.
+- Never push, force-push, tag, release or delete a branch until the user asks.
+
+---
+
+## 11. Branches, commits and PRs
+
+**Branches.** `type/short-desc`, cut from the latest `origin/master`:
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `poc/` (e.g.
+`feat/market-data`, `chore/release-automation`). The prefix sets the PR's
+type label (`.github/labeler.yml`). One topic per branch.
+
+**Commit messages.** Imperative subject, about 5–12 words, no trailing
+period, no `type:` prefix: `Return only closed bars and let ArenaX run on an
+offline price file`, `Rename the shell to CJShell and drop the test, atest
+and main commands`. Body: at most **3 lines**, hard-wrapped at 72 columns,
+saying what changed and why in plain sentences; no bullet lists, no
+`Co-authored-by`. Check before committing:
+
+```sh
+printf '%s\n' "Subject line" "" "Body line one," "body line two." > /tmp/msg.txt
+awk 'length > 72' /tmp/msg.txt          # must print nothing
+SKIP=sinopac-shell git commit -F /tmp/msg.txt
+```
+
+If the `reorder-python-imports` or `end-of-file-fixer` hook fails, it has
+already fixed the files: `git add -A` and commit again with the same message.
+
+**History.** Never change a commit's author or committer date, and keep the
+order. Rewording an unpushed commit is fine; for a pushed one, ask first and
+use `--force-with-lease`. A requested limit on the number of commits ("one
+commit", "at most 8") is binding.
+
+**PR titles.** `[type]: Sentence in plain English`, type matching the branch:
+`[feat]: Make market data a separate dependency from the broker`,
+`[chore]: Prepare the package and repository for a first release`,
+`[doc]: Rewrite the README as a concise project overview`.
+
+**PR descriptions.** Short; the diff has the details.
+
+```markdown
+One paragraph: what this PR does and why, for someone who has not read the code.
+
+### Changes
+- 3–6 bullets, one line each, the user-visible effect (not every file)
+
+### Notes
+- What a reviewer should know: behaviour changes, measured results, follow-ups
+
+### Before merging
+- Manual steps or ordering (merge #8 first, set a secret, ...); omit if none
+```
+
+Merge with **Create a merge commit** (no squash, no rebase); GitHub deletes
+the branch. Labels are added automatically; `.github/labels.yml` defines
+them and is synced to the repo on merge.
+
+**Releases.** Bump `version` in `pyproject.toml` in a PR, then the user tags
+`vX.Y.Z` on master. `release.yml` checks the tag against the version,
+builds, waits for approval in the `pypi` environment, uploads with Trusted
+Publishing and creates the GitHub Release. Never tag or publish yourself.
