@@ -1,9 +1,9 @@
 # Every label the repository uses, kept in sync by .github/workflows/labels.yml.
 #
-# Three kinds, told apart by colour and prefix:
+# Three kinds, told apart by colour:
 #   type      what the change is; set from the branch name (type/desc), so it
 #             is the PR title's [type] in label form
-#   area:     which part of the code it touches; set from the changed files
+#   area      which part of the code it touches; set from the changed files
 #   the rest  cross-cutting flags: tests, CI, dependencies, real money
 #
 # The sync creates and updates labels; it never deletes one. Rules for which
@@ -29,41 +29,41 @@
   color: fef2c0
   description: "Proof of concept, not production code (poc/ branches)"
 
-# ── area: (changed files) ─────────────────────────────────────────────────────
-- name: "area: arenax"
+# ── area (changed files) ──────────────────────────────────────────────────────
+- name: arenax
   color: 1d76db
   description: "ArenaX simulated broker: server, backends, its client"
-- name: "area: sinopac"
+- name: sinopac
   color: 1d76db
   description: "Sinopac (shioaji) broker adapter"
-- name: "area: brokers"
+- name: brokers
   color: 1d76db
   description: "Broker-neutral API: AccountClient, BrokerAPIBase"
-- name: "area: market-data"
+- name: market-data
   color: 0e8a16
   description: "pkgs/marketdata sources, cache, bar/tick models, preload-prices"
-- name: "area: engine"
+- name: engine
   color: 5319e7
-  description: "Trading engine and bots (poc/trading_engine)"
-- name: "area: strategy"
+  description: "The CJTrade app: trading engine and bots (apps/CJTrade)"
+- name: finhub
+  color: 5319e7
+  description: "FinHub web UI (apps/FinHub)"
+- name: strategy
   color: 5319e7
   description: "Strategies, strategy authoring, strategy-tool, CJEdit"
-- name: "area: backtest"
+- name: backtest
   color: 5319e7
   description: "Backtest engine, evaluation reports, oneshot, insight"
-- name: "area: risk"
+- name: risk
   color: b60205
   description: "Pre-trade risk gate"
-- name: "area: system"
+- name: shell
   color: bfd4f2
-  description: "CJTrade System (apps/cjtrade_system)"
-- name: "area: shell"
-  color: bfd4f2
-  description: "Interactive cjtrade shell"
-- name: "area: analytics"
+  description: "CJShell, the interactive shell (apps/CJShell)"
+- name: analytics
   color: bfdadc
   description: "Indicators, fundamentals, news, LLM, charts"
-- name: "area: core"
+- name: core
   color: bfdadc
   description: "Models, config, paths, logging, db, utils, forms"
 

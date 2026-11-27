@@ -1084,7 +1084,7 @@ class ArenaX_BackendBase:
         price of the whole session instead of describing the open lot. Over 146
         buys and 145 sells it reported 247.50 for a position actually bought at
         243.00 -- and since unrealized_pnl is derived from avg_cost, every
-        caller reading it (cjtrade_system's summary) was given a wrong number.
+        caller reading it (a run summary) was given a wrong number.
         market_value was unaffected, because _update_position_prices() re-marks
         it from a live snapshot.
 

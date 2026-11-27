@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python scripts/check_readme_examples.py:*)",
+      "Bash(uv run --group docs mkdocs build:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./**/*.cjconf)",
+      "Read(./**/*.pfx)",
+      "Read(~/Library/Application Support/cjtrade/**/*.cjconf)",
+      "Read(~/.config/cjtrade/**/*.cjconf)",
+      "Bash(bash tests/test_cjtrade_integration.sh --broker=sinopac:*)",
+      "Bash(uv run arenaxd --backend=real:*)",
+      "Bash(uv run arenaxd --backend real:*)",
+      "Bash(I_UNDERSTAND_REAL_TRADING_RISKS=y:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  }
+}

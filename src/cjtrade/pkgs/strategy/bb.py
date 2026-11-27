@@ -6,7 +6,7 @@ Bollinger Band mean-reversion strategy using TA-Lib (matches arenax.py).
 Copy this file, rename the class, and implement your own logic in on_bar().
 
 Run it:
-    from cjtrade.apps.cjtrade_system.cjtrade_oneshot_backtest import run_oneshot
+    from cjtrade.apps.oneshot_backtest import run_oneshot
     from cjtrade.pkgs.strategy.bb_1m import BollingerStrategy
 
     run_oneshot(symbol="2330", start="2023-01-01", strategy=BollingerStrategy())

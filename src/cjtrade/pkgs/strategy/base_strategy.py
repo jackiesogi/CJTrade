@@ -3,8 +3,8 @@ pkgs/strategy/base_strategy.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Abstract base class for all CJTrade strategies.
 
-Both the time-progression runner (cjtrade_system_arenax.py) and the
-one-shot backtest engine (cjtrade_oneshot_backtest.py) drive strategies
+Both the bar-by-bar runner (the CJTrade app's bots) and the
+one-shot backtest engine (apps/oneshot_backtest.py) drive strategies
 through the same interface, so a strategy written once works in both modes.
 
 Lifecycle

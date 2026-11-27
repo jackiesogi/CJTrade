@@ -11,7 +11,7 @@ options = ["gedit", "nano", "vim", "vscode", "sublime"]
 [[field]]
 name = "broker"
 label = "Which broker will your strategy being deployed?"
-default = "sinopac"
+default = "arenax"
 type = "select"
 optional = true
 [field.config]

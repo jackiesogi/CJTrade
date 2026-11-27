@@ -6,14 +6,11 @@ of what the SDK can do.
 
 | App | What it is | Launch | Reference |
 |-----|------------|--------|-----------|
-| CJTrade Shell | Interactive shell for trading and poking at the API | `uv run cjtrade --broker=arenax` | [README](./cjtrade_shell/README.md) |
-| CJTrade System | Automated trading system (paper / real / replay) | `uv run system --broker=arenax --mode=demo` | [README](./cjtrade_system/README.md) |
+| CJTrade | The trading app: an engine running each strategy as a bot | `uv run cjtrade --broker=arenax --mode=backtest` | [README](./CJTrade/README.md) |
+| FinHub | Web UI for the trading app: runs, bots, manual trading | `uv run finhub` | [README](./FinHub/README.md) |
+| CJShell | Interactive shell for trading and poking at the API | `uv run cjshell --broker=arenax` | [README](./CJShell/README.md) |
 | ArenaX | Simulated broker: market data, matching, portfolio | `uv run arenaxd` | [README](./ArenaX/README.md) |
 | CJNews | Financial news search engine | `uv run python src/cjtrade/apps/CJNews/main.py` | [README](./CJNews/README.md) |
 | CJEdit | Browser-based editor for quick strategy tests | `uv run python src/cjtrade/apps/CJEdit/main.py` | [README](./CJEdit/README.md) |
 | insight | Turns a finished backtest into a report you can diagnose | `uv run insight` | — |
 | strategy-tool | The strategy-authoring API as a CLI, for callers outside this process | `uv run strategy-tool templates` | — |
-
-The trading engine is not in here. It lives in `poc/trading_engine/` because it
-spawns one OS process per strategy and talks to them over ZeroMQ, which makes
-it a system rather than an app. See the project root README.

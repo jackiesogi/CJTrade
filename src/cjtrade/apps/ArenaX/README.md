@@ -83,7 +83,7 @@ datetimes (a half-open window).
 and `load_dotenv(override=False)` means whatever is already exported wins. A
 stale `AX_HOST_PORT` from an earlier session will therefore silently keep the
 backtest backend on the demo port. `unset AX_HOST_PORT AX_HOST_ADDRESS
-AX_LAUNCH_MODE AX_STATE_FILE` before switching modes.
+AX_STATE_FILE` before switching modes.
 
 Starting the server and starting the simulated backend are two steps. The
 process comes up first and then logs in and preloads price data, which takes

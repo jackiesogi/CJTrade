@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinHub | CJTrade Console</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-[#f8fafc] text-slate-900 min-h-screen">
+
+<!-- ══ Top bar ══ -->
+<nav class="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40 px-4 md:px-6 py-3 md:py-4 flex justify-between items-center">
+    <div class="flex items-center space-x-2 md:space-x-4">
+        <button onclick="toggleSidebar()" class="p-2 hover:bg-slate-100 rounded-lg transition lg:hidden">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shadow-lg text-white font-bold text-sm">FH</div>
+            <div class="flex flex-col">
+                <span class="text-lg font-extrabold tracking-tight">FinHub</span>
+                <span class="text-[10px] text-slate-400 font-medium">CJTrade Console</span>
+            </div>
+        </div>
+    </div>
+    <div class="flex items-center space-x-2 md:space-x-3">
+        <!-- Live service lamps. Two separate processes, so two separate lamps:
+             the broker can be up with no run in flight, which is normal. -->
+        <div class="hidden sm:flex items-center gap-3 text-[10px] font-bold uppercase">
+            <span class="flex items-center gap-1.5"><span id="lampEngine" class="w-2 h-2 rounded-full bg-slate-300"></span><span class="text-slate-400">Engine</span></span>
+            <span class="flex items-center gap-1.5"><span id="lampBroker" class="w-2 h-2 rounded-full bg-slate-300"></span><span class="text-slate-400">Broker</span></span>
+        </div>
+        <span id="clockDisplay" class="hidden md:block text-xs font-semibold text-slate-500 tabular-nums">--</span>
+        <button onclick="openRunModal()" class="px-3 md:px-4 py-2 text-xs font-bold text-white bg-slate-900 rounded-lg shadow-md hover:bg-slate-800 transition">▶ New Run</button>
+    </div>
+</nav>
+
+<div class="flex h-[calc(100vh-64px)] md:h-[calc(100vh-68px)]">
+
+    <!-- ══ Sidebar ══ -->
+    <aside id="sidebar" class="fixed lg:relative w-72 max-w-[90vw] h-full bg-white border-r border-slate-200 p-4 md:p-6 flex flex-col transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 z-30 overflow-y-auto shadow-lg lg:shadow-none">
+        <div class="flex items-center justify-between mb-8">
+            <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest">Console</h2>
+            <button onclick="toggleSidebar()" class="p-2 hover:bg-slate-100 rounded-lg transition lg:hidden">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <nav class="space-y-1.5 flex-grow">
+            <a href="#" onclick="showSection('dashboard')" id="nav-dashboard" class="nav-link"><span>📊</span><span>Dashboard</span></a>
+            <a href="#" onclick="showSection('runs')"      id="nav-runs"      class="nav-link"><span>🎬</span><span>Runs</span></a>
+            <a href="#" onclick="showSection('bots')"      id="nav-bots"      class="nav-link"><span>🤖</span><span>Bots</span></a>
+            <a href="#" onclick="showSection('positions')" id="nav-positions" class="nav-link"><span>💼</span><span>Positions</span></a>
+            <a href="#" onclick="showSection('orders')"    id="nav-orders"    class="nav-link"><span>📋</span><span>Orders</span></a>
+            <a href="#" onclick="showSection('market')"    id="nav-market"    class="nav-link"><span>📈</span><span>Market</span></a>
+            <a href="#" onclick="showSection('trade')"     id="nav-trade"     class="nav-link"><span>✋</span><span>Manual Trade</span></a>
+            <a href="#" onclick="showSection('editor')"    id="nav-editor"    class="nav-link"><span>✎</span><span>Strategies</span></a>
+            <a href="#" onclick="showSection('audit')"     id="nav-audit"     class="nav-link"><span>🛡️</span><span>Audit</span></a>
+        </nav>
+
+        <!-- Run-in-flight strip. Always visible, because everything else on
+             the page means something different depending on it. -->
+        <div class="mt-6 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+            <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Run in flight</h4>
+            <div id="sidebarRun" class="text-xs text-slate-500">None</div>
+            <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div id="sidebarProgress" class="bg-slate-900 h-1.5 rounded-full transition-all" style="width:0%"></div>
+            </div>
+            <button id="sidebarStopBtn" onclick="stopCurrentRun()" class="hidden w-full text-xs font-bold text-red-600 bg-red-50 border border-red-100 py-2 rounded-lg hover:bg-red-100 transition">■ Stop run</button>
+        </div>
+
+        <div class="bg-slate-900 p-4 md:p-5 rounded-2xl text-white">
+            <div class="font-bold text-sm" id="currentUserDisplay">Loading…</div>
+            <button onclick="logout()" class="text-xs text-red-400 font-bold mt-2 hover:underline uppercase transition">Terminate Session</button>
+        </div>
+    </aside>
+    <div id="sidebarOverlay" onclick="toggleSidebar()" class="hidden lg:hidden fixed inset-0 bg-slate-900 opacity-0 transition-opacity z-20"></div>
+
+    <!-- ══ Main ══ -->
+    <main class="flex-1 overflow-y-auto w-full">
+
+        <!-- ─── Dashboard ─── -->
+        <div id="section-dashboard" class="page px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-lg md:text-2xl font-bold text-slate-900">Run Dashboard</h2>
+                    <p class="text-xs text-slate-500 mt-1" id="dashSubtitle">No run in flight</p>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <label class="flex items-center gap-2 text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3">
+                        <input type="checkbox" id="autoRefresh" checked class="accent-slate-900"> Auto
+                    </label>
+                    <button onclick="refreshAll()" class="px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition flex-1 sm:flex-none">🔄 Refresh</button>
+                </div>
+            </section>
+
+            <!-- Progress -->
+            <section class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                <div class="flex justify-between items-baseline">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase">Progress</p>
+                    <p class="text-xs font-semibold text-slate-500 tabular-nums" id="progressLabel">—</p>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                    <div id="progressBar" class="bg-slate-900 h-3 rounded-full transition-all" style="width:0%"></div>
+                </div>
+                <div class="flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-slate-500">
+                    <span>Market time <b class="text-slate-800 tabular-nums" id="progMarketTime">—</b></span>
+                    <span>Clock <b class="text-slate-800" id="progClock">—</b></span>
+                    <span>Session <b class="text-slate-800 font-mono" id="progSession">—</b></span>
+                    <span>Uptime <b class="text-slate-800 tabular-nums" id="progUptime">—</b></span>
+                </div>
+            </section>
+
+            <!-- KPIs -->
+            <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Equity</p>
+                    <div class="text-2xl md:text-3xl font-black tabular-nums" id="kpiEquity">—</div>
+                    <p class="text-[10px] text-slate-400 mt-2" id="kpiEquityNote">cash + positions</p>
+                </div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 border-l-4 border-l-slate-300" id="kpiPnlCard">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase mb-2">P&amp;L</p>
+                    <div class="text-2xl md:text-3xl font-black tabular-nums" id="kpiPnl">—</div>
+                    <p class="text-[10px] text-slate-400 mt-2" id="kpiPnlPct">—</p>
+                </div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 border-l-4 border-l-blue-500">
+                    <p class="text-[10px] font-bold text-blue-500 uppercase mb-2">Round trips</p>
+                    <div class="text-2xl md:text-3xl font-black text-blue-600 tabular-nums" id="kpiTrips">—</div>
+                    <p class="text-[10px] text-slate-400 mt-2" id="kpiWinRate">—</p>
+                </div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 border-l-4 border-l-purple-500" id="kpiRiskCard">
+                    <p class="text-[10px] font-bold text-purple-500 uppercase mb-2">Risk gate</p>
+                    <div class="text-2xl md:text-3xl font-black text-purple-600" id="kpiRisk">—</div>
+                    <p class="text-[10px] text-slate-400 mt-2" id="kpiRiskNote">—</p>
+                </div>
+            </section>
+
+            <!-- Equity curve -->
+            <section class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm h-80 md:h-96 flex flex-col">
+                <h3 class="text-xs font-bold text-slate-400 mb-4 uppercase">Equity curve</h3>
+                <div class="flex-grow relative"><canvas id="equityChart"></canvas></div>
+            </section>
+
+            <!-- Bot cards -->
+            <section>
+                <h3 class="text-xs font-bold text-slate-400 mb-3 uppercase">Bots</h3>
+                <div id="dashBotCards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+            </section>
+        </div>
+
+        <!-- ─── Runs ─── -->
+        <div id="section-runs" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-lg md:text-2xl font-bold">Runs</h2>
+                    <p class="text-xs text-slate-500 mt-1">FinHub starts the broker and the engine, and stops them when it stops</p>
+                </div>
+                <button onclick="openRunModal()" class="px-4 md:px-6 py-2.5 text-sm font-bold text-white bg-slate-900 rounded-lg shadow-md hover:bg-slate-800 transition w-full sm:w-auto">▶ New Run</button>
+            </section>
+
+            <section class="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                        <tr>
+                            <th class="px-4 md:px-6 py-3">#</th>
+                            <th class="px-4 md:px-6 py-3">Status</th>
+                            <th class="px-4 md:px-6 py-3">Mode</th>
+                            <th class="px-4 md:px-6 py-3">Symbols</th>
+                            <th class="hidden md:table-cell px-4 md:px-6 py-3 text-right">Days</th>
+                            <th class="hidden md:table-cell px-4 md:px-6 py-3 text-right">Bars</th>
+                            <th class="px-4 md:px-6 py-3 text-right">P&amp;L</th>
+                            <th class="hidden lg:table-cell px-4 md:px-6 py-3">Started</th>
+                            <th class="px-4 md:px-6 py-3 text-right">Log</th>
+                        </tr>
+                    </thead>
+                    <tbody id="runsTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </section>
+
+            <section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                <div class="flex justify-between items-center px-4 md:px-6 py-3 bg-slate-50 border-b">
+                    <h3 class="text-[10px] font-bold text-slate-400 uppercase" id="logTitle">Run log</h3>
+                    <div class="flex gap-2">
+                        <label class="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase"><input type="checkbox" id="logFollow" class="accent-slate-900"> Follow</label>
+                        <button onclick="loadRunLog()" class="text-[10px] font-black text-slate-600 uppercase hover:underline">Reload</button>
+                    </div>
+                </div>
+                <pre id="runLog" class="p-4 text-[11px] leading-relaxed font-mono text-slate-700 overflow-x-auto max-h-96 overflow-y-auto whitespace-pre">Pick a run above.</pre>
+            </section>
+        </div>
+
+        <!-- ─── Bots ─── -->
+        <div id="section-bots" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200">
+                <h2 class="text-lg md:text-2xl font-bold">Bots</h2>
+                <!-- Every bot you have, not only the running ones: a strategy
+                     that has just been written was invisible here until a run
+                     happened to be in flight. -->
+                <p class="text-xs text-slate-500 mt-1">Every strategy you have saved, plus whatever the engine is running. A live bot reports once per bar; click its card for the history.</p>
+                <p class="text-xs text-slate-400 mt-1" id="botsEngineNote">—</p>
+            </section>
+            <div id="botCards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+            <section id="botDetail" class="hidden bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="text-lg font-black" id="botDetailName">—</h3>
+                        <p class="text-xs text-slate-500" id="botDetailWhy">—</p>
+                    </div>
+                    <button onclick="closeBotDetail()" class="text-slate-400 text-xs font-bold uppercase hover:text-slate-600">Close</button>
+                </div>
+                <div id="botDetailMonitors" class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3"></div>
+                <div class="h-64"><canvas id="botChart"></canvas></div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                            <tr><th class="px-3 py-2">Bar</th><th class="px-3 py-2">Market time</th><th class="px-3 py-2 text-right">Balance</th><th class="px-3 py-2">Why</th></tr>
+                        </thead>
+                        <tbody id="botHistoryTable" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- ─── Positions ─── -->
+        <div id="section-positions" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-lg md:text-2xl font-bold">Positions</h2>
+                    <p class="text-xs text-slate-500 mt-1">Shell equivalent: <code class="font-mono">balance</code> + <code class="font-mono">lspos</code></p>
+                </div>
+                <button onclick="loadAccount()" class="px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition">🔄 Refresh</button>
+            </section>
+            <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm"><p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Cash</p><div class="text-2xl font-black tabular-nums" id="posBalance">—</div></div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm"><p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Market value</p><div class="text-2xl font-black tabular-nums" id="posValue">—</div></div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm"><p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Total cost</p><div class="text-2xl font-black tabular-nums" id="posCost">—</div></div>
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm"><p class="text-[10px] font-bold text-slate-400 uppercase mb-2">Unrealised</p><div class="text-2xl font-black tabular-nums" id="posUpnl">—</div></div>
+            </section>
+            <section class="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                        <tr><th class="px-4 md:px-6 py-3">Symbol</th><th class="px-4 md:px-6 py-3 text-right">Qty</th><th class="hidden md:table-cell px-4 md:px-6 py-3 text-right">Avg cost</th><th class="px-4 md:px-6 py-3 text-right">Price</th><th class="px-4 md:px-6 py-3 text-right">Value</th><th class="px-4 md:px-6 py-3 text-right">uPnL</th><th class="hidden sm:table-cell px-4 md:px-6 py-3 text-right">Return</th></tr>
+                    </thead>
+                    <tbody id="positionsTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+                <!-- Taiwan convention: red is up, green is down. Said out loud
+                     because it is the opposite of most Western platforms. -->
+                <p class="px-4 md:px-6 py-3 bg-slate-50 border-t text-[10px] font-bold text-slate-400 uppercase">Red = gain, green = loss (Taiwan convention)</p>
+            </section>
+        </div>
+
+        <!-- ─── Orders ─── -->
+        <div id="section-orders" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-lg md:text-2xl font-bold">Orders</h2>
+                    <p class="text-xs text-slate-500 mt-1">Shell equivalent: <code class="font-mono">lsodr</code>, <code class="font-mono">cancel</code></p>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="loadOrders()" class="px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition flex-1 sm:flex-none">🔄 Refresh</button>
+                    <button onclick="cancelAll()" class="px-4 py-2.5 text-sm font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition flex-1 sm:flex-none">✕ Cancel all</button>
+                </div>
+            </section>
+            <section class="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                        <tr><th class="px-4 md:px-6 py-3">ID</th><th class="px-4 md:px-6 py-3">Placed</th><th class="px-4 md:px-6 py-3">Symbol</th><th class="px-4 md:px-6 py-3">Side</th><th class="px-4 md:px-6 py-3 text-right">Qty</th><th class="px-4 md:px-6 py-3 text-right">Price</th><th class="px-4 md:px-6 py-3">Status</th><th class="px-4 md:px-6 py-3 text-right">Action</th></tr>
+                    </thead>
+                    <tbody id="ordersTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </section>
+            <section class="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                <h3 class="px-4 md:px-6 py-3 bg-slate-50 border-b text-[10px] font-bold text-slate-400 uppercase">Orders placed by hand</h3>
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-white text-[10px] font-bold text-slate-400 uppercase border-b">
+                        <tr><th class="px-4 md:px-6 py-3">When</th><th class="px-4 md:px-6 py-3">ID</th><th class="px-4 md:px-6 py-3">Symbol</th><th class="px-4 md:px-6 py-3">Side</th><th class="px-4 md:px-6 py-3 text-right">Qty</th><th class="px-4 md:px-6 py-3 text-right">Price</th><th class="px-4 md:px-6 py-3">Result</th></tr>
+                    </thead>
+                    <tbody id="manualOrdersTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </section>
+        </div>
+
+        <!-- ─── Market ─── -->
+        <div id="section-market" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200">
+                <h2 class="text-lg md:text-2xl font-bold">Market</h2>
+                <p class="text-xs text-slate-500 mt-1">Shell equivalent: <code class="font-mono">ohlcv</code>, <code class="font-mono">kbars</code>, <code class="font-mono">date</code></p>
+            </section>
+
+            <section class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col md:flex-row gap-3 md:items-end">
+                    <div class="flex-1">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Symbols (comma separated)</label>
+                        <input type="text" id="snapSymbols" value="2317,2330" placeholder="2317,2330" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 focus:ring-slate-900">
+                    </div>
+                    <button onclick="loadSnapshots()" class="px-6 py-3 text-sm font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition">Snapshot</button>
+                </div>
+                <!-- A snapshot's open/high/low are the trading DAY's so far, not
+                     a one-minute bar's. Saying so on the page, because reading
+                     them as a bar is the easy mistake. -->
+                <p class="text-[11px] text-slate-400">close and timestamp are this moment's; open, high and low are the trading day's so far.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                            <tr><th class="px-3 py-2">Symbol</th><th class="px-3 py-2">Timestamp</th><th class="px-3 py-2 text-right">Close</th><th class="px-3 py-2 text-right">Open</th><th class="px-3 py-2 text-right">High</th><th class="px-3 py-2 text-right">Low</th><th class="px-3 py-2 text-right">Volume</th></tr>
+                        </thead>
+                        <tbody id="snapshotTable" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <h3 class="text-[10px] font-bold text-slate-400 uppercase">Historical bars</h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 md:items-end">
+                    <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Symbol</label><input type="text" id="kbSymbol" value="2317" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">From</label><input type="date" id="kbStart" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">To (exclusive)</label><input type="date" id="kbEnd" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Interval</label>
+                        <select id="kbInterval" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none"><option>1m</option><option>5m</option><option>1h</option><option selected>1d</option></select>
+                    </div>
+                    <button onclick="loadKbars()" class="px-4 py-2.5 text-sm font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition">Load</button>
+                </div>
+                <p class="text-[11px] text-slate-400" id="kbarsNote">Range is [from, to) — the end date is excluded.</p>
+                <div class="h-72"><canvas id="kbarsChart"></canvas></div>
+            </section>
+
+            <section class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-3">Simulated clock</h3>
+                <div id="clockPanel" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"></div>
+            </section>
+        </div>
+
+        <!-- ─── Manual trade ─── -->
+        <div id="section-trade" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200">
+                <h2 class="text-lg md:text-2xl font-bold">Manual Trade</h2>
+                <p class="text-xs text-slate-500 mt-1">Shell equivalent: <code class="font-mono">buy</code>, <code class="font-mono">sell</code></p>
+            </section>
+
+            <!-- Not a decoration. The engine's risk gate sits between a bot and
+                 the broker; this form does not go through it. -->
+            <section class="bg-amber-50 border border-amber-200 rounded-2xl p-4 md:p-6">
+                <h3 class="text-sm font-black text-amber-900">This bypasses the engine's risk gate</h3>
+                <ul class="mt-2 text-xs text-amber-800 space-y-1 list-disc list-inside">
+                    <li>The per-bot allocation, the orders-per-bar limit, the duplicate check and the kill switch do not apply.</li>
+                    <li>The broker still checks price, quantity, trading limit, balance and inventory, and refuses with a reason.</li>
+                    <li>A running bot will not know this happened: its ledger mirror is built from the engine's reports, so a manual fill moves the balance underneath it.</li>
+                </ul>
+            </section>
+
+            <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <form id="orderForm" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Symbol</label>
+                                <input type="text" id="ordSymbol" placeholder="2317" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Side</label>
+                                <select id="ordAction" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900"><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Limit price</label>
+                                <input type="number" step="0.01" id="ordPrice" placeholder="0.00" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Quantity (shares)</label>
+                                <input type="number" id="ordQty" placeholder="80" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Lot</label>
+                            <select id="ordLot" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                                <option value="1" selected>Intraday odd lot</option>
+                                <option value="0">Common (1,000-share lots)</option>
+                            </select>
+                            <!-- The broker only ever sends a limit ROD order on
+                                 this path, so there is no order-type selector:
+                                 offering one would imply a choice that is not
+                                 wired through. -->
+                            <p class="text-[11px] text-slate-400 mt-2">Always a limit ROD order on TSE — that is the only shape this broker path sends. No tick-size or lot-size rounding is applied; the price goes through as typed.</p>
+                        </div>
+                        <label class="flex items-start gap-2 text-xs font-semibold text-slate-600">
+                            <input type="checkbox" id="ordConfirm" class="mt-0.5 accent-slate-900">
+                            <span>I understand this order is not checked by the engine's risk gate.</span>
+                        </label>
+                        <button type="submit" id="ordSubmit" class="w-full bg-slate-900 text-white font-bold py-3.5 rounded-2xl hover:bg-slate-800 shadow-lg transition disabled:opacity-40">Place order</button>
+                    </form>
+                    <div id="orderResult" class="mt-4 text-xs"></div>
+                </div>
+
+                <div class="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-[10px] font-bold text-slate-400 uppercase">Price check</h3>
+                        <button onclick="quoteForOrder()" class="text-[10px] font-black text-slate-600 uppercase hover:underline">Fetch</button>
+                    </div>
+                    <div id="quotePanel" class="text-sm text-slate-500">Enter a symbol and press Fetch.</div>
+                    <div class="pt-3 border-t border-slate-100">
+                        <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Market status</h3>
+                        <div id="tradeMarketStatus" class="text-sm text-slate-500">—</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ─── Audit ─── -->
+        <!-- ══ Strategies / editor ══ -->
+        <div id="section-editor" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-lg md:text-2xl font-bold">Strategies</h2>
+                    <!-- Said once, here, rather than left to be discovered: a
+                         strategy is Python that runs on this host. -->
+                    <p class="text-xs text-slate-500 mt-1">A strategy is Python that runs on this machine, inside the engine's risk gate. Only you can see yours.</p>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="restoreExamples()" class="px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition flex-1 sm:flex-none" title="Copy back any of the built-in strategies you no longer have">Restore examples</button>
+                    <button onclick="openStrategyModal()" class="px-4 md:px-6 py-2.5 text-sm font-bold text-white bg-slate-900 rounded-lg shadow-md hover:bg-slate-800 transition flex-1 sm:flex-none">+ New Strategy</button>
+                </div>
+            </section>
+
+            <div class="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-4 md:gap-6">
+                <!-- the list -->
+                <section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden self-start">
+                    <h3 class="text-[10px] font-bold text-slate-400 uppercase px-4 pt-4 pb-2">Your strategies</h3>
+                    <div id="strategyList" class="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                        <p class="px-4 py-6 text-xs text-slate-400">Loading…</p>
+                    </div>
+                </section>
+
+                <!-- the editor -->
+                <section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-4 md:px-5 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
+                        <div class="flex-grow min-w-0">
+                            <div class="font-bold text-sm truncate" id="editorTitle">No strategy open</div>
+                            <div class="text-[11px] text-slate-400" id="editorSubtitle">Pick one on the left, or make a new one</div>
+                        </div>
+                        <span id="editorDirty" class="hidden text-[10px] font-bold uppercase tracking-widest text-amber-600">Unsaved</span>
+                        <!-- Off means off now: if this strategy is trading in
+                             the run that is going, its bot is stopped. It does
+                             not sell what the strategy already holds. -->
+                        <label class="flex items-center gap-2 text-xs font-bold text-slate-500 cursor-pointer select-none" title="Off stops its bot in the run that is going, and leaves it out of the next one. It does not sell what it holds.">
+                            <input type="checkbox" id="editorEnabled" onchange="toggleEditorEnabled()" disabled class="accent-slate-900 w-4 h-4">
+                            <span id="editorEnabledLabel">Enabled</span>
+                        </label>
+                        <button id="editorCheckBtn" onclick="checkStrategy()" disabled class="px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition disabled:opacity-40">Check</button>
+                        <button id="editorSaveBtn" onclick="saveStrategy()" disabled class="px-4 py-2 text-xs font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition disabled:opacity-40">Save</button>
+                        <button id="editorDeleteBtn" onclick="deleteStrategy()" disabled class="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition disabled:opacity-40">Delete</button>
+                    </div>
+
+                    <div id="editorHost" class="h-[55vh] min-h-[20rem] overflow-hidden"></div>
+
+                    <div class="border-t border-slate-100 px-4 md:px-5 py-3 space-y-3">
+                        <div id="editorStatus" class="text-xs text-slate-400">Nothing checked yet.</div>
+                        <div id="editorDiagnostics" class="hidden space-y-1"></div>
+                        <div id="editorParams" class="hidden">
+                            <h4 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Parameters this strategy declares</h4>
+                            <div id="editorParamList" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                            <!-- Declared, not yet wired to a run: the engine
+                                 reads a strategy's parameters from the file
+                                 itself, so changing one here would be a lie
+                                 until there is a per-run override. -->
+                            <p class="text-[11px] text-slate-400 mt-2">Shown as declared in the file. Editing them from here is not wired up yet — change the defaults in the code.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div id="section-audit" class="page hidden px-4 md:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+            <section class="bg-white px-4 md:px-6 py-4 rounded-2xl border border-slate-200">
+                <h2 class="text-lg md:text-2xl font-bold">Audit</h2>
+                <p class="text-xs text-slate-500 mt-1">Runs started and stopped, orders placed, bulk cancels. Reads are not logged.</p>
+            </section>
+            <section class="bg-white border border-slate-200 rounded-2xl overflow-x-auto shadow-sm">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase border-b">
+                        <tr><th class="px-4 md:px-6 py-3">Timestamp</th><th class="px-4 md:px-6 py-3">Action</th><th class="px-4 md:px-6 py-3">Target</th><th class="hidden lg:table-cell px-4 md:px-6 py-3">Details</th></tr>
+                    </thead>
+                    <tbody id="auditTable" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+</div>
+
+<!-- ══ New Run modal ══ -->
+<div id="runModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-40" onclick="closeRunModal()"></div>
+    <div class="modal-container bg-white w-[95%] sm:w-[90%] md:max-w-lg mx-auto rounded-[32px] shadow-2xl z-50 overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div class="py-6 md:py-8 px-6 md:px-10">
+            <h2 class="text-xl md:text-2xl font-black mb-1">New run</h2>
+            <p class="text-xs text-slate-500 mb-6">FinHub will start the ArenaX server, wait for it, then start the engine.</p>
+            <form id="runForm" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Watch list</label>
+                    <input type="text" id="runSymbols" value="2317" placeholder="2317,2330" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Mode</label>
+                        <select id="runMode" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none"><option value="backtest" selected>backtest</option><option value="demo">demo</option><option value="paper">paper</option></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Bar interval</label>
+                        <select id="runInterval" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none"><option value="1m" selected>1m</option></select>
+                        <p class="mt-2 text-xs text-slate-400">What one bar is. The engine replays 1m bars; other intervals are not available yet.</p>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Days</label>
+                        <input type="number" id="runDays" value="20" min="1" max="1825" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Fund</label>
+                        <input type="number" id="runFund" value="1000000" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Speed</label>
+                        <input type="number" id="runSpeed" value="0" min="0" step="1" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none">
+                        <!-- Market seconds per real second. 0 keeps the old
+                             behaviour of a backtest, which ignored this field
+                             entirely and always ran flat out. -->
+                        <p class="text-[11px] text-slate-400 mt-2">Market seconds per real second. <b>0 = as fast as possible.</b> 1 replays at the speed the market moved, so a 20-day run takes about 66 hours. Ignored in paper mode.</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Start date</label>
+                    <input type="date" id="runStart" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none">
+                    <p class="text-[11px] text-slate-400 mt-2">Leave empty to use the server's own timeline origin, which the backtest backend may have picked at random.</p>
+                </div>
+                <!-- The broker's balance wins over this field, and the warning
+                     is better here than as a surprise in the log. -->
+                <p class="text-[11px] text-slate-400">If the broker's account holds a different balance, the bots size against the broker's number, not this one.</p>
+                <button type="submit" id="runSubmit" class="w-full bg-slate-900 text-white font-bold py-3.5 rounded-2xl mt-2 hover:bg-slate-800 shadow-lg transition disabled:opacity-40">Start run</button>
+                <button type="button" onclick="closeRunModal()" class="w-full text-slate-400 text-xs font-bold mt-1 uppercase tracking-widest hover:text-slate-500 transition">Cancel</button>
+            </form>
+            <div id="runFormError" class="mt-3 text-xs text-red-600"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ══ New Strategy modal ══ -->
+<div id="strategyModal" class="modal opacity-0 pointer-events-none fixed w-full h-full top-0 left-0 flex items-center justify-center z-50">
+    <div class="modal-overlay absolute w-full h-full bg-slate-900 opacity-40" onclick="closeStrategyModal()"></div>
+    <div class="modal-container bg-white w-[95%] sm:w-[90%] md:max-w-lg mx-auto rounded-[32px] shadow-2xl z-50 overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div class="py-6 md:py-8 px-6 md:px-10">
+            <h2 class="text-xl md:text-2xl font-black mb-1">New strategy</h2>
+            <p class="text-xs text-slate-500 mb-6">FinHub writes you a working Bollinger strategy with these filled in, so there is something to run before there is something to change.</p>
+            <form id="strategyForm" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Name</label>
+                    <input type="text" id="strategyName" value="My strategy" maxlength="80" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Symbol</label>
+                    <input type="text" id="strategySymbol" value="2317" maxlength="12" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-slate-900">
+                    <!-- The symbol belongs to the strategy, not to the run: a
+                         band width calibrated on a 50-dollar ETF means nothing
+                         on a 1,000-dollar semiconductor. -->
+                    <p class="text-[11px] text-slate-400 mt-2">One symbol per strategy. Thresholds calibrated on one stock rarely transfer to another, so the symbol is part of the strategy rather than an argument to it.</p>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Start from</label>
+                    <!-- Filled from CJTrade's own list of templates, so adding
+                         one there changes this without an edit here. -->
+                    <select id="strategyTemplate" onchange="showTemplateNote()" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none">
+                        <option value="bb" selected>Bollinger mean reversion</option>
+                    </select>
+                    <p class="text-[11px] text-slate-400 mt-2" id="strategyTemplateNote">&nbsp;</p>
+                </div>
+                <button type="submit" id="strategySubmit" class="w-full bg-slate-900 text-white font-bold py-3.5 rounded-2xl mt-2 hover:bg-slate-800 shadow-lg transition disabled:opacity-40">Create</button>
+                <button type="button" onclick="closeStrategyModal()" class="w-full text-slate-400 text-xs font-bold mt-1 uppercase tracking-widest hover:text-slate-500 transition">Cancel</button>
+            </form>
+            <div id="strategyFormError" class="mt-3 text-xs text-red-600"></div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="fixed bottom-6 right-6 z-[60] space-y-2"></div>
+
+<script src="/static/vendor/codemirror.bundle.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

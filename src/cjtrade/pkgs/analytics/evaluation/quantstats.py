@@ -3,8 +3,8 @@ pkgs/analytics/evaluation/quantstats.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Thin facade around BacktestResult → quantstats.
 
-Usage (in cjtrade_system_arenax.py):
---------------------------------------
+Usage (as the CJTrade app and the oneshot backtester do):
+---------------------------------------------------------
     from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
 
     report = BacktestReport(result)

@@ -1,0 +1,505 @@
+"""
+cjtrade/apps/CJTrade/bot_runner.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The part of a bot that is the same for every bot.
+
+This was the body of bot_c.py. It moved here because a second and third bot
+would otherwise have been a second and third copy of 250 lines of socket
+handling, sequence checking and ledger mirroring, none of which differs by
+strategy -- and a bug fixed in one copy stays in the other two. bot_a.py,
+bot_b.py and bot_c.py are now the whole of what makes a bot distinct: which
+strategy, which symbol, which parameters.
+
+What a bot process does, in order:
+
+    subscribe to its symbol, its own bot_id, and the feed-status topic
+    on_start
+    for every bar master broadcasts:
+        apply any order reports master sent back    (the ledger mirror)
+        on_bar -> Signals -> OrderIntent on the PUSH socket
+        report a BotStatus back to master
+    on_end, however the process ends
+
+A bot does NOT execute its own trades. Order execution lives in master's
+ExecutionEngine (see main.py) -- the only place that should ever hold a broker
+session, which gives every bot's view of balance one canonical source instead
+of N independently-simulated ledgers. A bot only ever *sends* order intents and
+*mirrors* whatever master reports back; it never computes balance or position
+math itself.
+
+Everything on the wire is a pkgs/models type (see protocol.py): price bars
+arrive as a Kbar, order intents go out as an Order, and master answers with
+an OrderEvent. So an "order rejected" and an "order accepted, still resting"
+are different messages here rather than the same one, which is what lets the
+mirror stay in step with master's ledger.
+
+The Kbar is the broker's closed 1m bar, passed to on_bar as it arrives. It is
+the same type, with the same meaning, that BacktestEngine feeds a strategy, so
+a strategy cannot tell the two runners apart.
+"""
+import signal
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime
+
+import zmq
+from cjtrade.apps.CJTrade import protocol
+from cjtrade.apps.CJTrade.protocol import BotCommand
+from cjtrade.apps.CJTrade.protocol import BotStatus
+from cjtrade.apps.CJTrade.protocol import FeedStatus
+from cjtrade.apps.CJTrade.protocol import OrderIntent
+from cjtrade.apps.CJTrade.protocol import OrderReport
+from cjtrade.apps.CJTrade.protocol import PriceUpdate
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+from cjtrade.pkgs.models.kbar import Kbar
+from cjtrade.pkgs.models.order import Order
+from cjtrade.pkgs.models.order import OrderAction
+from cjtrade.pkgs.models.order import OrderLot
+from cjtrade.pkgs.models.order import OrderType
+from cjtrade.pkgs.models.order import PriceType
+from cjtrade.pkgs.models.position import Position
+from cjtrade.pkgs.models.product import Product
+from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
+from cjtrade.pkgs.strategy.base_strategy import Fill
+from cjtrade.pkgs.strategy.base_strategy import StrategyContext
+
+# Before bot_id is known. run_bot replaces it with "bot.<bot_id>".
+log = get_logger("bot")
+
+
+def _at(ts: datetime | None) -> str:
+    """``"@YYYY-MM-DD HH:MM "`` for a market moment, to open a log message."""
+    return f"@{ts:%Y-%m-%d %H:%M} " if ts else ""
+
+# Fallback only -- master normally passes the broker's starting balance as
+# argv[2] (main.py). Used when a bot script is run standalone. The mirror only
+# matters before this bot's first report; after that master's OrderReport is
+# authoritative and the bot overwrites its mirror with whatever master reports.
+INITIAL_BALANCE = 1_000_000.0
+
+# How many bars to wait for master's FIRST word about an order before deciding
+# the conversation was lost and trading that symbol again.
+#
+# Only the first word. Once master has said anything about the order -- even
+# just "accepted, resting" -- it is in its _open map and will keep polling until
+# the order resolves, so there is no deadline to enforce: a limit order can
+# legitimately rest for hundreds of bars waiting for the price to come to it.
+# The deadline is for silence, which means a lost intent on the PUSH socket or a
+# lost report on the PUB socket; neither is retransmitted, and without a
+# deadline either one would freeze this symbol for the rest of the run.
+UNACKED_MAX_BARS = 10
+
+# How long to sit on a silent socket before concluding master is gone.
+#
+# In seconds rather than bars because the two clocks are three orders of
+# magnitude apart: under ReplayClock a bar lands every ~12ms, under
+# RealtimeClock every 60s. 180s is three missed live bars, and master's long
+# startup work (kbar fetch, preload) happens before it spawns anyone, so a
+# healthy bot is never silent that long.
+#
+# Without this a bot blocks in recv forever. One that outlives its master keeps
+# a stale ledger mirror and goes on trading against it, and because it is still
+# subscribed to the same port the next master's bars arrive with a sequence
+# number lower than its own -- which showed up as a negative dropped-bar count.
+#
+# Note this is silence on the socket, not absence of bars: master publishes a
+# FeedStatus while it holds the feed over a closed market, so an overnight gap
+# does not accumulate here. See protocol.FeedStatus.
+RECV_TIMEOUT_MS = 5000
+SILENCE_LIMIT_S = 180.0
+
+
+class LocalLedgerMirror:
+    """Read-only-ish view of *this bot's* account state, used only to build
+    StrategyContext (calc_qty/has_position/equity). It never executes trades --
+    it's overwritten wholesale by whatever master's ExecutionEngine reports
+    back in an OrderReport, so it can never drift from the real ledger.
+    """
+
+    def __init__(self, balance: float):
+        self.balance = balance
+        self.positions: dict[str, Position] = {}
+
+    def apply(self, report: OrderReport) -> None:
+        """Take master's numbers verbatim. Compute nothing.
+
+        Applied for every report, including rejections: a rejection still tells
+        us master's current balance, and in the resting case it is the only
+        thing that will.
+        """
+        self.balance = report.balance
+        symbol = report.event.symbol
+        if report.position is not None:
+            self.positions[symbol] = report.position
+        else:
+            # Master says there is no position in this symbol any more.
+            self.positions.pop(symbol, None)
+
+    def positions_list(self, price_map: dict) -> list[dict]:
+        """StrategyContext.positions wants dicts -- Position.to_dict() has
+        exactly the keys it documents, so mark the position to market and let
+        the model do the spelling."""
+        out = []
+        for sym, pos in self.positions.items():
+            if pos.quantity <= 0:
+                continue
+            pos.current_price = price_map.get(sym, pos.avg_cost)
+            pos.market_value = pos.current_price * pos.quantity
+            pos.unrealized_pnl = (pos.current_price - pos.avg_cost) * pos.quantity
+            out.append(pos.to_dict())
+        return out
+
+    def equity(self, price_map: dict) -> float:
+        pos_value = sum(
+            price_map.get(sym, p.avg_cost) * p.quantity
+            for sym, p in self.positions.items() if p.quantity > 0
+        )
+        return self.balance + pos_value
+
+
+@dataclass
+class InFlight:
+    """An order this bot has sent that master has not resolved yet.
+
+    A strategy sees positions, not orders. While a SELL rests at the broker the
+    position is still on the books, so the same upper-band touch fires again on
+    the next bar and the bot submits a duplicate the broker can only reject --
+    which is exactly what the log showed once acceptance stopped being reported
+    as rejection. Holding one in-flight order per symbol stops that.
+    """
+    order_id: str
+    bar_sent: int
+    acknowledged: bool = False   # master has said *something* about this order
+
+
+def build_order(bot_id: str, session_id: str, sig, bar: Kbar) -> Order:
+    """Turn a strategy Signal into the Order master should place.
+
+    The Order is fully formed here, including its id: master places it with that
+    id, so the OrderReport that comes back later is unambiguously about this
+    signal. created_at is the bar's market time, not datetime.now(), so a replay
+    run stamps orders with replayed time.
+
+    session_id rides in opt_field because the ArenaX backend copies it into
+    fill_history when it settles a fill (base_backend._apply_fill), which is how
+    master's end-of-run report asks for this run's trades and not the ones
+    sitting on the server from a previous run.
+    """
+    return Order(
+        product=Product(symbol=sig.symbol),
+        action=OrderAction(sig.action),
+        price=float(sig.price),
+        quantity=int(sig.quantity),
+        price_type=PriceType.LMT,
+        order_type=OrderType.ROD,
+        order_lot=OrderLot.IntraDayOdd,
+        created_at=bar.timestamp,
+        opt_field={"bot_id": bot_id, "session_id": session_id},
+    )
+
+
+def bot_argv(default_symbol: str, argv: list[str] | None = None) -> tuple[str, float, str, str]:
+    """Read what master passed on the command line.
+
+    argv[1] bot_id          -- the PUB topic master answers this bot on
+    argv[2] initial balance -- master's, not a local constant, so the two cannot
+                               disagree. The mirror only matters until this
+                               bot's first fill, but position sizing before that
+                               fill would be computed against the wrong equity.
+    argv[3] session id      -- stamped on every order; empty when the bot is
+                               run by hand, with nothing to filter by.
+    argv[4] symbol          -- overrides the bot's own default, so master can
+                               point a strategy at a symbol from the watch list
+                               without the bot file being edited.
+    """
+    a = sys.argv if argv is None else argv
+    return (
+        a[1] if len(a) > 1 else "Bot_Generic",
+        float(a[2]) if len(a) > 2 else INITIAL_BALANCE,
+        a[3] if len(a) > 3 else "",
+        (a[4] if len(a) > 4 and a[4] else default_symbol),
+    )
+
+
+def run_bot(strategy: BaseStrategy, default_symbol: str,
+            params: dict | None = None, argv: list[str] | None = None) -> None:
+    """Drive one strategy against master's feed until the run ends.
+
+    Parameters
+    ----------
+    strategy : BaseStrategy
+        Already constructed. on_start/on_bar/on_fill/on_end are called here;
+        nothing else about it is inspected except monitors().
+    default_symbol : str
+        The symbol to subscribe to when master does not name one (argv[4]).
+    params : dict
+        Forwarded verbatim as StrategyContext.params. This is the only channel
+        a strategy has for configuration, so anything the strategy reads in
+        on_start belongs here.
+    """
+    bot_id, initial_balance, session_id, target_symbol = bot_argv(
+        default_symbol, argv)
+    params = dict(params or {})
+    # This function is the body of a bot process (bot_a.py etc. only call it).
+    setup_logging()
+    log = get_logger(f"bot.{bot_id}")
+
+    ledger = LocalLedgerMirror(initial_balance)
+    price_map: dict[str, float] = {}
+    price_history: dict[str, list] = {}
+
+    log.info("started (%s) strategy=%s", target_symbol, strategy.name)
+
+    started_at = datetime.now()
+
+    zmq_context = zmq.Context()
+    sub_socket = zmq_context.socket(zmq.SUB)
+    sub_socket.connect(protocol.price_feed_address())
+    sub_socket.set(zmq.SUBSCRIBE, target_symbol.encode('utf-8'))
+    # Order reports from master are published on our own bot_id topic (see
+    # main.py's publish_report) -- subscribe to that too, same socket.
+    sub_socket.set(zmq.SUBSCRIBE, bot_id.encode('utf-8'))
+    # News about the feed itself. Without this the bot cannot tell a master
+    # that died from a master holding the feed over a closed market, and
+    # SILENCE_LIMIT_S resolves that ambiguity by exiting -- which overnight is
+    # the wrong answer. See protocol.FeedStatus.
+    sub_socket.set(zmq.SUBSCRIBE, protocol.FEED_STATUS_TOPIC.encode('utf-8'))
+    # So recv can return instead of blocking forever; see SILENCE_LIMIT_S.
+    sub_socket.set(zmq.RCVTIMEO, RECV_TIMEOUT_MS)
+
+    push_socket = zmq_context.socket(zmq.PUSH)
+    push_socket.connect(protocol.order_intent_address())
+
+    # master terminates bots with SIGTERM, which Python does not turn into an
+    # exception, so the shutdown path below never ran on a normal end of run --
+    # on_end was only ever reached by Ctrl-C. Convert it, so a bot reports its
+    # final state however the run ends.
+    def _on_sigterm(_sig, _frm):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
+    strategy.on_start(StrategyContext(
+        timestamp=datetime.now(), balance=ledger.balance, equity=ledger.balance,
+        positions=[], price_history={}, bar_index=0, params=params,
+    ))
+
+    bar_index = 0
+    last_seq = -1
+    bars_dropped = 0
+    inflight: dict[str, InFlight] = {}
+    silent_since: float | None = None
+    feed_held = False            # master has told us the market is shut
+    # Set when master tells this bot to stop, so the last log line says who
+    # ended the run rather than leaving it looking like a crash.
+    stopped_by: str | None = None
+    try:
+        while True:
+            try:
+                _topic, payload = sub_socket.recv_multipart()
+            except zmq.Again:
+                # Nothing from master this interval. Any traffic at all resets
+                # this, including an order report, so only a genuinely dead
+                # master accumulates silence.
+                now = time.monotonic()
+                if silent_since is None:
+                    silent_since = now
+                elif now - silent_since >= SILENCE_LIMIT_S:
+                    log.error("nothing from master for %.0fs, assuming it is "
+                              "gone; exiting, not trading on a stale mirror",
+                              now - silent_since)
+                    break
+                continue
+            silent_since = None
+            msg = protocol.decode(payload)
+
+            if isinstance(msg, BotCommand):
+                # Addressed by topic, so this can only be ours -- but checked
+                # anyway, because a wrong id here would mean one bot stopping
+                # on another's behalf and that should be loud, not silent.
+                if msg.bot_id != bot_id:
+                    log.warning("ignoring %s meant for %s", msg.action,
+                                msg.bot_id)
+                    continue
+                if msg.action != protocol.BOT_STOP:
+                    log.warning("ignoring unknown command %r", msg.action)
+                    continue
+                log.warning("stopping on master's instruction: %s", msg.reason)
+                stopped_by = msg.reason
+                break
+            if isinstance(msg, FeedStatus):
+                # Receiving it is the point -- silent_since was already cleared
+                # above, which is what keeps this bot alive through a closed
+                # market. The logging is just so the gap is legible: one line
+                # when it starts and one when it ends, not one per minute all
+                # night.
+                if msg.market_open:
+                    if feed_held:
+                        log.info("feed resumed (%s), master served %d bar(s)",
+                                 msg.reason, msg.bars_served)
+                        feed_held = False
+                elif not feed_held:
+                    log.info("master holding the feed (%s); waiting, not "
+                             "exiting", msg.reason)
+                    feed_held = True
+                if msg.reason == protocol.FEED_SYNC_REASON:
+                    # Master is asking who is listening before bar 0. Hearing
+                    # it proves our subscription is live, so say so.
+                    push_socket.send(protocol.encode(BotStatus(
+                        bot_id=bot_id, seq=last_seq, bar_index=bar_index,
+                        market_time=None, started_at=started_at,
+                        bars_seen=bar_index, bars_dropped=bars_dropped,
+                        inflight={s: f.order_id[:8] for s, f in inflight.items()},
+                        balance=ledger.balance, monitors={}, close=0.0,
+                        plots={},
+                    )))
+                continue
+
+            if isinstance(msg, OrderReport):
+                ledger.apply(msg)
+                event = msg.event
+
+                held = inflight.get(event.symbol)
+                if held is not None and held.order_id == event.order_id:
+                    if protocol.is_resting(event.new_status):
+                        # Still live and still spending the balance, but master
+                        # is now tracking it, so stop counting bars.
+                        held.acknowledged = True
+                    else:
+                        # Resolved — the symbol is free to trade again.
+                        del inflight[event.symbol]
+
+                if event.is_filled():
+                    fill = Fill(
+                        symbol=event.symbol, action=event.action.value,
+                        quantity=event.filled_quantity, price=event.filled_price,
+                        timestamp=event.timestamp, reason=event.message,
+                    )
+                    ctx = StrategyContext(
+                        timestamp=fill.timestamp, balance=ledger.balance,
+                        equity=ledger.equity(price_map),
+                        positions=ledger.positions_list(price_map),
+                        price_history=price_history, bar_index=bar_index,
+                        params=params,
+                    )
+                    strategy.on_fill(fill, ctx)
+                elif protocol.is_resting(event.new_status):
+                    # Accepted and resting at the broker. NOT a rejection: the
+                    # cash is already committed, and a fill will be reported on
+                    # a later bar once the price crosses.
+                    log.info("%sorder %s resting (%s): %s %s x%d px=%s",
+                             _at(event.timestamp), event.order_id[:8],
+                             event.new_status.value, event.action.value,
+                             event.symbol, event.quantity, event.price)
+                else:
+                    log.info("%sorder %s %s: %s", _at(event.timestamp),
+                             event.order_id[:8], event.new_status.value,
+                             event.message)
+                continue
+
+            if not isinstance(msg, PriceUpdate):
+                log.warning("ignoring unexpected msg %s", type(msg).__name__)
+                continue
+
+            # PUB/SUB has no retransmit, so a gap in the per-symbol sequence is
+            # the only evidence that a bar never reached us. Worth saying out
+            # loud: the strategy's price history now has a hole in it.
+            if last_seq >= 0 and msg.seq != last_seq + 1:
+                missed = msg.seq - last_seq - 1
+                if missed < 0:
+                    # Not a drop: a sequence that went backwards means these
+                    # bars are from a different master than the last ones, i.e.
+                    # this bot outlived its own. SILENCE_LIMIT_S should have
+                    # caught that first, so say so loudly and stop.
+                    log.error("%sseq went backwards (%d -> %d): bars from "
+                              "another master, exiting", _at(msg.bar.timestamp),
+                              last_seq, msg.seq)
+                    break
+                bars_dropped += missed
+                log.warning("%sdropped %d bar(s) of %s (seq %d -> %d)",
+                            _at(msg.bar.timestamp), missed, target_symbol,
+                            last_seq, msg.seq)
+            last_seq = msg.seq
+
+            # One broadcast = one closed 1m bar, built by the broker. A finer
+            # feed would be built into bars before it is published
+            # (marketdata.aggregate.bars_from_ticks), not here.
+            bar = msg.bar
+            price_map[bar.symbol] = bar.close
+            price_history.setdefault(bar.symbol, []).append(bar.close)
+
+            ctx = StrategyContext(
+                timestamp=bar.timestamp,
+                balance=ledger.balance,
+                equity=ledger.equity(price_map),
+                positions=ledger.positions_list(price_map),
+                price_history=price_history,  # direct reference, same as engine.py
+                bar_index=bar_index,
+                params=params,
+            )
+            bar_index += 1
+
+            for sig in strategy.on_bar(bar, ctx) or []:
+                if sig.action not in ("BUY", "SELL"):
+                    continue
+
+                held = inflight.get(sig.symbol)
+                if held is not None:
+                    waited = bar_index - held.bar_sent
+                    if held.acknowledged or waited < UNACKED_MAX_BARS:
+                        log.debug("%sskipping %s %s: order %s in flight",
+                                  _at(bar.timestamp), sig.action, sig.symbol,
+                                  held.order_id[:8])
+                        continue
+                    log.warning("%sno word on order %s after %d bars, assuming "
+                                "it never reached master; trading %s again",
+                                _at(bar.timestamp), held.order_id[:8], waited,
+                                sig.symbol)
+
+                # Just the intent — master's ExecutionEngine decides if/how it fills.
+                order = build_order(bot_id, session_id, sig, bar)
+                inflight[sig.symbol] = InFlight(order_id=order.id, bar_sent=bar_index)
+                push_socket.send(protocol.encode(
+                    OrderIntent(bot_id=bot_id, order=order, reason=sig.reason)
+                ))
+
+            # After the signals, so the status reflects the orders this bar
+            # produced rather than the state just before them.
+            push_socket.send(protocol.encode(BotStatus(
+                bot_id=bot_id,
+                seq=last_seq,
+                bar_index=bar_index,
+                market_time=bar.timestamp,
+                started_at=started_at,
+                bars_seen=bar_index,
+                bars_dropped=bars_dropped,
+                inflight={s: f.order_id[:8] for s, f in inflight.items()},
+                balance=ledger.balance,
+                monitors=protocol.wire_safe(strategy.monitors()),
+                # The price this bar, always, whatever the strategy chose to
+                # expose. A chart of indicator values with no price to read
+                # them against is not a chart, and this is the only process
+                # that has the number the strategy actually saw.
+                close=float(bar.close),
+                plots=protocol.wire_safe(strategy.plots()),
+            )))
+
+    except KeyboardInterrupt:
+        pass
+
+    # One shutdown path for every exit: Ctrl-C, SIGTERM from master, a dead
+    # master, or a sequence from someone else's master.
+    strategy.on_end(StrategyContext(
+        timestamp=datetime.now(), balance=ledger.balance,
+        equity=ledger.equity(price_map), positions=ledger.positions_list(price_map),
+        price_history=price_history, bar_index=bar_index, params=params,
+    ))
+    mon = strategy.monitors()
+    log.info("exiting after %d bar(s), balance=%.0f, dropped=%d%s%s",
+             bar_index, ledger.balance, bars_dropped,
+             f", {mon.get('signals_emitted', '?')} signal(s)" if mon else "",
+             f"; stopped: {stopped_by}" if stopped_by else "")
+    if mon:
+        log.info("final monitors: %s",
+                 "  ".join(f"{k}={v}" for k, v in mon.items()))

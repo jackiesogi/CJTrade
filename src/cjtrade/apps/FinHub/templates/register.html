@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - FinHub | CJTrade Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-[#f8fafc] text-slate-900 min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white p-10 rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md">
+        <div class="flex flex-col items-center mb-8">
+            <div class="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg text-white font-bold text-xl mb-4">FH</div>
+            <h2 class="text-3xl font-black tracking-tight text-slate-900">Create Account</h2>
+            <p class="text-slate-400 text-sm font-medium mt-2 text-center">Join FinHub to manage your assets with enterprise-grade security.</p>
+        </div>
+
+        <div id="error-msg" class="hidden bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl mb-6 text-xs font-bold uppercase tracking-widest text-center"></div>
+
+        <form id="register-form" class="space-y-4">
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Username</label>
+                <input type="text" id="username" required placeholder="Pick a unique username"
+                    class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all text-sm font-semibold">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Email Address</label>
+                <input type="email" id="email" required placeholder="name@company.com"
+                    class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all text-sm font-semibold">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Password</label>
+                <input type="password" id="password" required placeholder="••••••••"
+                    class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all text-sm font-semibold">
+            </div>
+
+            <button type="submit" id="submit-btn"
+                class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0 mt-4">
+                CREATE SECURE ACCESS
+            </button>
+        </form>
+
+        <div class="mt-8 pt-8 border-t border-slate-100">
+            <p class="text-center text-xs font-bold text-slate-400 tracking-wide uppercase">
+                Already have an account?
+                <a href="/login" class="text-slate-900 hover:underline underline-offset-4 ml-1">Sign In instead</a>
+            </p>
+        </div>
+    </div>
+
+    <script src="/static/register.js"></script>
+</body>
+</html>

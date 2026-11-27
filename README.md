@@ -12,7 +12,7 @@ changing it.
 **Documentation:** <https://jackiesogi.github.io/CJTrade/>
 ([繁體中文](https://jackiesogi.github.io/CJTrade/zh-TW/))
 
-![CJTrade](./img/combined.png)
+![CJTrade](https://raw.githubusercontent.com/jackiesogi/CJTrade/master/doc/assets/img/combined.png)
 
 ## Features
 
@@ -26,6 +26,8 @@ changing it.
   (`on_bar`, `buy`, `sell`, `ta.*`, `param.*`), checked before it runs.
 - **Risk controls.** Per-strategy capital limits, order-rate limits,
   duplicate-order detection and a loss kill switch.
+- **FinHub, a web UI.** Start runs, watch each bot, and trade by hand from
+  the browser.
 - **Analytics.** Technical indicators (TA-Lib), TWSE fundamentals, news,
   LLM clients, quantstats reports and run diagnostics.
 
@@ -98,7 +100,7 @@ Or explore the same API interactively with the shell:
 <!-- cjcheck: static -->
 ```sh
 bash scripts/gen_config.sh arenax   # writes arenax_system.cjconf
-uv run cjtrade --broker=arenax
+uv run cjshell --broker=arenax
 ```
 
 The [Get started guide](https://jackiesogi.github.io/CJTrade/get-started/connect/)
@@ -113,7 +115,7 @@ and connect:
 <!-- cjcheck: static -->
 ```sh
 bash scripts/gen_config.sh sinopac  # then edit sinopac_system.cjconf
-uv run cjtrade --broker=sinopac
+uv run cjshell --broker=sinopac
 ```
 
 > [!CAUTION]
@@ -126,8 +128,7 @@ uv run cjtrade --broker=sinopac
 | Method | How time moves | Reproducible | Use it for |
 |---|---|---|---|
 | `oneshot` | Walks a pre-fetched bar series | Yes | Parameter sweeps, quick screening |
-| Trading engine | Steps through real bar timestamps | Yes | Results you intend to compare |
-| `full_sim` | Sped-up wall clock | No | Watching the system run end to end |
+| Trading engine (`cjtrade`) | Steps through real bar timestamps | Yes | Results you intend to compare |
 
 Strategy windows are counted in **bars**, so changing `--interval` changes
 the strategy: a 100-bar window is 100 minutes at `1m` and 100 days at `1d`.
@@ -149,7 +150,7 @@ command line. Built-in strategies: `BollingerStrategy`, `ADXAdaptiveStrategy`,
 
 ### Trading engine
 
-Each strategy runs as its own process; only the master process holds the
+`cjtrade` is the trading app. Each strategy runs as its own process; only the master process holds the
 broker session and the risk gate. Every bar, the master publishes each
 symbol's closed 1m bars (`client.market.get_kbars`) to its bots. Before
 stepping to the next bar, it waits for every bot to answer the current one,
@@ -159,22 +160,21 @@ so `--speed=0` and `--speed=60` produce the same bars, orders and fills.
 ```sh
 uv run arenaxd --backend=backtest --port=8802 > /dev/null 2>&1 &
 sleep 15
-ARENAX_PORT=8802 uv run python poc/trading_engine/main.py \
-  --broker=arenax --mode=backtest --watch-list=2357 \
+uv run cjtrade --broker=arenax \
+  --mode=backtest --watch-list=2357 \
   --fund=1000000 --days=30 --start-date=2025-09-01 --speed=0
 ```
 
 The bots that run are listed in `BOT_ROSTER` in
-[`poc/trading_engine/main.py`](./poc/trading_engine/main.py), or in a file
-passed with `--roster=`. A read-only status page is served on
-`http://127.0.0.1:8898/status` while a run is in progress.
+[`src/cjtrade/apps/CJTrade/main.py`](./src/cjtrade/apps/CJTrade/main.py), or in a file
+passed with `--roster=`. A status page is served on
+`http://127.0.0.1:8898/status` while a run is in progress, loopback only.
 
 > [!NOTE]
 > By default the `backtest` backend reads prices from Sinopac, so it needs
 > the `sinopac` extra and credentials; `arenaxd --data=finmind,yfinance`
 > runs it without a broker account, and `--data=offline --price-db=FILE`
 > runs it on bars preloaded with `preload-prices`, with no network at all.
-> The trading engine is a proof of concept under `poc/`.
 
 ### Reading the result
 
@@ -187,6 +187,19 @@ report:
 uv run insight            # the most recent run
 uv run insight --list     # every run on this machine
 ```
+
+### FinHub
+
+The web UI for the trading app. It starts the broker and the engine itself,
+shows each bot while it runs, and keeps a record of every run:
+
+<!-- cjcheck: static -->
+```sh
+uv run finhub             # http://127.0.0.1:8000, loopback only
+```
+
+See [`src/cjtrade/apps/FinHub/README.md`](./src/cjtrade/apps/FinHub/README.md)
+for its settings.
 
 ## Writing a strategy
 

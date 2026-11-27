@@ -95,7 +95,5 @@ engine 會啟動 roster 裡列出的 bot。`bot_custom.py` 負責執行策略檔
 然後在 [README](https://github.com/jackiesogi/CJTrade#trading-engine) 的 engine 指令
 加上 `--roster=/path/to/roster.json`，並把 bot 的股票代號放進 `--watch-list`。
 
-!!! warning
-    trading engine 放在 `poc/` 底下，目前還是概念驗證階段。
 
 下一步：[回測](backtesting.md)。

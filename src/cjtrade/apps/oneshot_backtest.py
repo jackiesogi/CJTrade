@@ -1,0 +1,493 @@
+"""
+apps/oneshot_backtest.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+One-shot (vectorised) backtest runner.
+
+Fetches historical kbars from the ArenaX server in one HTTP call,
+runs a BaseStrategy over them in-memory with BacktestEngine, then
+saves and opens a full BacktestReport – all done in seconds.
+
+Usage
+-----
+    uv run backtest --symbol 2330 --start 2024-01-02 --duration 180 --interval 1d
+    uv run backtest --symbol 2330,0050 --strategy DonchianBreakoutStrategy
+    uv run backtest --symbol 2330 --compare      # every built-in strategy side by side
+
+    # Or from Python:
+    from cjtrade.apps.oneshot_backtest import run_oneshot
+    run_oneshot(symbol="2330", start="2023-01-01", end="2024-01-01")
+
+Everything is a command-line flag (``--help``); no environment variable is
+read except ``ARENAX_PORT``, the server the bars come from. Reports go to
+``paths.reports_dir()``.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import random
+import uuid
+from datetime import datetime
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
+
+from cjtrade.pkgs import paths
+from cjtrade.pkgs.analytics.backtest.engine import BacktestEngine
+from cjtrade.pkgs.analytics.evaluation.multi_strategy_report import MultiStrategyBacktestReport
+from cjtrade.pkgs.analytics.evaluation.quantstats import BacktestReport
+from cjtrade.pkgs.brokers.arenax.arenax_broker_api import ArenaXBrokerAPI_v2
+from cjtrade.pkgs.logger import get_console
+from cjtrade.pkgs.logger import get_logger
+from cjtrade.pkgs.logger import setup_logging
+from cjtrade.pkgs.models.cost import CostModel
+from cjtrade.pkgs.models.product import Product
+from cjtrade.pkgs.strategy.adx import ADXAdaptiveStrategy
+from cjtrade.pkgs.strategy.base_strategy import BaseStrategy
+from cjtrade.pkgs.strategy.baseline_0050 import BaselineStrategy
+from cjtrade.pkgs.strategy.bb import BollingerStrategy
+from cjtrade.pkgs.strategy.dca import DCA_Monthly
+from cjtrade.pkgs.strategy.donchian import DonchianBreakoutStrategy
+from cjtrade.pkgs.strategy.parameters.manager import ParameterManager
+from cjtrade.pkgs.strategy.snr import SupportResistanceStrategy
+from dotenv import load_dotenv
+
+log = get_logger("oneshot_backtest")
+clog = log.getChild("compare")
+out = get_console("oneshot_backtest")
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def run_oneshot(
+    symbol: Union[str, List[str], None] = None,
+    start: Optional[str] = None,
+    duration_days: int = 365,
+    interval: str = "1d",
+    initial_balance: float = 1_000_000.0,
+    strategy: Optional[BaseStrategy] = None,
+    params: Optional[Dict[str, Any]] = None,
+    report_path: Optional[str] = None,
+    open_browser: bool = True,
+) -> None:
+    # cfg = _load_config()
+
+    if symbol is None:
+        raise ValueError("No symbol provided. Pass symbol=...")
+
+    if isinstance(symbol, str):
+        symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
+    else:
+        symbols = [s.strip() for s in symbol if s.strip()]
+    today = datetime.now().date()
+
+    if start:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+    else:
+        min_days_ago = duration_days + 7
+        # max_days_ago = 365 * 6  # Allow up to 6 years of historical data
+        max_days_ago = 365 * 10   # since we support yf as fallback
+
+        if max_days_ago <= min_days_ago:
+            max_days_ago = min_days_ago + 30
+
+        random_offset = random.randint(min_days_ago, max_days_ago)
+        start_dt = today - timedelta(days=random_offset)
+
+    end_dt = start_dt + timedelta(days=duration_days)
+
+    start_str = start_dt.isoformat()
+    end_str = end_dt.isoformat()
+
+    log.info("range %s to %s (%d days)", start_str, end_str, duration_days)
+
+    # Load parameters using ParameterManager
+    strategy = strategy or BollingerStrategy()
+    strategy_name = getattr(strategy, 'long_name', getattr(strategy, 'name', 'Unknown'))
+
+    param_config = ParameterManager.load_params(
+        interval=interval,
+        strategy_name=strategy_name,
+        user_overrides=params
+    )
+
+    log.info("params %s (interval=%s, strategy=%s)",
+             param_config.params_hash, interval, strategy_name)
+    merged_params = param_config.params
+
+    sym_label = ",".join(symbols)
+
+    # 4. Fetch kbars
+    api = ArenaXBrokerAPI_v2()
+    all_kbars = []
+
+    for sym in symbols:
+        kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
+        if not kbars:
+            log.warning("no kbars for %s [%s, %s], skipping", sym, start_str, end_str)
+            continue
+
+        all_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
+
+    if not all_kbars:
+        raise RuntimeError(f"No kbars found for {sym_label} in range {start_str} - {end_str}")
+
+    all_kbars.sort(key=lambda k: k.timestamp)
+
+    session_id = str(uuid.uuid4())
+    cost_model = CostModel()
+    engine = BacktestEngine(
+        kbars=all_kbars,
+        symbol=None,
+        initial_balance=initial_balance,
+        params=merged_params,
+        session_id=session_id,
+        cost_model=cost_model,
+    )
+    result = engine.run(strategy)
+
+    strategy_title = getattr(strategy, 'name', 'UnnamedStrategy')
+
+    # What produced this result, and under what assumptions.
+    #
+    # Recorded because the two paths that can produce a BacktestResult do not
+    # agree and cannot be made to: this one fills a signal inside the same bar
+    # at the signal's own price, while the trading engine sends a limit order
+    # that fills only when some later close crosses it -- and only this one has
+    # no risk gate, no per-bot capital split and no order-rate cap. Identical
+    # strategy and parameters give different numbers, so a reader who does not
+    # know which path produced the numbers cannot interpret them.
+    result.provenance = {
+        "path": "oneshot",
+        "produced_by": "cjtrade.apps.oneshot_backtest",
+        "strategy": strategy_title,
+        "strategy_long_name": strategy_name,
+        "symbols": symbols,
+        "interval": interval,
+        "requested_start": start_str,
+        "requested_end": end_str,
+        "duration_days": duration_days,
+        "start_was_explicit": bool(start),
+        "bars": len(all_kbars),
+        "initial_balance": initial_balance,
+        "params": dict(merged_params),
+        "params_hash": param_config.params_hash,
+        "cost_model": {
+            "commission_rate": cost_model.commission_rate,
+            "commission_discount": cost_model.commission_discount,
+            "min_commission": cost_model.min_commission,
+            "stock_tax_rate": cost_model.stock_tax_rate,
+            "etf_tax_rate": cost_model.etf_tax_rate,
+            "slippage_model": cost_model.slippage_model,
+            "slippage_pct": cost_model.slippage_pct,
+        },
+        # Stated rather than implied. These are the assumptions that make this
+        # path fast and that make it disagree with the trading engine.
+        "execution_model": (
+            "A signal fills in the bar that produced it, at the signal's own "
+            "price, with no limit check and no latency. Rejected only for "
+            "insufficient cash or shares. No risk gate, no per-bot capital "
+            "allocation, no order-rate cap and no drawdown halt."
+        ),
+        "comparable_to_engine": False,
+    }
+
+    # 6. Report
+    safe_label = sym_label.replace(",", "_")
+    stem = paths.reports_dir() / f"oneshot_{safe_label}_{session_id[:8]}"
+    html_path = report_path or f"{stem}.html"
+    pkl_path = f"{stem}.pkl"
+
+    report = BacktestReport(result)
+    report.summary()
+
+    # Pickle first, and independently of the tearsheet: it is the cheap one,
+    # it is what `insight` reads, and full_report() raises on a run with too
+    # few equity samples to have a return series. A failed chart should not
+    # cost the run its data.
+    try:
+        result.save(pkl_path)
+        log.info("result saved: %s", pkl_path)
+    except Exception as exc:
+        log.warning("save result failed: %s", exc)
+        pkl_path = None
+
+    try:
+        report.full_report(path=html_path, open_browser=open_browser,
+                           title=f"Backtest Report: {strategy_title}")
+    except Exception as exc:
+        log.warning("no HTML tearsheet: %s", exc)
+        html_path = None
+
+    # Said on stdout, last, because this is what a caller needs next.
+    out.info("")
+    if pkl_path:
+        out.info(f"  result  {pkl_path}")
+    if html_path:
+        out.info(f"  report  {html_path}")
+    if pkl_path:
+        out.info(f"\n  Structured report:  insight {session_id[:8]}")
+
+def run_compare_strategies(
+    symbol: Union[str, List[str], None] = None,
+    start: Optional[str] = None,
+    duration_days: int = 365,
+    interval: str = "1d",
+    initial_balance: float = 1_000_000.0,
+    strategies: Optional[dict] = None,
+    params: Optional[Dict[str, Any]] = None,
+    report_path: Optional[str] = None,
+    open_browser: bool = True,
+) -> None:
+    """Run multiple strategies on the same kbars and generate comparison report.
+
+    Parameters
+    ----------
+    symbol : str | list[str]
+        Ticker(s), e.g. "2330" or ["2330", "0050"]
+    start : str, optional
+        Start date YYYY-MM-DD (default: random based on duration)
+    duration_days : int
+        Number of trading days to backtest
+    interval : str
+        Kbar interval, e.g. "1m" or "1d" (default: "1m")
+    initial_balance : float
+        Starting cash for each strategy (default: 1,000,000)
+    strategies : dict
+        Map of strategy_name → strategy_instance, e.g.
+        {"DCA_Monthly": DCA_Monthly(), "BollingerBands": BollingerStrategy()}
+    params : dict
+        Shared parameters passed to all strategies
+    report_path : str, optional
+        Output HTML file path
+    open_browser : bool
+        Open result in default browser (default: True)
+    """
+    # cfg = _load_config()
+
+    if symbol is None:
+        raise ValueError("No symbol provided. Pass symbol=...")
+
+    if isinstance(symbol, str):
+        symbols: List[str] = [s.strip() for s in symbol.split(",") if s.strip()]
+    else:
+        symbols = [s.strip() for s in symbol if s.strip()]
+
+    today = datetime.now().date()
+
+    if start:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+    else:
+        min_days_ago = duration_days + 7
+        # max_days_ago = 365 * 6  # Allow up to 6 years of historical data
+        max_days_ago = 365 * 10   # since we support yf as fallback
+
+        if max_days_ago <= min_days_ago:
+            max_days_ago = min_days_ago + 30
+
+        random_offset = random.randint(min_days_ago, max_days_ago)
+        start_dt = today - timedelta(days=random_offset)
+
+    end_dt = start_dt + timedelta(days=duration_days)
+
+    start_str = start_dt.isoformat()
+    end_str = end_dt.isoformat()
+
+    clog.info("range %s to %s (%d days)", start_str, end_str, duration_days)
+
+    if not strategies:
+        strategies = {
+            "DCA_Monthly": DCA_Monthly(),
+            "BollingerBands": BollingerStrategy(),
+        }
+
+    # Separate baseline strategy from other strategies
+    baseline_symbol = "0050"
+    baseline_strategy = None
+    test_strategies = {}
+
+    # Automatically identify baseline strategy by name (e.g. "Baseline_0050")
+    for strat_name, strat_instance in strategies.items():
+        if "baseline" in strat_name.lower():
+            baseline_strategy = strat_instance
+            clog.info("baseline strategy: %s", strat_name)
+        else:
+            test_strategies[strat_name] = strat_instance
+
+    # Fetch kbars for test symbols
+    test_symbols = symbols.copy()  # Keep original symbols for test strategies
+    api = ArenaXBrokerAPI_v2()
+    test_kbars = []
+
+    for sym in test_symbols:
+        kbars = api.get_kbars(Product(symbol=sym), start_str, end_str, interval)
+        if not kbars:
+            clog.warning("no kbars for %s [%s, %s], skipping", sym, start_str, end_str)
+            continue
+
+        test_kbars.extend(kbars)   # get_kbars() already tags each bar's symbol
+
+    # Fetch kbars for baseline symbol if baseline strategy exists
+    baseline_kbars = []
+    if baseline_strategy:
+        kbars = api.get_kbars(Product(symbol=baseline_symbol), start_str, end_str, interval)
+        if kbars:
+            baseline_kbars = kbars
+            clog.info("fetched %d kbars for baseline %s", len(baseline_kbars), baseline_symbol)
+        else:
+            clog.warning("no kbars for baseline %s, skipping baseline strategy", baseline_symbol)
+            baseline_strategy = None
+
+    # Merge all kbars
+    all_kbars = test_kbars + baseline_kbars
+
+    if not all_kbars:
+        raise RuntimeError(f"No kbars found for {','.join(test_symbols)} in range {start_str} - {end_str}")
+
+    all_kbars.sort(key=lambda k: k.timestamp)
+
+    # Prepare final strategies dict
+    final_strategies = test_strategies.copy()
+    if baseline_strategy:
+        final_strategies["Baseline_0050"] = baseline_strategy
+
+    sym_label = ",".join(test_symbols)
+    if baseline_strategy:
+        sym_label += f",{baseline_symbol}(baseline)"
+
+    # Load parameters using ParameterManager
+    strategy_name = list(final_strategies.keys())[0] if final_strategies else "Unknown"
+    param_config = ParameterManager.load_params(
+        interval=interval,
+        strategy_name=strategy_name,
+        user_overrides=params
+    )
+
+    clog.info("params %s (interval=%s)", param_config.params_hash, interval)
+    final_params = param_config.params
+
+    # Run comparison
+    multi_report = MultiStrategyBacktestReport(
+        kbars=all_kbars,
+        initial_balance=initial_balance,
+        params=final_params,
+    )
+
+    for strat_name, strat_instance in final_strategies.items():
+        multi_report.add_strategy(strat_name, strat_instance)
+
+    multi_report.run()
+    multi_report.compare_summary()
+
+    # Save comparison HTML
+    safe_label = sym_label.replace(",", "_")
+    # In the reports directory, with every other report, not wherever the
+    # command happened to be run from.
+    html_path = report_path or str(paths.reports_dir() / f"comparison_{safe_label}_{uuid.uuid4().hex[:8]}.html")
+    multi_report.save_comparison_html(path=html_path, open_browser=False)
+
+    # Save overlay charts (returns + equity)
+    returns_overlay_path = str(paths.reports_dir() / f"compare_returns_{safe_label}_{uuid.uuid4().hex[:8]}.html")
+    equity_overlay_path = str(paths.reports_dir() / f"compare_equity_{safe_label}_{uuid.uuid4().hex[:8]}.html")
+
+    multi_report.compare_returns_overlay(path=returns_overlay_path, open_browser=False)
+    multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=False)
+
+    # Generate individual quantstats full_report for each strategy
+    out.info("\n" + "=" * 80)
+    out.info("  Generating individual quantstats reports for each strategy...")
+    out.info("=" * 80)
+
+    for strat_name, result in multi_report._results.items():
+        report = BacktestReport(result)
+        # Generate individual HTML report with strategy name as title
+        individual_html = str(paths.reports_dir() / f"fullreport_{strat_name}_{safe_label}_{uuid.uuid4().hex[:8]}.html")
+        report.summary()
+        report.full_report(path=individual_html, open_browser=open_browser, title=f"Backtest Report: {strat_name}")
+
+    out.info("=" * 80)
+    multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=open_browser)
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+def main():
+    import argparse
+    setup_logging(logging.INFO)
+
+    ap = argparse.ArgumentParser(description="CJTrade one-shot backtest")
+    ap.add_argument("--symbol",       required=True, help="Ticker(s), e.g. 2330 or 2330,0050")
+    ap.add_argument("--start",        default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
+    ap.add_argument("--duration",     type=int, default=365, help="Duration in days (default: 365)")
+    ap.add_argument("--interval",     choices=["1m", "5m", "1h", "1d"], default="1d",
+                    help="Kbar interval (default: 1d)")
+    ap.add_argument("--balance",      type=float, default=1_000_000.0, help="Initial balance (default: 1,000,000)")
+    ap.add_argument("--strategy",     default="BollingerStrategy",
+                    choices=["BollingerStrategy", "SupportResistanceStrategy", "DCA_Monthly",
+                             "DonchianBreakoutStrategy", "ADXAdaptiveStrategy", "BaselineStrategy"],
+                    help="Strategy to run (default: BollingerStrategy)")
+    ap.add_argument("--params",       default=None,
+                    help="Parameter overrides (format: 'key1:val1,key2:val2', e.g. 'bb__window_size:30,risk__max_position_pct:0.1')")
+    ap.add_argument("--show-params",  action="store_true", help="Show parameter configuration and exit")
+    ap.add_argument("--compare",      action="store_true", help="Compare multiple strategies")
+    ap.add_argument("--no-browser",   action="store_true", help="Don't open browser")
+    args = ap.parse_args()
+
+    # Handle --show-params
+    if args.show_params:
+        out.info(ParameterManager.show_params(
+            interval=args.interval,
+            strategy_name="BollingerBands",  # Default, can be overridden
+            user_overrides=args.params
+        ))
+        exit(0)
+
+    _STRATEGY_MAP = {
+        "BollingerStrategy":          BollingerStrategy,
+        "SupportResistanceStrategy":  SupportResistanceStrategy,
+        "DCA_Monthly":                DCA_Monthly,
+        "DonchianBreakoutStrategy":   DonchianBreakoutStrategy,
+        "ADXAdaptiveStrategy":        ADXAdaptiveStrategy,
+        "BaselineStrategy":           BaselineStrategy,
+    }
+    strategy_instance = _STRATEGY_MAP.get(args.strategy, BollingerStrategy)()
+
+    if args.compare:
+        run_compare_strategies(
+            symbol=args.symbol,
+            start=args.start,
+            duration_days=args.duration,
+            interval=args.interval,
+            initial_balance=args.balance,
+            params=args.params,
+            strategies={
+                "Support-Resistance": SupportResistanceStrategy(lookback_days=20),
+                "BollingerBands": BollingerStrategy(),
+                "Donchian": DonchianBreakoutStrategy(),
+                "ADX_Adaptive": ADXAdaptiveStrategy(),
+                "DCA_Monthly": DCA_Monthly(),
+                "Baseline_0050": BaselineStrategy(),
+            },
+            open_browser=not args.no_browser,
+        )
+    else:
+        run_oneshot(
+            symbol=args.symbol,
+            start=args.start,
+            duration_days=args.duration,
+            interval=args.interval,
+            initial_balance=args.balance,
+            strategy=strategy_instance,
+            params=args.params,
+            open_browser=not args.no_browser,
+        )
+
+if __name__ == "__main__":
+    main()

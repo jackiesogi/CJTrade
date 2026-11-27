@@ -169,6 +169,21 @@ class TestOrderCRUD:
         assert rows[0][0] == "FILLED"
         assert rows[0][1] is not None  # updated_at should be set
 
+    def test_update_stamps_the_time_of_the_call_not_of_the_import(self, db, monkeypatch):
+        """The default used to be evaluated once, when db_api was imported."""
+        import cjtrade.pkgs.db.db_api as db_api
+
+        class Later(datetime):
+            @classmethod
+            def utcnow(cls):
+                return datetime(2030, 1, 2, 1, 0)
+        order = _make_order()
+        insert_new_order_to_db(db, username="u1", order=order)
+        monkeypatch.setattr(db_api, "datetime", Later)
+        update_order_status_to_db(db, order.id, "FILLED")
+        rows = db.execute("SELECT updated_at FROM orders WHERE order_id = ?", (order.id,))
+        assert rows[0][0] == "2030-01-02 09:00:00"
+
     def test_insert_none_conn_no_crash(self):
         """Passing None conn should just return without error."""
         insert_new_order_to_db(None, username="u", order=_make_order())
@@ -409,3 +424,26 @@ class TestDefaultSchemaScripts:
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"arenax_prices", "arenax_symbol_coverage"} <= tables
         assert len(tables) > 3
+
+
+def test_coverage_rows_are_stamped_with_the_current_epoch(price_db):
+    """last_checked used utcnow().timestamp(), 8 hours off on a Taipei machine."""
+    import time
+    before = int(time.time())
+    upsert_coverage_range(price_db, "2330", "1m", 100, 200, "x")
+    stamp = price_db.execute("SELECT last_checked FROM arenax_symbol_coverage")[0][0]
+    assert before <= stamp <= int(time.time())
+
+
+def test_shioaji_logs_to_the_log_directory_unless_told_otherwise(monkeypatch, tmp_path):
+    """shioaji writes ./shioaji.log wherever it is imported from by default."""
+    import importlib
+    import cjtrade.pkgs.brokers.sinopac as sinopac_pkg
+    from cjtrade.pkgs import paths
+    monkeypatch.delenv("SJ_LOG_PATH", raising=False)
+    importlib.reload(sinopac_pkg)
+    import os
+    assert os.environ["SJ_LOG_PATH"] == str(paths.log_path("shioaji.log"))
+    monkeypatch.setenv("SJ_LOG_PATH", str(tmp_path / "mine.log"))
+    importlib.reload(sinopac_pkg)
+    assert os.environ["SJ_LOG_PATH"] == str(tmp_path / "mine.log")

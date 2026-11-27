@@ -2,7 +2,7 @@
 
 The only place that knows 09:00 and 13:30. Those literals used to be copied
 across nine sites (market_data, brokerside_server, sinopac_broker_api,
-cjtrade_system_arenax), so "when does the market close" had nine answers that
+the old cjtrade_system), so "when does the market close" had nine answers that
 had to be kept in step by hand.
 
 Pure: no clock, no I/O, no state. Pass the time in.

@@ -2,14 +2,14 @@
 # =============================================================================
 # CJTrade Shell Integration Test Suite
 # ---
-# It basically do the same thing as test_cjtrade_shell_all_cmds.sh
-# but with better structure, logging, and reporting.
+# Runs every CJShell command against one broker and checks each exits 0.
 # =============================================================================
 # Usage:
-#   ./test_cjtrade_shell_all_cmds.sh [options]
+#   bash tests/test_cjtrade_integration.sh [options]   (from the repo root)
 #
 # Options:
-#   --broker=<name>     Specify broker (mock/sinopac/realistic, default: mock)
+#   --broker=<name>     Broker to test (sinopac). Required: the sinopac run
+#                       places real orders, so it is never the default.
 #   --group=<name>      Run specific test group (trading/query/market/system/all)
 #   --continue-on-error Don't exit on first failure
 #   --no-log           Don't write to log file
@@ -19,8 +19,7 @@
 set -e
 
 # ============= Configuration =============
-DEFAULT_BROKER="mock"
-BROKER="${DEFAULT_BROKER}"
+BROKER=""
 LOG_FILE="LAST_CJTRADE_INTEGRATION_TEST.log"
 SLEEP_BETWEEN_TESTS=3
 CONTINUE_ON_ERROR=false
@@ -49,7 +48,7 @@ CJTrade Shell Integration Test Suite
 Usage: $0 [options]
 
 Options:
-    --broker=<name>      Specify broker (mock/sinopac/realistic, default: mock)
+    --broker=<name>      Broker to test (sinopac); required
     --group=<name>       Run specific test group:
                          - trading: buy, sell, cancel commands
                          - query: lsodr, lspos, balance commands
@@ -62,7 +61,6 @@ Options:
     -h, --help          Show this help message
 
 Examples:
-    $0                                    # Run all tests with mock broker
     $0 --broker=sinopac --group=trading  # Run trading tests with sinopac
     $0 --continue-on-error               # Run all tests, don't stop on error
 EOF
@@ -97,7 +95,11 @@ for arg in "$@"; do
 done
 
 # ============= Setup =============
-CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell_legacy.py --broker=${BROKER}"
+if [ -z "$BROKER" ]; then
+    echo "--broker is required (e.g. --broker=sinopac); see --help" >&2
+    exit 1
+fi
+CMD="uv run python src/cjtrade/apps/CJShell/cjshell_legacy.py --broker=${BROKER}"
 
 # Initialize log file
 if [ "$ENABLE_LOGGING" = true ]; then

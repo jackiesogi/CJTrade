@@ -377,7 +377,11 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="aresh")
+    parser.add_argument("--host", default=os.environ.get("ARENAX_HOST", "localhost"),
+                        help="ArenaX server host (default: $ARENAX_HOST or localhost)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("ARENAX_PORT", 8801)),
+                        help="ArenaX server port (default: $ARENAX_PORT or 8801)")
     args, shell_argv = parser.parse_known_args()
 
     exit_code = 0  # Default success
@@ -389,7 +393,7 @@ def main():
     }
 
 
-    mid = ArenaXMiddleWare()
+    mid = ArenaXMiddleWare(host=args.host, port=args.port)
 
     try:
         # Register all commands

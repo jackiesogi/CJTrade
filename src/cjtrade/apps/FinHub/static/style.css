@@ -1,0 +1,119 @@
+/* FinHub — the handful of things Tailwind's CDN build cannot express inline.
+ * Everything else is utility classes in the templates; this file stays small on
+ * purpose so there is only one place to look for a style that is not visible
+ * in the markup. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0;
+}
+
+html, body { overflow-x: hidden; }
+
+/* --- scrollbars --- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.hidden { display: none !important; }
+
+/* --- sidebar nav ---
+ * A class rather than repeating the utility string on eight anchors, because
+ * the active state has to be toggled from JS and a single class is the only
+ * way the two cannot drift. */
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    color: #64748b;              /* slate-500 */
+    text-decoration: none;
+    transition: background-color 150ms, color 150ms;
+}
+.nav-link:hover { background-color: #f8fafc; }   /* slate-50 */
+.nav-link.nav-active {
+    background-color: #f1f5f9;   /* slate-100 */
+    color: #020617;              /* slate-950 */
+}
+
+#sidebar { box-shadow: -1px 0 3px rgba(0, 0, 0, 0.1); }
+#sidebar.active { transform: translateX(0); }
+#sidebarOverlay { transition: opacity 0.3s ease, visibility 0.3s ease; }
+#sidebarOverlay.active { opacity: 0.5 !important; display: block; }
+
+@media (min-width: 1024px) {
+    #sidebar { width: 18rem; transform: translateX(0) !important; box-shadow: none; }
+    #sidebarOverlay { display: none !important; }
+}
+@media (max-width: 1023px) {
+    #sidebar { max-width: 90vw; width: 18rem; }
+}
+
+/* --- modals --- */
+.modal { transition: opacity 0.25s ease, visibility 0.25s ease; }
+.modal.active {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+}
+.modal-overlay { backdrop-filter: blur(4px); }
+@media (max-width: 640px) {
+    .modal-container { width: 95vw !important; max-height: 90vh; }
+}
+
+/* --- inputs --- */
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #1e293b;
+    box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.1);
+}
+
+/* --- numbers ---
+ * Figures that update in place (balances, bar counts, timestamps) use
+ * tabular-nums so the digits do not shuffle sideways on every poll. */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* --- responsive typography / tables --- */
+@media (max-width: 640px) {
+    h1 { font-size: 1.25rem; }
+    h2 { font-size: 1.5rem; }
+    h3 { font-size: 1rem; }
+    body { font-size: 14px; }
+    button { min-height: 44px; font-size: 0.875rem; }
+    main { padding: 0 0.5rem; }
+}
+@media (max-width: 768px) {
+    table { font-size: 0.8125rem; }
+    td, th { padding: 0.5rem !important; }
+    .grid { gap: 1rem !important; }
+}
+@media (min-width: 641px) and (max-width: 1024px) {
+    body { font-size: 15px; }
+    main { padding: 0 1rem; }
+}
+@media (min-width: 1025px) {
+    body { font-size: 16px; }
+    main { padding: 0 2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+@media print {
+    nav, aside, button { display: none !important; }
+    main { margin: 0; padding: 0; }
+}

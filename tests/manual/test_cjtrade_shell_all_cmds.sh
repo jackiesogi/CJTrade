@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CMD="uv run python src/cjtrade/apps/cjtrade_shell/cjtrade_shell.py --broker=arenax"
+CMD="uv run python src/cjtrade/apps/CJShell/cjshell.py --broker=arenax"
 
 LOG_FILE="LAST_CJTRADE_INTEGRATION_TEST.log"
 

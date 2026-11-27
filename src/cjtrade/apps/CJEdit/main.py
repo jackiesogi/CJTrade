@@ -1,3 +1,4 @@
+import sys
 import tempfile
 from pathlib import Path
 
@@ -30,7 +31,8 @@ import_str = get_general_import_str(broker=result["broker"],
 editor = CJEditor(app=result["app"], file=file, template_str=import_str)
 editor.run()
 
+# This interpreter, so the command works wherever cjtrade is installed.
 out.info(f"""\
-Copy the following command to run your strategy (Adjust the project path as needed)
-PATH=$HOME/Downloads/gitrepo/CJTrade/.venv/bin:$PATH python {file}
+Run your strategy with:
+{sys.executable} {file}
 """)

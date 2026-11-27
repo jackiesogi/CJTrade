@@ -50,7 +50,7 @@ It checks, from the repository alone:
   target resolves to a file that defines that function. Both halves: `osystem`
   stayed declared after its module was deleted, and the name alone passed.
 * `uv run python -m pkg.mod` -- the module exists on disk.
-* paths -- anything starting poc/ src/ scripts/ tests/ doc/ img/ exp/ exists.
+* paths -- anything starting poc/ src/ scripts/ tests/ doc/ exists.
 * `--flags` -- accepted by the command on that line, read from the script's
   own source plus the cli_arg entries of any poc/*.toml it drives.
 * URLs on a known port -- the path is a route that port's server declares.
@@ -103,7 +103,7 @@ log = get_logger("scripts.check_readme_examples")
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The hand-written READMEs. poc/trading_engine/README.md and doc/ are out of
+# The hand-written READMEs. doc/ is out of
 # scope on purpose; add them here when they are ready to be held to this.
 COVERED = [
     "README.md",
@@ -112,8 +112,9 @@ COVERED = [
     "src/cjtrade/apps/ArenaX/README.md",
     "src/cjtrade/apps/CJEdit/README.md",
     "src/cjtrade/apps/CJNews/README.md",
-    "src/cjtrade/apps/cjtrade_shell/README.md",
-    "src/cjtrade/apps/cjtrade_system/README.md",
+    "src/cjtrade/apps/CJShell/README.md",
+    "src/cjtrade/apps/CJTrade/README.md",
+    "src/cjtrade/apps/FinHub/README.md",
     "src/cjtrade/pkgs/brokers/README.md",
 ]
 
@@ -247,7 +248,7 @@ ROUTE_SOURCES = {
         r'@app\.(?:get|post|put|delete|route)\("([^"]+)"\)',
     ),
     (8898,): (
-        "poc/trading_engine/status_api.py",
+        "src/cjtrade/apps/CJTrade/status_api.py",
         r'add_(?:get|post)\("([^"]+)"',
     ),
 }
@@ -304,23 +305,23 @@ def _accepted_flags(command: str) -> set[str] | None:
 
     if command.endswith(".sh"):
         source = ROOT / command
-        # A form-driven script's real flag list lives in its TOML schema, as
-        # cli_arg; the script itself only names the few it reads directly.
-        for toml_name in re.findall(r'"?(poc/[\w.]+\.toml)"?',
-                                    source.read_text() if source.exists() else ""):
-            toml_file = ROOT / toml_name
-            if toml_file.exists():
-                extra |= set(re.findall(r'cli_arg\s*=\s*"([^"]+)"',
-                                        toml_file.read_text()))
     else:
         rel = ROOT / "src" / Path(*command.split("."))
         for candidate in (rel.with_suffix(".py"), rel / "__init__.py"):
             if candidate.exists():
                 source = candidate
                 break
-
     if source is None or not source.exists():
         return None
+    # A form-driven command's real flag list lives in its TOML schema, as
+    # cli_arg; the code only names the few it reads directly. The schema is
+    # named either from the repo root or relative to the code.
+    for toml_name in set(re.findall(r'([\w./-]*[\w-]+\.toml)', source.read_text())):
+        for toml_file in (ROOT / toml_name, source.parent / Path(toml_name).name):
+            if toml_file.exists():
+                extra |= set(re.findall(r'cli_arg\s*=\s*"([^"]+)"',
+                                        toml_file.read_text()))
+                break
     text = source.read_text()
     declared = set(re.findall(r'add_argument\(\s*"(--[\w-]+)"', text))
     declared |= set(re.findall(r'"(--[\w-]+)"', text))
@@ -348,7 +349,7 @@ def _looks_like_repo_path(token: str) -> bool:
     if token.startswith(("127.0.0.1", "localhost")):
         return False
     head = token.split("/")[0]
-    return head in {"poc", "src", "scripts", "tests", "doc", "img", "exp"}
+    return head in {"poc", "src", "scripts", "tests", "doc"}
 
 
 def _static_checks(b: Block, entries: dict[str, str],

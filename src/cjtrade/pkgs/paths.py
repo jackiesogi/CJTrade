@@ -185,7 +185,7 @@ def form_state_dir() -> Path:
 
 
 def log_path(name: str) -> Path:
-    """A named log file, e.g. log_path("cjtrade_system.log").
+    """A named log file, e.g. log_path("shioaji.log").
 
     Warnings
     --------
