@@ -19,20 +19,12 @@ No brokerage account is required for any of
 
 ## Architecture
 
-```
-  your strategy file  ─┐
-  (on_bar → buy/sell)  │
-                       ▼
-               ┌───────────────┐   orders, account    ┌──────────────────────┐
-               │  CJTrade code │ ───────────────────▶ │ a broker             │
-               │ (AccountClient│ ◀─────────────────── │  · ArenaX (pretend)  │
-               │  or the engine)   fills, balance     │  · Sinopac (real)    │
-               └───────────────┘                      └──────────────────────┘
-                       ▲
-                       │ prices (bars, quotes)
-               ┌───────────────┐
-               │ market data   │  Sinopac · FinMind · Yahoo · a local file
-               └───────────────┘
+```mermaid
+flowchart LR
+    S["Strategy file<br/><code>on_bar → buy / sell / hold</code>"] --> C["CJTrade code<br/><code>AccountClient</code> or the trading engine"]
+    C -- "orders, account queries" --> B["Broker<br/>ArenaX (simulated) · Sinopac (live)"]
+    B -- "fills, balance, positions" --> C
+    M["Market data<br/>Sinopac · FinMind · Yahoo Finance · local price file"] -- "bars, quotes" --> C
 ```
 
 - **Broker**: receives orders and holds cash and positions. **ArenaX** is the

@@ -8,12 +8,21 @@ Each example is a complete script; run it with `uv run python file.py`.
 
 ## Order lifecycle
 
-```
- place_order ──▶ COMMITTED_WAIT_MATCHING ──▶ FILLED       (the price was reached)
-                        │
-                        ├──────────────────▶ CANCELLED    (you cancelled it, or the day ended)
-                        │
- (checks fail) ─────────┴──────────────────▶ REJECTED     (bad price, not enough cash, ...)
+```mermaid
+stateDiagram-v2
+    [*] --> COMMITTED_WAIT_MATCHING: place_order() during the session
+    [*] --> COMMITTED_WAIT_MARKET_OPEN: place_order() outside the session
+    [*] --> REJECTED: checks fail
+    COMMITTED_WAIT_MARKET_OPEN --> COMMITTED_WAIT_MATCHING: 09:00
+    COMMITTED_WAIT_MARKET_OPEN --> CANCELLED: cancel_order()
+    COMMITTED_WAIT_MATCHING --> FILLED: limit price reached
+    COMMITTED_WAIT_MATCHING --> PARTIAL: part filled (Sinopac)
+    PARTIAL --> FILLED: rest filled
+    COMMITTED_WAIT_MATCHING --> CANCELLED: cancel_order() or end of day (ROD)
+    PARTIAL --> CANCELLED: cancel_order() cancels the rest
+    FILLED --> [*]
+    CANCELLED --> [*]
+    REJECTED --> [*]
 ```
 
 | Status | Meaning |
@@ -21,6 +30,7 @@ Each example is a complete script; run it with `uv run python file.py`.
 | `COMMITTED_WAIT_MATCHING` | accepted by the broker, waiting for the price |
 | `COMMITTED_WAIT_MARKET_OPEN` | accepted outside trading hours; waits for 09:00 |
 | `FILLED` | filled; cash and positions updated |
+| `PARTIAL` | part of the quantity filled; only real brokers report it, ArenaX fills every order in full |
 | `CANCELLED` | cancelled by you, or expired at the end of the day |
 | `REJECTED` | refused by the broker; `result.message` gives the reason |
 

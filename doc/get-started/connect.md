@@ -4,6 +4,31 @@ This page starts ArenaX, the simulated broker, and connects to it from
 Python to read the account balance. Use two terminals: one for ArenaX, one
 for your code.
 
+## How `AccountClient` reaches a broker {#how-accountclient-reaches-a-broker}
+
+`AccountClient` is the only class your code uses. `BrokerType` picks an
+adapter that implements `BrokerAPIBase`; the adapter converts CJTrade's
+models (`Order`, `Position`, `Kbar`, ...) to and from the broker's own API.
+Prices go through `client.market`, a `MarketData` source chosen
+independently of the broker.
+
+```mermaid
+flowchart LR
+    Code["Your code"] --> AC["AccountClient"]
+    AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
+    AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
+    AC -. "client.market" .-> MD["MarketData"]
+    AXA -- "HTTP, 127.0.0.1" --> AXS["ArenaX server<br/>(arenaxd)"]
+    SPA -- "shioaji SDK" --> SPS["Sinopac"]
+    subgraph Adapters["Adapters: subclasses of BrokerAPIBase"]
+        AXA
+        SPA
+    end
+```
+
+Adding a broker means writing one more adapter; see the
+[Broker interface](../reference/broker-base.md).
+
 ## Step 1: start ArenaX
 
 In the first terminal, from the `CJTrade` folder:

@@ -4,13 +4,42 @@
 
 ## 引擎在做什麼
 
+```mermaid
+flowchart TB
+    subgraph E["cjtrade（主程序）"]
+        direction TB
+        R["風控閘門"]
+        K["回放時鐘"]
+        CL["券商連線"]
+    end
+    subgraph Bots["Bot：每個一個程序、一檔股票"]
+        direction TB
+        B1["Bot_B · 2357"]
+        B2["Bot_U · 你的策略檔"]
+    end
+    K -- "最新收盤的 K 棒" --> B1 & B2
+    B1 & B2 -- "buy / sell / hold" --> R
+    R -- "通過檢查的委託" --> CL
+    CL <-- "委託、成交、帳戶" --> AX["ArenaX"]
 ```
- cjtrade (main process)
-   ├─ holds the one broker connection and the risk gate
-   ├─ every minute: sends each bot the newest closed bar
-   ├─ waits until every bot has answered, then steps to the next minute
-   └─ bots (one process each, one symbol each)
-        Bot_B on 2357  ── buy / sell / hold ──▶ main process ──▶ ArenaX
+
+每一根 K 棒的流程：
+
+```mermaid
+sequenceDiagram
+    participant Clock as 回放時鐘
+    participant Main as cjtrade（主程序）
+    participant Bot as Bot
+    participant AX as ArenaX
+    Clock->>Main: 下一根 K 棒的時間
+    Main->>AX: 取得到該時間為止已收盤的 K 棒
+    Main->>Bot: 最新收盤的 K 棒
+    Bot-->>Main: buy / sell / hold
+    Main->>Main: 風控閘門檢查
+    Main->>AX: 下單（通過檢查時）
+    Main->>AX: 更新掛單與帳戶
+    Main-->>Bot: 成交回報
+    Note over Main,Bot: 等所有 bot 回覆後才前進到下一根
 ```
 
 - 每個策略以一個 **bot** 的形式在獨立的 process 中執行，只負責一檔股票。

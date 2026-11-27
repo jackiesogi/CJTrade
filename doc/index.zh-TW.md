@@ -13,20 +13,12 @@ CJTrade 是用來交易台灣證券交易所（TWSE）股票的 Python 框架。
 
 ## 架構
 
-```
-  your strategy file  ─┐
-  (on_bar → buy/sell)  │
-                       ▼
-               ┌───────────────┐   orders, account    ┌──────────────────────┐
-               │  CJTrade code │ ───────────────────▶ │ a broker             │
-               │ (AccountClient│ ◀─────────────────── │  · ArenaX (pretend)  │
-               │  or the engine)   fills, balance     │  · Sinopac (real)    │
-               └───────────────┘                      └──────────────────────┘
-                       ▲
-                       │ prices (bars, quotes)
-               ┌───────────────┐
-               │ market data   │  Sinopac · FinMind · Yahoo · a local file
-               └───────────────┘
+```mermaid
+flowchart LR
+    S["策略檔<br/><code>on_bar → buy / sell / hold</code>"] --> C["CJTrade 程式<br/><code>AccountClient</code> 或交易引擎"]
+    C -- "委託、帳戶查詢" --> B["券商<br/>ArenaX（模擬）· Sinopac（正式）"]
+    B -- "成交、餘額、持股" --> C
+    M["行情來源<br/>Sinopac · FinMind · Yahoo Finance · 本機價格檔"] -- "K 棒、報價" --> C
 ```
 
 - **券商**：接收委託，保管現金與持股。**ArenaX** 是 CJTrade 內建的模擬券商：在本機執行的伺服器，接收委託並以真實歷史價格撮合成交。

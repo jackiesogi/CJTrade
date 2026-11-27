@@ -2,6 +2,26 @@
 
 本頁啟動模擬券商 ArenaX，並從 Python 連線讀取帳戶餘額。需要兩個終端機：一個執行 ArenaX，另一個執行你的程式。
 
+## `AccountClient` 如何連到券商 {#how-accountclient-reaches-a-broker}
+
+程式只會用到 `AccountClient` 這個類別。`BrokerType` 決定使用哪個實作 `BrokerAPIBase` 的轉接層（adapter）；轉接層負責在 CJTrade 的資料模型（`Order`、`Position`、`Kbar` 等）和券商自己的 API 之間轉換。價格則經由 `client.market` 取得，它是一個與券商分開選擇的 `MarketData` 來源。
+
+```mermaid
+flowchart LR
+    Code["你的程式"] --> AC["AccountClient"]
+    AC -- "BrokerType.ARENAX" --> AXA["ArenaXBrokerAPI_v2"]
+    AC -- "BrokerType.SINOPAC" --> SPA["SinopacBrokerAPI"]
+    AC -. "client.market" .-> MD["MarketData"]
+    AXA -- "HTTP，127.0.0.1" --> AXS["ArenaX 伺服器<br/>（arenaxd）"]
+    SPA -- "shioaji SDK" --> SPS["Sinopac"]
+    subgraph Adapters["轉接層：BrokerAPIBase 的子類別"]
+        AXA
+        SPA
+    end
+```
+
+新增一家券商，只要多寫一個轉接層；見[券商介面](../reference/broker-base.md)。
+
 ## 步驟 1：啟動 ArenaX
 
 在第一個終端機中，於 `CJTrade` 資料夾內執行：

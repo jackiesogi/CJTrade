@@ -6,12 +6,21 @@ ArenaX 須保持執行（啟動方式見[連線到券商](connect.md)）。每�
 
 ## 委託生命週期
 
-```
- place_order ──▶ COMMITTED_WAIT_MATCHING ──▶ FILLED       (the price was reached)
-                        │
-                        ├──────────────────▶ CANCELLED    (you cancelled it, or the day ended)
-                        │
- (checks fail) ─────────┴──────────────────▶ REJECTED     (bad price, not enough cash, ...)
+```mermaid
+stateDiagram-v2
+    [*] --> COMMITTED_WAIT_MATCHING: 交易時段內 place_order()
+    [*] --> COMMITTED_WAIT_MARKET_OPEN: 交易時段外 place_order()
+    [*] --> REJECTED: 檢查未通過
+    COMMITTED_WAIT_MARKET_OPEN --> COMMITTED_WAIT_MATCHING: 09:00 開盤
+    COMMITTED_WAIT_MARKET_OPEN --> CANCELLED: cancel_order()
+    COMMITTED_WAIT_MATCHING --> FILLED: 價格到達限價
+    COMMITTED_WAIT_MATCHING --> PARTIAL: 部分成交（Sinopac）
+    PARTIAL --> FILLED: 其餘成交
+    COMMITTED_WAIT_MATCHING --> CANCELLED: cancel_order() 或收盤失效（ROD）
+    PARTIAL --> CANCELLED: cancel_order() 取消剩餘部分
+    FILLED --> [*]
+    CANCELLED --> [*]
+    REJECTED --> [*]
 ```
 
 | 狀態 | 意思 |
@@ -19,6 +28,7 @@ ArenaX 須保持執行（啟動方式見[連線到券商](connect.md)）。每�
 | `COMMITTED_WAIT_MATCHING` | 券商已接受，等待價格到達 |
 | `COMMITTED_WAIT_MARKET_OPEN` | 於交易時段外接受，等待 09:00 開盤 |
 | `FILLED` | 已成交，現金和持股已更新 |
+| `PARTIAL` | 部分數量已成交；只有正式券商會回報，ArenaX 一律全部成交 |
 | `CANCELLED` | 已由你取消，或於收盤時失效 |
 | `REJECTED` | 券商拒絕，原因見 `result.message` |
 

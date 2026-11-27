@@ -7,13 +7,42 @@ ArenaX's clock, with real order matching. This page replays a week of
 
 ## What the engine does
 
+```mermaid
+flowchart TB
+    subgraph E["cjtrade (main process)"]
+        direction TB
+        R["Risk gate"]
+        K["Replay clock"]
+        CL["Broker connection"]
+    end
+    subgraph Bots["Bots, one process and one symbol each"]
+        direction TB
+        B1["Bot_B · 2357"]
+        B2["Bot_U · your strategy file"]
+    end
+    K -- "newest closed bar" --> B1 & B2
+    B1 & B2 -- "buy / sell / hold" --> R
+    R -- "orders that pass" --> CL
+    CL <-- "orders, fills, account" --> AX["ArenaX"]
 ```
- cjtrade (main process)
-   ├─ holds the one broker connection and the risk gate
-   ├─ every minute: sends each bot the newest closed bar
-   ├─ waits until every bot has answered, then steps to the next minute
-   └─ bots (one process each, one symbol each)
-        Bot_B on 2357  ── buy / sell / hold ──▶ main process ──▶ ArenaX
+
+Per bar:
+
+```mermaid
+sequenceDiagram
+    participant Clock as Replay clock
+    participant Main as cjtrade (main)
+    participant Bot as Bot
+    participant AX as ArenaX
+    Clock->>Main: next bar time
+    Main->>AX: closed bars up to that time
+    Main->>Bot: newest closed bar
+    Bot-->>Main: buy / sell / hold
+    Main->>Main: risk gate check
+    Main->>AX: place order (if it passes)
+    Main->>AX: refresh open orders and account
+    Main-->>Bot: fills
+    Note over Main,Bot: waits for every bot before the next bar
 ```
 
 - Each strategy runs as a **bot** in its own process, on one symbol.
