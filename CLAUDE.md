@@ -48,9 +48,10 @@ ArenaX has four backends (`--backend=`):
 uv sync                                   # install
 source .venv/bin/activate
 
-uv run pytest                            # unit + integration (integration auto-skips without arenaxd)
+uv run pytest                            # unit + integration (arenax/ skips without arenaxd; cjtrade/ starts its own)
 uv run pytest tests/unit/ -q              # ~850 tests, ~50s, no network
 bash tests/run_broker_stability_tests.sh --broker=arenax   # starts arenaxd :8801, runs tests/integration/arenax
+uv run pytest tests/integration/cjtrade  # engine end to end, offline (~45s, starts arenaxd :8802)
 uv run arenaxd --backend=demo             # ArenaX broker-side server (demo :8801, backtest :8802)
 uv run cjshell --broker=arenax            # interactive shell (CJShell)
 uv run cjtrade --broker=arenax --mode=backtest  # the trading app (engine + bots)
@@ -216,13 +217,14 @@ env vars  >  ./.env  >  ./**/*.cjconf (depth, then alpha)  >  <user config dir>/
 |---|---|---|
 | `tests/unit/` | pure, no network, no disk | nothing |
 | `tests/integration/arenax/` | real HTTP against ArenaX | `arenaxd` on :8801 (auto-skips if absent) |
+| `tests/integration/cjtrade/` | `arenaxd` + `cjtrade` on 10 recorded days of 2357, fills compared exactly | ports 8802/5555/5556/8898 free (skips if not) |
 | `tests/manual/` | scripts a human runs | credentials; not in `testpaths` |
 
 Conventions in `tests/unit/`: mirror the source tree
 (`tests/unit/pkgs/brokers/arenax/test_arenax_middleware.py`), one `class
 TestX:` per unit under test, `@pytest.fixture` for setup, plain `assert`.
 `tests/integration/conftest.py` is the reference for fixture style — it has a
-session-scoped auto-skip, a `client` fixture with per-test `tmp_path`
+`client` fixture with per-test `tmp_path`
 isolation, a `make_order()` factory, and `likely_fill_*_price()` helpers.
 
 Markers: `unit`, `integration`, applied by directory in `tests/conftest.py`

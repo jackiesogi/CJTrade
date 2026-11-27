@@ -30,6 +30,11 @@ repos:
         entry: bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
         language: system
         pass_filenames: false
+      - id: "engine-integration-test"
+        name: "Run integration test: CJTrade engine (tests/integration/cjtrade/)"
+        entry: uv run pytest tests/integration/cjtrade -q
+        language: system
+        pass_filenames: false
       - id: "arenax-shell"
         name: "Run CJTrade shell test: ArenaX"
         entry: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all

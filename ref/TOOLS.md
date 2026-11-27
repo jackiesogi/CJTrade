@@ -602,13 +602,14 @@ uv run python scripts/price_db_report.py --db exp.db
 
 ### 測試
 
-`pyproject.toml` 設定 `testpaths = ["tests/unit", "tests/integration"]`、`addopts = "-v --tb=short"`。`tests/manual/` 不會被收集（需要真券商）。`tests/conftest.py` 依所在目錄自動加上 `unit` 或 `integration` marker。整合測試在 `localhost:8801` 沒有服務時會自動 skip。
+`pyproject.toml` 設定 `testpaths = ["tests/unit", "tests/integration"]`、`addopts = "-v --tb=short"`。`tests/manual/` 不會被收集（需要真券商）。`tests/conftest.py` 依所在目錄自動加上 `unit` 或 `integration` marker。`tests/integration/arenax` 在 `localhost:8801` 沒有服務時會自動 skip；`tests/integration/cjtrade` 會自己起 arenaxd（8802，offline），用 repo 內 2357 的 10 天 1m 資料跑 `cjtrade`，逐筆比對成交，約 45 秒。
 
 ```sh
 uv run pytest                                       # unit + integration
 uv run pytest -m "not integration"
 uv run pytest tests/unit/ --cov=src/cjtrade --cov-report=term-missing
 bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
+uv run pytest tests/integration/cjtrade             # 引擎端到端，不需網路
 ```
 
 | 指令 | 說明 |
@@ -633,6 +634,7 @@ bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
 | `readme-examples` | `uv run python scripts/check_readme_examples.py`（smoke 模式會啟動範例，需網路） |
 | `unit-tests` | `uv run pytest tests/unit/ --tb=short -q --cov=src/cjtrade --cov-report=term-missing --cov-report=html:htmlcov/unit` |
 | `ArenaX-broker-integration-test` | `bash tests/run_broker_stability_tests.sh --broker=arenax --coverage`（會起 arenaxd，yfinance 需網路） |
+| `engine-integration-test` | `uv run pytest tests/integration/cjtrade -q`（起 arenaxd 8802，offline） |
 | `arenax-shell` | `bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all` |
 | `sinopac-shell` | `bash tests/test_cjtrade_integration.sh --broker=sinopac --group=all`（會登入永豐並下單） |
 

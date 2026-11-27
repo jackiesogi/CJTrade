@@ -1,12 +1,18 @@
 # Integration tests
 
-Real HTTP against an ArenaX server. Every test here skips itself when nothing
-is listening on `127.0.0.1:8801`, so a plain `uv run pytest` is safe without
-one.
+- `arenax/`: real HTTP against an ArenaX server. Skips itself when nothing
+  is listening on `127.0.0.1:8801`.
+- `cjtrade/`: the trading engine end to end. Starts its own `arenaxd` on
+  8802 with `--data=offline`, loads `cjtrade/fixtures/2357_1m.csv.gz` (Sinopac
+  1m bars, 2024-04-29 .. 2024-05-24), replays 10 days and compares every
+  fill with a recorded run. No network; about 45 seconds. If a change is
+  meant to alter how the engine trades, re-record the expected fills in
+  `test_engine_backtest.py` and say why in the commit.
 
 ```sh
 # Starts arenaxd if needed, runs tests/integration/arenax, writes coverage
 bash tests/run_broker_stability_tests.sh --broker=arenax --coverage
+uv run pytest tests/integration/cjtrade
 ```
 
 Name a test after the behaviour it checks, as a sentence

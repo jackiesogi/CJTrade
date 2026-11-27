@@ -122,6 +122,21 @@ jobs:
             LAST_BROKER_STABILITY_TEST.log
           if-no-files-found: ignore
 
+  # Starts its own arenaxd on 8802 with prices from a file in the repo; no
+  # network, no secrets, so Dependabot PRs run it too.
+  engine-integration:
+    name: integration tests (CJTrade engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest tests/integration/cjtrade -v
+
   arenax-shell:
     name: shell test (ArenaX)
     runs-on: ubuntu-latest
