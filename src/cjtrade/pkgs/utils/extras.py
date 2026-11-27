@@ -5,6 +5,7 @@ CJTrade's core (ArenaX, backtesting, the shell, reports) installs with a plain
 SDK are extras in pyproject.toml:
 
     sinopac   shioaji                    the Sinopac broker
+    fubon     fubon-neo                  the Fubon broker
     llm       google-genai, openai       Gemini and Azure OpenAI clients
     news      newsapi-python             the NewsAPI news provider
     all       every extra above

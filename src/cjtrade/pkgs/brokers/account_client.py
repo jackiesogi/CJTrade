@@ -28,6 +28,7 @@ class BrokerType(Enum):
     NotImplementedError for them. ArenaX is the simulated broker.
     """
     SINOPAC = "sinopac"  # 永豐金
+    FUBON   = "fubon"    # 富邦
     YUANTA  = "yuanta"   # 元大
     CATHAY  = "cathay"   # 國泰
     ARENAX  = "arenax"   # 模擬券商 (新)
@@ -73,7 +74,8 @@ class AccountClient:
     Raises
     ------
     ImportError
-        BrokerType.SINOPAC is chosen but the ``sinopac`` extra is not installed.
+        BrokerType.SINOPAC or BrokerType.FUBON is chosen but its extra
+        (``sinopac`` / ``fubon``) is not installed.
     NotImplementedError
         BrokerType.YUANTA or BrokerType.CATHAY is chosen.
     ValueError
@@ -94,6 +96,12 @@ class AccountClient:
             except ImportError as e:
                 raise missing_extra("sinopac", e) from e
             return SinopacBrokerAPI(**config)
+        elif broker_type == BrokerType.FUBON:
+            try:
+                from cjtrade.pkgs.brokers.fubon.fubon_broker_api import FubonBrokerAPI
+            except ImportError as e:
+                raise missing_extra("fubon", e) from e
+            return FubonBrokerAPI(**config)
         elif broker_type in (BrokerType.YUANTA, BrokerType.CATHAY):
             raise NotImplementedError(
                 f"The {broker_type.value} broker is not implemented yet")
