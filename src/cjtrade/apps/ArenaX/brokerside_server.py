@@ -130,6 +130,32 @@ def load_cjconf():
     external_config['ca_passwd'] = external_config.get('ca_password', "")
 
 # CJSYS is for CJTrade System itself
+def _flag(value) -> bool:
+    """A y/yes/true/1 config value as a bool; anything else, or unset, is False."""
+    return str(value or "").strip().lower() in ("y", "yes", "true", "1")
+
+
+def _require_loopback(host: str) -> None:
+    """Refuse to bind anywhere but this machine.
+
+    The API serves account data and takes orders with no per-route
+    authentication, so a wider bind would hand both to the network. To reach
+    the server from elsewhere, forward the port over SSH instead:
+    ``ssh -L 8801:127.0.0.1:8801 <host>``.
+    """
+    import ipaddress
+    if host == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise SystemExit(f"arenaxd: refusing to listen on {host!r}. The API has no per-route "
+                     f"authentication; bind 127.0.0.1 and use an SSH tunnel "
+                     f"(ssh -L 8801:127.0.0.1:8801 <host>) to reach it remotely.")
+
+
 def load_cjsys(backend_str: str = "demo"):
     # Choose config file based on backend type
     config_filename = f"{backend_str}.cjsys"
@@ -143,9 +169,11 @@ def load_cjsys(backend_str: str = "demo"):
     log.info(f"Loading config file {file_to_load}")
 
     load_dotenv(file_to_load, override=False)
-    keys = ['AX_LAUNCH_MODE', 'AX_REAL_ACCOUNT_BROKER_TYPE', 'AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED',
+    # Only keys something reads. AX_LAUNCH_MODE, AX_REAL_ACCOUNT_BROKER_TYPE,
+    # AX_AUTO_TIME_PROGRESS and AX_AUTO_START_BACKEND were listed here and
+    # read by nothing: --backend chooses the mode, and the broker is Sinopac.
+    keys = ['AX_BACKTEST_DURATION_DAYS', 'AX_BACKTEST_PLAYBACK_SPEED', 'AX_INITIAL_BALANCE',
             'AX_HOST_ADDRESS', 'AX_HOST_PORT', 'AX_STATE_FILE', 'AX_SKIP_NON_TRADING_HOURS', 'AX_SKIP_DATA_PRELOAD',
-            'AX_AUTO_TIME_PROGRESS', 'AX_AUTO_START_BACKEND',
             'AX_COMMISSION_DISCOUNT', 'AX_SLIPPAGE_MODEL', 'AX_SLIPPAGE_PCT',
             'AX_DATA_SOURCES', 'AX_PRICE_DB_PATH']
     for key in keys:
@@ -168,7 +196,13 @@ def load_cjsys(backend_str: str = "demo"):
 
     # When enabled, the matching loop automatically jumps over non-trading hours
     # (after 13:30 or weekends) to accelerate backtesting.
-    internal_config["skip_non_trading_hours"] = internal_config.get('skip_non_trading_hours', 'n').lower() in ('y', 'yes', 'true', '1')
+    internal_config["skip_non_trading_hours"] = _flag(internal_config.get('skip_non_trading_hours'))
+    # A flag, not a string: "n" passed through as text was truthy, so
+    # AX_SKIP_DATA_PRELOAD = n switched the preload off.
+    internal_config["skip_data_preload"] = _flag(internal_config.get('skip_data_preload'))
+    # The starting cash of a fresh account. Unset keeps the backend default.
+    if internal_config.get('initial_balance'):
+        internal_config['initial_balance'] = float(internal_config['initial_balance'])
 
     # For backward compatibility
     internal_config['speed'] = internal_config['playback_speed']
@@ -391,6 +425,9 @@ class ArenaX_BrokerSideServer:
             return jsonify({
                 "ok": True,
                 "running": self._running,
+                # Which backend this is, so a caller reusing a server it
+                # found already listening can tell it is the one it wants.
+                "backend": getattr(self, "_backend_str", None),
                 "backend_connected": self.backend.is_connected() if hasattr(self.backend, "is_connected") else False,
                 "data_readiness": self._data_readiness.value,
             })
@@ -1128,7 +1165,7 @@ def main():
         log.warning(_legacy)
 
     parser = argparse.ArgumentParser(description="Run the ArenaX BrokerSide Server.")
-    parser.add_argument("--host", type=str, default=None, help="Host to bind the server (CLI override > config file > default 127.0.0.1).")
+    parser.add_argument("--host", type=str, default=None, help="Loopback address to bind (CLI > config file > 127.0.0.1); anything else is refused.")
     parser.add_argument("--port", type=int, default=None, help="Port to bind the server (CLI override > config file > default 8801).")
     parser.add_argument("--backend", type=str, choices=["backtest", "paper", "demo", "real"], default="demo", help="Backend type to use.")
     parser.add_argument("--data", type=str, default=None,
@@ -1145,6 +1182,7 @@ def main():
 
     # Priority: CLI option > config file > hardcoded default
     host = args.host or internal_config.get('host_address', '127.0.0.1')
+    _require_loopback(host)
     port = args.port or int(internal_config.get('host_port', 8801))
 
     server = ArenaX_BrokerSideServer(host=host, port=port, backend_str=args.backend,

@@ -134,7 +134,6 @@ jobs:
           enable-cache: true
       - run: uv sync
       # The shell reads API_KEY etc. from a *.cjconf; ArenaX's needs no secret.
-      - run: bash scripts/gen_config.sh arenax
       - run: bash tests/test_cjtrade_integration_arenax.sh --broker=arenax --group=all
       - uses: actions/upload-artifact@v4
         if: always()

@@ -7,7 +7,7 @@ balance=$2
 
 print_usage_exit_with() {
     echo "Usage: $0 <broker> [balance]"
-    echo "Example: $0 mock 10000"
+    echo "Example: $0 arenax 10000"
     exit "$1"
 }
 

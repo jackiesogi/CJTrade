@@ -167,8 +167,8 @@ uv run cjtrade --broker=arenax \
 
 The bots that run are listed in `BOT_ROSTER` in
 [`src/cjtrade/apps/CJTrade/main.py`](./src/cjtrade/apps/CJTrade/main.py), or in a file
-passed with `--roster=`. A read-only status page is served on
-`http://127.0.0.1:8898/status` while a run is in progress.
+passed with `--roster=`. A status page is served on
+`http://127.0.0.1:8898/status` while a run is in progress, loopback only.
 
 > [!NOTE]
 > By default the `backtest` backend reads prices from Sinopac, so it needs

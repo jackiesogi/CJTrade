@@ -16,7 +16,7 @@ Why the reversal:
    the user's own browser.
 2. **One place knows the contract.** When ArenaX renames a field, one Python
    module breaks instead of three JS files.
-3. **The engine's API is GET-only.** Trading goes to the broker, and that call
+3. **The engine's API does not trade.** Trading goes to the broker, and that call
    needs an API key FinHub holds and the browser must not.
 
 Three pieces:

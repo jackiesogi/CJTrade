@@ -619,16 +619,13 @@ class CalendarCommand(CommandBase):
                     out.info(f"Error: Unable to parse time adjustment '{arg}'")
                     return
 
-                # ArenaX_Market.adjust_time() exists server-side but is not
-                # exposed over HTTP, so there is nothing for the client to call.
-                # The old code here reached for client.broker_api.api.market,
-                # which only the retired MockBroker ever had — ArenaXBrokerAPI_v2
-                # has .middleware, not .api — so this branch could only raise.
-                # Say so plainly until a /control/adjust-time endpoint exists.
-                out.info(f"Error: time adjustment ({hours:+.1f}h) is not supported "
-                         f"by the ArenaX server yet — it needs a /control/adjust-time "
-                         f"endpoint. Restart the server with a different start date "
-                         f"instead.")
+                # Through PATCH /api/v1/clock: move the clock, then leave it
+                # paused or running as it was.
+                moved = client.control_plane.shift_market_time(hours)
+                if not moved:
+                    out.info("Error: the ArenaX server did not move its clock")
+                    return
+                out.info(f"Market time moved {hours:+g}h to {moved}")
                 return
             else:
                 # Direct call with date argument
@@ -637,7 +634,7 @@ class CalendarCommand(CommandBase):
 
         # Get timestamp from broker or system
         bkr_name = client.get_broker_name()
-        if bkr_name.startswith('arenax') or bkr_name in ['mock', 'realistic']:  # for backward-compatibility
+        if bkr_name.startswith('arenax'):
             suffix = " (mock time)"
             ts = client.get_market_time()['mock_current_time']
         else:
@@ -971,11 +968,13 @@ def main():
     # Load supported config files (recursive search for *.cjconf under directories)
     loaded = load_supported_config_files()
 
+    # .get(): only Sinopac needs these, and an ArenaX shell must start with
+    # none of them set. The Sinopac branch below checks they are there.
     config = {
-        'api_key': os.environ["API_KEY"],
-        'secret_key': os.environ["SECRET_KEY"],
-        'ca_path': os.environ["CA_CERT_PATH"],
-        'ca_passwd': os.environ["CA_PASSWORD"],
+        'api_key': os.environ.get("API_KEY", ""),
+        'secret_key': os.environ.get("SECRET_KEY", ""),
+        'ca_path': os.environ.get("CA_CERT_PATH", ""),
+        'ca_passwd': os.environ.get("CA_PASSWORD", ""),
         'simulation': True if os.environ.get("SIMULATION") == "y" else False,
 
         'username': os.environ.get('USERNAME', 'user000'),
@@ -987,26 +986,20 @@ def main():
 
 
     if args.broker == 'sinopac':
+        missing = [k for k in ("API_KEY", "SECRET_KEY", "CA_CERT_PATH", "CA_PASSWORD")
+                   if not os.environ.get(k)]
+        if missing:
+            out.info(f"--broker=sinopac needs {', '.join(missing)} "
+                     f"(in a .cjconf file or the environment)")
+            exit(1)
         config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
-    elif args.broker == 'mock':
-        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
-            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
-        else:
-            config["speed"] = 120.0  # 120x speed for mock broker
-            config["state_file"] = f"./mock_{config['username']}.json"
-            config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
-            client = AccountClient(BrokerType.MOCK, **config)
-    elif args.broker == 'realistic':
-        if os.environ.get("ALLOW_LEGACY_BROKER") != "y":
-            raise Exception("This shell is not intended to be used with legacy broker, test ArenaX instead or set 'ALLOW_LEGACY_BROKER=y'")
-        else:
-            config["speed"] = 60.0  # 60x speed for mock broker
-            config["state_file"] = f"./realistic_{config['username']}.json"
-            config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
-            real = AccountClient(BrokerType.SINOPAC, **config)
-            client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker == 'arenax_legacy':
+        missing = [k for k in ("API_KEY", "SECRET_KEY", "CA_CERT_PATH", "CA_PASSWORD")
+                   if not os.environ.get(k)]
+        if missing:
+            out.info(f"--broker=arenax_legacy needs {', '.join(missing)} for its Sinopac login")
+            exit(1)
         config["speed"] = 60.0  # 60x speed for mock broker
         config["mirror_db_path"] = str(paths.mirror_db_path("arenax", config["username"]))
         real = AccountClient(BrokerType.SINOPAC, **config)

@@ -31,6 +31,7 @@ live server without contending for a write lock.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sqlite3
 import sys
@@ -61,6 +62,9 @@ out = get_console("scripts.price_db_report")
 
 
 def _default_db() -> str:
+    # The file arenaxd reads, when it was told one (AX_PRICE_DB_PATH).
+    if os.environ.get("AX_PRICE_DB_PATH"):
+        return os.environ["AX_PRICE_DB_PATH"]
     try:
         from cjtrade.pkgs import paths
         return str(paths.price_db_path())

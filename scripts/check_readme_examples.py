@@ -103,7 +103,7 @@ log = get_logger("scripts.check_readme_examples")
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The hand-written READMEs. src/cjtrade/apps/CJTrade/README.md and doc/ are out of
+# The hand-written READMEs. doc/ is out of
 # scope on purpose; add them here when they are ready to be held to this.
 COVERED = [
     "README.md",
@@ -305,23 +305,23 @@ def _accepted_flags(command: str) -> set[str] | None:
 
     if command.endswith(".sh"):
         source = ROOT / command
-        # A form-driven script's real flag list lives in its TOML schema, as
-        # cli_arg; the script itself only names the few it reads directly.
-        for toml_name in re.findall(r'"?(poc/[\w.]+\.toml)"?',
-                                    source.read_text() if source.exists() else ""):
-            toml_file = ROOT / toml_name
-            if toml_file.exists():
-                extra |= set(re.findall(r'cli_arg\s*=\s*"([^"]+)"',
-                                        toml_file.read_text()))
     else:
         rel = ROOT / "src" / Path(*command.split("."))
         for candidate in (rel.with_suffix(".py"), rel / "__init__.py"):
             if candidate.exists():
                 source = candidate
                 break
-
     if source is None or not source.exists():
         return None
+    # A form-driven command's real flag list lives in its TOML schema, as
+    # cli_arg; the code only names the few it reads directly. The schema is
+    # named either from the repo root or relative to the code.
+    for toml_name in set(re.findall(r'([\w./-]*[\w-]+\.toml)', source.read_text())):
+        for toml_file in (ROOT / toml_name, source.parent / Path(toml_name).name):
+            if toml_file.exists():
+                extra |= set(re.findall(r'cli_arg\s*=\s*"([^"]+)"',
+                                        toml_file.read_text()))
+                break
     text = source.read_text()
     declared = set(re.findall(r'add_argument\(\s*"(--[\w-]+)"', text))
     declared |= set(re.findall(r'"(--[\w-]+)"', text))

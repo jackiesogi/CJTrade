@@ -1,9 +1,8 @@
 """Settings for FinHub.
 
-Everything that points at another process is a loopback address with a
-loopback default, and the host part is not something an env var can widen into
-a public bind -- FinHub talks to the CJTrade engine and the ArenaX broker over
-127.0.0.1 because that is where they listen, by design.
+The hosts here are where FinHub connects to the CJTrade engine and the ArenaX
+broker, both loopback by default because that is where they listen. They are
+not where FinHub listens: `finhub` always binds 127.0.0.1.
 """
 import secrets
 import sys
@@ -35,7 +34,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # ── Storage ───────────────────────────────────────────────────────────────
-    DATABASE_URL: str = ""          # blank -> sqlite file next to this module
+    DATABASE_URL: str = ""          # blank -> <data dir>/finhub/finhub.db
 
     # ── CJTrade ───────────────────────────────────────────────────────────────
     # The engine's read-only status API (apps/CJTrade/status_api.py).

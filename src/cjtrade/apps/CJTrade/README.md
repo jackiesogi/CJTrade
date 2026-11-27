@@ -23,7 +23,7 @@ Any field not given on the command line is asked for interactively
 | `--broker` | `arenax` |
 | `--mode` | ArenaX backend: `backtest`, `demo`, `paper` |
 | `--watch-list` | Symbols to publish, comma-separated |
-| `--fund` | Starting balance the run asks the broker for |
+| `--fund` | The balance bots size against; start `arenaxd` with `AX_INITIAL_BALANCE` set to the same |
 | `--days` | Replay length; the window is `[start, start + days)` |
 | `--start-date` | First replayed day; blank keeps the server's own |
 | `--speed` | Market seconds per real second within a session; `0` is flat out |
@@ -38,6 +38,8 @@ strategy file written with `cjtrade.pkgs.strategy.authoring`:
   "extra": ["/absolute/path/to/my_strategy.py"]}]
 ```
 
-While a run is in progress, `http://127.0.0.1:8898/status` serves its state
-read-only, loopback only. [FinHub](../FinHub/README.md) is the web UI on top of
+While a run is in progress, `http://127.0.0.1:8898/status` serves its state,
+loopback only. When the run was started with `CJ_ENGINE_CONTROL_TOKEN` set
+(FinHub always sets one), every request needs that token; without one, reads
+are open and the one write, stopping a bot, is refused. [FinHub](../FinHub/README.md) is the web UI on top of
 it, and can start runs itself.

@@ -24,7 +24,9 @@ def main() -> None:
     )
     parser.add_argument("config", help="Path to the .toml form definition")
     parser.add_argument("--renderer", default="auto", help="Renderer: auto / web / cli / zenity")
-    args = parser.parse_args()
+    # parse_known_args: field flags such as --mode are read by FormEngine
+    # from sys.argv, so they must not be rejected here.
+    args, _ = parser.parse_known_args()
 
     engine = FormEngine(args.config, renderer=args.renderer)
     engine.print_exports(engine.run())

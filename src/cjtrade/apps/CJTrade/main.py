@@ -122,7 +122,7 @@ def _at(ts: datetime | None) -> str:
 # that can catch a bot assigned a symbol nobody publishes. A bot file keeps its
 # own SYMBOL as the standalone default, for running it by hand without master.
 #
-# Only Bot_C ships enabled. The other two are one uncommented line away, and
+# Only Bot_B ships enabled. The other two are one uncommented line away, and
 # the line is here rather than behind a flag because turning a bot on changes
 # the run in a way a flag would hide: the risk gate splits the account N ways
 # (see RiskLimits.max_notional_per_bot below), so adding a bot halves what
@@ -203,7 +203,14 @@ def roster_from_argv(argv: list[str] | None = None) -> list[tuple] | None:
         out.append((bot_id, script, symbol, extra))
     return out
 
-ARENAX_PORT = 8802
+# The port each ArenaX backend listens on by default (its configs/*.cjsys).
+# ARENAX_PORT overrides it, which is how FinHub points a run at its broker.
+ARENAX_PORTS = {"demo": 8801, "backtest": 8802, "paper": 8803}
+
+
+def arenax_port(mode: str) -> int:
+    """The ArenaX port for `mode`: $ARENAX_PORT, else the mode's default."""
+    return int(os.environ.get("ARENAX_PORT") or ARENAX_PORTS.get(mode, 8802))
 BAR_INTERVAL_SEC = 60        # market seconds between polls == 1m bars
 
 # The questions `cjtrade` asks before a run, beside this module so an installed
@@ -1641,10 +1648,17 @@ async def main():
     pull_socket = ctx.socket(zmq.PULL)
     pull_socket.bind(protocol.order_intent_address())
 
+    if cfg.broker != "arenax":
+        # The engine drives a simulated exchange through ArenaX's control
+        # plane; a live broker is reached through ArenaX's paper/real backend.
+        log.error("--broker=%s is not supported; the engine runs on arenax "
+                  "(use --mode=paper for live prices)", cfg.broker)
+        return
+    port = arenax_port(cfg.backend_mode)
     account_client = AccountClient(broker_type=BrokerType.ARENAX,
-                                   arenax_port=ARENAX_PORT, api_key="testkey123")
+                                   arenax_port=port, api_key="testkey123")
     if not await asyncio.to_thread(account_client.connect):
-        log.error("ArenaX broker conn failed (port %s), aborting", ARENAX_PORT)
+        log.error("ArenaX broker conn failed (port %s), aborting", port)
         return
 
     # Before spawning bots: ReplayClock does its kbar fetch and clock alignment
@@ -1667,8 +1681,12 @@ async def main():
     # 100,000.
     bot_balance = await asyncio.to_thread(account_client.get_balance)
     if abs(bot_balance - cfg.initial_balance) > 1e-6:
+        # The engine cannot set the broker's cash; the server's starting
+        # balance is AX_INITIAL_BALANCE, which FinHub sets from the same fund.
         log.warning("broker balance %.0f != requested fund=%.0f; bots size "
-                    "against the broker's", bot_balance, cfg.initial_balance)
+                    "against the broker's. Start arenaxd with "
+                    "AX_INITIAL_BALANCE=%.0f to match", bot_balance,
+                    cfg.initial_balance, cfg.initial_balance)
 
     # Stamped on every order the bots place, so the server tags this run's
     # fills with it and the end-of-run report can ask for exactly them. Without

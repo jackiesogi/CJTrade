@@ -51,7 +51,7 @@ preloaded price file with no network.
       │  only ever talks to FinHub
       ▼
    FinHub  :8000
-      ├── HTTP ──▶  engine status API   127.0.0.1:8898   (GET only)
+      ├── HTTP ──▶  engine status API   127.0.0.1:8898   (per-run token)
       ├── HTTP ──▶  ArenaX broker       127.0.0.1:8802   (account, orders, market)
       └── spawn ─▶  arenaxd  +  cjtrade  →  bot subprocesses
 ```
@@ -91,7 +91,7 @@ port-forward rather than a wider bind.
 
 ## Pages, and the shell command each one replaces
 
-`cjtrade` shell has 21 commands. The ones that are about trading all have a
+CJShell (`cjshell`) has 21 commands. The ones that are about trading all have a
 home here:
 
 | Shell | FinHub | Notes |
@@ -149,7 +149,7 @@ has an acknowledgement, why every manual order is tagged
 there is a separate table for them on the Orders page.
 
 Routing a manual order *through* the engine, so the risk gate sees it, needs a
-write endpoint on the engine's status API. That API is GET-only on purpose, so
+write endpoint on the engine's status API. Its only write is stopping a bot, so
 this is a decision rather than an oversight.
 
 ## Known limits

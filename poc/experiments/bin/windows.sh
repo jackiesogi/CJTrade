@@ -21,16 +21,30 @@
 # thing that makes the holdout number mean anything.
 set -euo pipefail
 
+# Date arithmetic in Python: `date -j -v` is BSD only and GNU date spells it
+# differently, so neither works on both macOS and Linux.
+add () {  # date unit n   (unit: m = months, d = days)
+  python3 - "$1" "$2" "$3" <<'PY'
+import sys
+from datetime import date, timedelta
+d, unit, n = date.fromisoformat(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+if unit == "d":
+    print(d + timedelta(days=n))
+else:
+    m = d.month - 1 + n
+    print(date(d.year + m // 12, m % 12 + 1, d.day))
+PY
+}
 roll () {  # first n
   local first="$1" n="$2" i
-  for ((i=0; i<n; i++)); do date -j -v+"${i}"m -f %Y-%m-%d "$first" +%Y-%m-%d; done
+  for ((i=0; i<n; i++)); do add "$first" m "$i"; done
 }
 
 seg () {   # first n duration   -> "start duration" per line, back to back
   local first="$1" n="$2" dur="$3" i d="$1"
   for ((i=0; i<n; i++)); do
     echo "$d $dur"
-    d=$(date -j -v+"${dur}"d -f %Y-%m-%d "$d" +%Y-%m-%d)
+    d=$(add "$d" d "$dur")
   done
 }
 

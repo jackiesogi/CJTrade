@@ -49,10 +49,11 @@ done
 # CJ_FORM_RENDERER rather than an argument: `python -c` puts its own script at
 # sys.argv[0], so anything positional here would have to be unpicked from the
 # same list FormEngine is already reading the field flags out of.
-eval "$(CJ_FORM_RENDERER="$RENDERER" uv run python -c '
+# The schema beside this script, so it runs from any directory.
+eval "$(CJ_FORM_RENDERER="$RENDERER" CJ_FORM_SCHEMA="$(dirname "$0")/backtest.toml" uv run python -c '
 import os
 from cjtrade.pkgs.ui import FormEngine
-e = FormEngine("poc/backtest.toml", renderer=os.environ["CJ_FORM_RENDERER"])
+e = FormEngine(os.environ["CJ_FORM_SCHEMA"], renderer=os.environ["CJ_FORM_RENDERER"])
 e.print_exports(e.run())
 ' "$@" | grep '^export ')"
 
@@ -70,7 +71,7 @@ for required in CJSYS_WATCH_LIST INITIAL_FUND DURATION_DAYS INTERVAL STRATEGY; d
 done
 
 # Step 2: dynamically prompt for the selected strategy's parameters
-eval "$(uv run python poc/strategy_params.py \
+eval "$(uv run python "$(dirname "$0")/strategy_params.py" \
     --strategy "$STRATEGY" \
     --interval "$INTERVAL" \
     --renderer "$RENDERER" \
@@ -126,7 +127,7 @@ if ! ping_server_backend > /dev/null; then
     # Unset AX_ env vars so load_dotenv(override=False) inside arenaxd picks up the
     # correct backend config file (e.g. backtest.cjsys → port 8802) instead of being
     # silently shadowed by stale values from a previous session.
-    unset AX_HOST_PORT AX_HOST_ADDRESS AX_LAUNCH_MODE AX_STATE_FILE
+    unset AX_HOST_PORT AX_HOST_ADDRESS AX_STATE_FILE
     uv run arenaxd --backend=$ARENAX_MODE > /dev/null 2>&1 &
     ARENAX_PID=$!
 
@@ -171,9 +172,6 @@ if [[ "$COMPARE_MODE" == "1" || "$COMPARE_MODE" == "True" || "$COMPARE_MODE" == 
   CMD="$CMD --compare"
 fi
 
-if [ -n "$START_DATE" ]; then
-    CMD="$CMD --start $START_DATE"
-fi
 
 echo -e "${GREEN}Executing OneShot Backtest...${NC}"
 echo -e "${YELLOW}Command: $CMD${NC}"

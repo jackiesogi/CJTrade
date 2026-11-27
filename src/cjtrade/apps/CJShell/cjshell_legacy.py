@@ -924,11 +924,13 @@ def main():
     # Load supported config files (recursive search for *.cjconf under directories)
     loaded = load_supported_config_files()
 
+    # .get(): only Sinopac needs these, and an ArenaX shell must start with
+    # none of them set. The Sinopac branch below checks they are there.
     config = {
-        'api_key': os.environ["API_KEY"],
-        'secret_key': os.environ["SECRET_KEY"],
-        'ca_path': os.environ["CA_CERT_PATH"],
-        'ca_passwd': os.environ["CA_PASSWORD"],
+        'api_key': os.environ.get("API_KEY", ""),
+        'secret_key': os.environ.get("SECRET_KEY", ""),
+        'ca_path': os.environ.get("CA_CERT_PATH", ""),
+        'ca_passwd': os.environ.get("CA_PASSWORD", ""),
         'simulation': True if os.environ.get("SIMULATION") == "y" else False,
 
         'username': os.environ.get('USERNAME', 'user000'),
@@ -938,19 +940,14 @@ def main():
 
 
     if args.broker == 'sinopac':
+        missing = [k for k in ("API_KEY", "SECRET_KEY", "CA_CERT_PATH", "CA_PASSWORD")
+                   if not os.environ.get(k)]
+        if missing:
+            out.info(f"--broker=sinopac needs {', '.join(missing)} "
+                     f"(in a .cjconf file or the environment)")
+            exit(1)
         config["mirror_db_path"] = str(paths.mirror_db_path("sinopac", config["username"]))
         client = AccountClient(BrokerType.SINOPAC, **config)
-    elif args.broker == 'mock':
-        config["speed"] = 120.0  # 120x speed for mock broker
-        config["state_file"] = f"./mock_{config['username']}.json"
-        config["mirror_db_path"] = str(paths.mirror_db_path("mock", config["username"]))
-        client = AccountClient(BrokerType.MOCK, **config)
-    elif args.broker == 'realistic':
-        config["speed"] = 60.0  # 60x speed for mock broker
-        config["state_file"] = f"./realistic_{config['username']}.json"
-        config["mirror_db_path"] = str(paths.mirror_db_path("realistic", config["username"]))
-        real = AccountClient(BrokerType.SINOPAC, **config)
-        client = AccountClient(BrokerType.MOCK, real_account=real, **config)
     elif args.broker in ['cathay', 'ibkr', 'mega']:
         out.info(f"Broker '{args.broker}' is currently not supported (coming soon)")
         print_supported_brokers()

@@ -164,7 +164,6 @@ class BrokerType(Enum):
     SINOPAC = "sinopac"  # 永豐金
     YUANTA  = "yuanta"   # 元大
     CATHAY  = "cathay"   # 國泰
-    MOCK    = "mock"     # 模擬券商 (舊，保留給既有程式)
     ARENAX  = "arenax"   # 模擬券商 (新)
     YOUR_BROKER = "your_broker"   # add this line
 ```

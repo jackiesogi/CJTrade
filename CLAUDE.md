@@ -492,11 +492,10 @@ class BalanceCommand(CommandBase):
   (`base_backend.py:843-851`) compare against **filled** position and cash
   only. Resting orders reserve nothing, so N identical sells all pass and the
   account can oversell. Same hole for cash on the buy side.
-- There is **no** config key or endpoint that sets ArenaX's starting balance.
-  `initial_balance` exists as a constructor kwarg but nothing passes it. The
-  only working lever is `AX_STATE_FILE` pointing at a snapshot whose
-  `"balance"` field holds the number — which is what
-  `scripts/gen_init_account.sh` writes. Otherwise you get `DEFAULT_INITIAL_BALANCE = 100_000.0`.
+- `AX_INITIAL_BALANCE` sets ArenaX's starting cash for a fresh account
+  (no `AX_STATE_FILE`); FinHub sets it from the run's fund. The engine's
+  `--fund` cannot change the server's balance, and only warns when they
+  differ. Otherwise you get `DEFAULT_INITIAL_BALANCE = 100_000.0`.
 - `seed_from_live` is never passed by any caller, so paper/real do **not**
   seed from the real account despite what the scripts' comments claim.
 - `db_api.py:386` has a mutable default evaluated at import

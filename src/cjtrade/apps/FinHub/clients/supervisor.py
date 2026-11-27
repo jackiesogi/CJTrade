@@ -415,6 +415,15 @@ class RunSupervisor:
 
             try:
                 if broker_was_running:
+                    # Reused as it is: its backend, cash and preloaded window
+                    # were set when it started. A different backend would run
+                    # this as something it is not, so refuse that.
+                    health = await client.health() or {}
+                    running_mode = health.get("backend")
+                    if running_mode and running_mode != cfg.mode:
+                        raise SupervisorError(
+                            f"an ArenaX {running_mode} server is already on port "
+                            f"{cfg.arenax_port}; stop it, or start a {running_mode} run")
                     log.info("ArenaX already up on %s — reusing it",
                              cfg.arenax_port)
                 else:
@@ -461,6 +470,9 @@ class RunSupervisor:
         # loads its file with override=False, then reads os.environ, so this
         # wins.
         env["AX_BACKTEST_DURATION_DAYS"] = str(cfg.days + 1)
+        # The run's fund as the server's starting cash, so the account the
+        # bots size against is the one the form asked for.
+        env["AX_INITIAL_BALANCE"] = f"{cfg.fund:g}"
         self._children.append(self._spawn("broker", argv, env))
 
     def _spawn_engine(self, cfg: RunConfig,

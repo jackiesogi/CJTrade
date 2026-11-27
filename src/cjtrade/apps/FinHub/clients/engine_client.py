@@ -1,6 +1,6 @@
 """Client for the trading engine's read-only status API.
 
-Mirrors `poc/trading_engine/status_api.py`. Everything here is a GET; the
+Mirrors `apps/CJTrade/status_api.py`. Everything here is a GET; the
 engine exposes no write surface and this client must not grow one — the
 engine's control path is its ZMQ intent socket, and a run is started and
 stopped through `RunSupervisor`, not over HTTP.

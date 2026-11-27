@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# current supported templates: mock, sinopac, arenax
+# Templates: arenax, sinopac
 TEMPLATE=$1
 OUTPUT_PATH="${TEMPLATE}_system.cjconf"
 
@@ -45,32 +45,6 @@ function generate_arenax_config() {
     echo "ArenaX configuration generated at $OUTPUT_PATH"
 }
 
-function generate_mock_config() {
-    write_line "# Broker-specific configuration"
-    write_line "API_KEY = MOCK_BROKER_DOES_NOT_REQUIRE_AN_API_KEY"
-    write_line "SECRET_KEY = MOCK_BROKER_DOES_NOT_REQUIRE_A_SECRET_KEY"
-    write_line "CA_CERT_PATH = "
-    write_line "CA_PASSWORD = "
-    write_line ""
-
-    write_line "# Mock-environment-specific configuration"
-    write_line "MOCK_PLAYBACK_SPEED = 60"
-    write_line "MOCK_MARKET_MATCH_METHOD = lazy"
-    write_line ""
-
-    write_line "# LLM-specific configuration"
-    write_line "LLM_MODEL = gemini-3-flash"
-    write_line "LLM_API_KEY = "
-    write_line "GEMINI_API_KEY = "
-
-    echo "---- Note start ----"
-    echo "Get your Gemini API key at https://aistudio.google.com/app/api-keys"
-    echo "Most of the features do not require a LLM backend,"
-    echo "so you can skip this right now and fill it in later"
-    echo "----  Note end  ----"
-
-    echo "Mock configuration generated at $OUTPUT_PATH"
-}
 
 function generate_sinopac_config() {
     write_line "# Broker-specific configuration"
@@ -98,20 +72,18 @@ function generate_sinopac_config() {
     echo "so you can skip this right now and fill it in later"
     echo "----  Note end  ----"
 
-    echo "Mock configuration generated at $OUTPUT_PATH"
+    echo "Sinopac configuration generated at $OUTPUT_PATH"
 }
 
 if [ -z "$TEMPLATE" ]; then
     echo "Usage: $0 <template>"
-    echo "Supported templates: [mock, sinopac]"
+    echo "Supported templates: [arenax, sinopac]"
     exit 1
 fi
 
 function main() {
     create_file
-    if [ "$TEMPLATE" == "mock" ]; then
-        generate_mock_config
-    elif [ "$TEMPLATE" == "sinopac" ]; then
+    if [ "$TEMPLATE" == "sinopac" ]; then
         generate_sinopac_config
     elif [ "$TEMPLATE" == "arenax" ]; then
         generate_arenax_config

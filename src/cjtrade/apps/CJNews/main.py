@@ -1,3 +1,4 @@
+import os
 from textwrap import dedent
 
 import toml
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         default = "CNYES 鉅亨網"
         type = "select"
         [field.config]
-        options = ["CNYES 鉅亨網", "NewsAPI", "財報狗"]
+        options = ["CNYES 鉅亨網", "NewsAPI"]
 
         [[field]]
         name = "num"
@@ -62,10 +63,14 @@ if __name__ == "__main__":
         "NewsAPI": NewsProviderType.NEWS_API,
     }.get(form["source"])
 
-    if provider is None:
-        raise NotImplementedError(f'{form["source"]} provider is not implemented yet.')
+    config = {}
+    if provider == NewsProviderType.NEWS_API:
+        # NewsAPI needs a key; the same NEWSAPI_API_KEY the shell reads.
+        config["api_key"] = os.environ.get("NEWSAPI_API_KEY", "")
+        if not config["api_key"]:
+            raise SystemExit("NewsAPI needs NEWSAPI_API_KEY in a .cjconf file or the environment")
 
-    client = NewsClient(provider)
+    client = NewsClient(provider, **config)
     n = int(form["num"])
     keyword = form["keyword"]
 

@@ -10,9 +10,7 @@
 # | `paper`          | Custom broker API  | Paper trading with real-time market data | Yes                  |
 # | `backtest`       | Custom broker API  | Complete backtesting (1-5 years)         | Yes                  |
 # | `demo` (default) | `yfinance`         | Backtesting (within 30d) for quick tests | No                   |
-AX_LAUNCH_MODE = paper  # set launch mode to `paper`
 
-AX_REAL_ACCOUNT_BROKER_TYPE = sinopac  # Bind to launch mode
 # ===========================================================================================================
 
 
@@ -50,6 +48,7 @@ AX_HOST_PORT = 8803
 # AX_STATE_FILE = paper_account_state.json
 AX_SKIP_NON_TRADING_HOURS = n
 AX_SKIP_DATA_PRELOAD = n
-AX_AUTO_TIME_PROGRESS = y
-AX_AUTO_START_BACKEND = y
 # ===========================================================================================================
+
+# Starting cash of a fresh account (no AX_STATE_FILE). Unset: 100000.
+# AX_INITIAL_BALANCE = 1000000

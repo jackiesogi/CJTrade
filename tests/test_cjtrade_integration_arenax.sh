@@ -3,13 +3,12 @@
 # CJTrade Shell Integration Test Suite
 # ---
 # Runs every CJShell command against one broker and checks each exits 0.
-# but with better structure, logging, and reporting.
 # =============================================================================
 # Usage:
 #   bash tests/test_cjtrade_integration_arenax.sh [options]   (from the repo root)
 #
 # Options:
-#   --broker=<name>     Specify broker (mock/sinopac/realistic, default: mock)
+#   --broker=<name>     Broker to test (default: arenax)
 #   --group=<name>      Run specific test group (trading/query/market/system/all)
 #   --continue-on-error Don't exit on first failure
 #   --no-log           Don't write to log file
@@ -100,7 +99,7 @@ CJTrade Shell Integration Test Suite
 Usage: $0 [options]
 
 Options:
-    --broker=<name>      Specify broker (arenax/mock/sinopac/realistic, default: arenax)
+    --broker=<name>      Broker to test (default: arenax)
     --group=<name>       Run specific test group:
                          - trading: buy, sell, cancel commands
                          - query: lsodr, lspos, balance commands
@@ -113,7 +112,6 @@ Options:
     -h, --help          Show this help message
 
 Examples:
-    $0                                    # Run all tests with mock broker
     $0 --broker=sinopac --group=trading  # Run trading tests with sinopac
     $0 --continue-on-error               # Run all tests, don't stop on error
 EOF

@@ -1,12 +1,12 @@
 @echo off
 setlocal
 
-:: current supported templates: mock, sinopac
+:: Templates: arenax, sinopac
 set "TEMPLATE=%~1"
 
 if "%TEMPLATE%"=="" (
     echo Usage: %~nx0 ^<template^>
-    echo Supported templates: [mock, sinopac, arenax]
+    echo Supported templates: [arenax, sinopac]
     exit /b 1
 )
 
@@ -62,32 +62,6 @@ call :write_line "GEMINI_API_KEY = "
 echo ArenaX configuration generated at %OUTPUT_PATH%
 exit /b 0
 
-:generate_mock_config
-call :write_line "# Broker-specific configuration"
-call :write_line "API_KEY = MOCK_BROKER_DOES_NOT_REQUIRE_AN_API_KEY"
-call :write_line "SECRET_KEY = MOCK_BROKER_DOES_NOT_REQUIRE_A_SECRET_KEY"
-call :write_line "CA_CERT_PATH = "
-call :write_line "CA_PASSWORD = "
-call :write_line ""
-
-call :write_line "# Mock-environment-specific configuration"
-call :write_line "MOCK_PLAYBACK_SPEED = 60"
-call :write_line "MOCK_MARKET_MATCH_METHOD = lazy"
-call :write_line ""
-
-call :write_line "# LLM-specific configuration"
-call :write_line "LLM_MODEL = gemini-3-flash"
-call :write_line "LLM_API_KEY = "
-call :write_line "GEMINI_API_KEY = "
-
-echo ---- Note start ----
-echo Get your Gemini API key at https://aistudio.google.com/app/api-keys
-echo Most of the features do not require a LLM backend,
-echo so you can skip this right now and fill it in later
-echo ----  Note end  ----
-
-echo Mock configuration generated at %OUTPUT_PATH%
-exit /b 0
 
 :generate_sinopac_config
 call :write_line "# Broker-specific configuration"
@@ -121,9 +95,7 @@ exit /b 0
 :main
 call :create_file || exit /b 1
 
-if /I "%TEMPLATE%"=="mock" (
-    call :generate_mock_config
-) else if /I "%TEMPLATE%"=="sinopac" (
+if /I "%TEMPLATE%"=="sinopac" (
     call :generate_sinopac_config
 ) else if /I "%TEMPLATE%"=="arenax" (
     call :generate_arenax_config

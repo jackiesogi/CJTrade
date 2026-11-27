@@ -42,50 +42,6 @@ function ping_server_backend() {
     check_status
 }
 
-# TODO: Note that this is just a workaround to ensure the server
-#       has a consistent init account state every time doing tests.
-function prepare_init_account() {
-cat <<EOF > backtest_account_state.json
-{ "balance": 999999,
-  "positions": [
-    {
-        "symbol": "0050",
-        "quantity": 100000,
-        "avg_cost": 60.63,
-        "current_price": 48.73,
-        "market_value": 64518.5,
-        "unrealized_pnl": 15755.6
-    }
-  ],
-  "orders_placed": [],
-  "orders_committed": [],
-  "orders_filled": [],
-  "orders_cancelled": [],
-  "all_order_status": {},
-  "fill_history": []
-}
-EOF
-cat <<EOF > demo_account_state.json
-{ "balance": 999999,
-  "positions": [
-    {
-        "symbol": "0050",
-        "quantity": 100000,
-        "avg_cost": 60.63,
-        "current_price": 48.73,
-        "market_value": 64518.5,
-        "unrealized_pnl": 15755.6
-    }
-  ],
-  "orders_placed": [],
-  "orders_committed": [],
-  "orders_filled": [],
-  "orders_cancelled": [],
-  "all_order_status": {},
-  "fill_history": []
-}
-EOF
-}
 
 # Add trap
 trap cleanup EXIT SIGINT SIGTERM
@@ -94,9 +50,6 @@ echo -e "${YELLOW}======================================${NC}"
 echo -e "${YELLOW}CJTrade Broker API Stability Tests${NC}"
 echo -e "${YELLOW}======================================${NC}"
 echo ""
-
-prepare_init_account
-
 if [[ "$@" == *"--broker arenax"* ]] || [[ "$@" == *"--broker=arenax"* ]] || [[ -z "$@" ]]; then
     if ! ping_server_backend > /dev/null; then
         echo "Starting ArenaX broker server..."

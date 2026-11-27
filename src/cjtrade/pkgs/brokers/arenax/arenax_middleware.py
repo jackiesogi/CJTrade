@@ -301,6 +301,29 @@ class ArenaXMiddleWare:
         return self._patch("api/v1/clock", {"mock_current_time": iso},
                            headers=kwargs.get("headers"))
 
+    def shift_market_time(self, hours: float, **kwargs):
+        """Move the server clock by `hours`, keeping it paused or running as it was.
+
+        Returns
+        -------
+        str or None
+            The new market time, ISO 8601; None if the server did not answer.
+
+        Warnings
+        --------
+        Sends two HTTP requests and changes the server clock.
+        """
+        from datetime import datetime
+        from datetime import timedelta
+        now = self.get_market_time()
+        if not now:
+            return None
+        target = datetime.fromisoformat(now["mock_current_time"]) + timedelta(hours=hours)
+        res = self._patch("api/v1/clock", {"mock_current_time": target.isoformat(),
+                                           "paused": bool(now.get("paused"))},
+                          headers=kwargs.get("headers"))
+        return (res or {}).get("mock_current_time")
+
     def get_price_from_exchange(self, symbol: str, **kwargs):
         """Latest price for `symbol`, as a Snapshot dict.
 

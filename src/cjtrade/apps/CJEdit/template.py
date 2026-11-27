@@ -17,10 +17,10 @@ from cjtrade.pkgs.models import *
 loaded = load_supported_config_files()
 
 config = {
-    'api_key': os.environ["API_KEY"],
-    'secret_key': os.environ["SECRET_KEY"],
-    'ca_path': os.environ["CA_CERT_PATH"],
-    'ca_passwd': os.environ["CA_PASSWORD"],
+    'api_key': os.environ.get("API_KEY", ""),
+    'secret_key': os.environ.get("SECRET_KEY", ""),
+    'ca_path': os.environ.get("CA_CERT_PATH", ""),
+    'ca_passwd': os.environ.get("CA_PASSWORD", ""),
     'simulation': True if os.environ.get("SIMULATION") == "y" else False,
 
     'username': os.environ.get('USERNAME', 'user000'),

@@ -25,12 +25,11 @@ class BrokerType(Enum):
     Warnings
     --------
     YUANTA and CATHAY are not implemented; AccountClient raises
-    NotImplementedError for them. MOCK is the legacy simulated broker.
+    NotImplementedError for them. ArenaX is the simulated broker.
     """
     SINOPAC = "sinopac"  # 永豐金
     YUANTA  = "yuanta"   # 元大
     CATHAY  = "cathay"   # 國泰
-    MOCK    = "mock"     # 模擬券商
     ARENAX  = "arenax"   # 模擬券商 (新)
 
 class AccountState:
@@ -98,9 +97,6 @@ class AccountClient:
         elif broker_type in (BrokerType.YUANTA, BrokerType.CATHAY):
             raise NotImplementedError(
                 f"The {broker_type.value} broker is not implemented yet")
-        elif broker_type == BrokerType.MOCK:
-            from cjtrade.pkgs.brokers.arenax.legacy.mock_broker_api import MockBrokerAPI
-            return MockBrokerAPI(**config)
         elif broker_type == BrokerType.ARENAX:
             # User can set their `real_account` backend (for price feed) via tweaking
             # configurations in ArenaX Brokerside Server and Backend.

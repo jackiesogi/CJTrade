@@ -9,31 +9,17 @@ saves and opens a full BacktestReport – all done in seconds.
 
 Usage
 -----
-    # From the repo root:
-    CJSYS_STATE_FILE=arenax_CJ.json  \\
-    CJSYS_WATCH_LIST=2330             \\
-    uv run python -m cjtrade.apps.oneshot_backtest
+    uv run backtest --symbol 2330 --start 2024-01-02 --duration 180 --interval 1d
+    uv run backtest --symbol 2330,0050 --strategy DonchianBreakoutStrategy
+    uv run backtest --symbol 2330 --compare      # every built-in strategy side by side
 
     # Or from Python:
     from cjtrade.apps.oneshot_backtest import run_oneshot
     run_oneshot(symbol="2330", start="2023-01-01", end="2024-01-01")
 
-Environment / config keys
--------------------------
-    CJSYS_WATCH_LIST               comma-separated symbols (first one used)
-    CJSYS_ONESHOT_DURATION_DAYS    number of trading days to backtest (default: 5)
-                                   used to pick a random start date unless
-                                   CJSYS_ONESHOT_START is explicitly set.
-                                   The random window is at least 1.5× duration so
-                                   indicator warm-up data is always available.
-    CJSYS_ONESHOT_START            ISO date override, e.g. 2023-01-01
-                                   (takes precedence over CJSYS_ONESHOT_DURATION_DAYS)
-    CJSYS_ONESHOT_END              ISO date, e.g. 2024-01-01  (default: today)
-    CJSYS_ONESHOT_INTERVAL         kbar interval, default 1d
-    CJSYS_ONESHOT_INITIAL_BALANCE  starting cash (default: 1_000_000)
-    CJSYS_BB_WINDOW_SIZE           Bollinger window  (default: 20)
-    CJSYS_BB_MIN_WIDTH_PCT         Bollinger min band width (default: 0.01)
-    CJSYS_RISK_MAX_POSITION_PCT    max position size as fraction (default: 0.05)
+Everything is a command-line flag (``--help``); no environment variable is
+read except ``ARENAX_PORT``, the server the bars come from. Reports go to
+``paths.reports_dir()``.
 """
 from __future__ import annotations
 
@@ -401,12 +387,14 @@ def run_compare_strategies(
 
     # Save comparison HTML
     safe_label = sym_label.replace(",", "_")
-    html_path = report_path or f"comparison_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+    # In the reports directory, with every other report, not wherever the
+    # command happened to be run from.
+    html_path = report_path or str(paths.reports_dir() / f"comparison_{safe_label}_{uuid.uuid4().hex[:8]}.html")
     multi_report.save_comparison_html(path=html_path, open_browser=False)
 
     # Save overlay charts (returns + equity)
-    returns_overlay_path = f"compare_returns_{safe_label}_{uuid.uuid4().hex[:8]}.html"
-    equity_overlay_path = f"compare_equity_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+    returns_overlay_path = str(paths.reports_dir() / f"compare_returns_{safe_label}_{uuid.uuid4().hex[:8]}.html")
+    equity_overlay_path = str(paths.reports_dir() / f"compare_equity_{safe_label}_{uuid.uuid4().hex[:8]}.html")
 
     multi_report.compare_returns_overlay(path=returns_overlay_path, open_browser=False)
     multi_report.compare_cumulative_equity_overlay(path=equity_overlay_path, open_browser=False)
@@ -419,7 +407,7 @@ def run_compare_strategies(
     for strat_name, result in multi_report._results.items():
         report = BacktestReport(result)
         # Generate individual HTML report with strategy name as title
-        individual_html = f"fullreport_{strat_name}_{safe_label}_{uuid.uuid4().hex[:8]}.html"
+        individual_html = str(paths.reports_dir() / f"fullreport_{strat_name}_{safe_label}_{uuid.uuid4().hex[:8]}.html")
         report.summary()
         report.full_report(path=individual_html, open_browser=open_browser, title=f"Backtest Report: {strat_name}")
 
@@ -435,7 +423,7 @@ def main():
     setup_logging(logging.INFO)
 
     ap = argparse.ArgumentParser(description="CJTrade one-shot backtest")
-    ap.add_argument("--symbol",       default=None, help="Ticker(s), e.g. 2330 or 2330,0050")
+    ap.add_argument("--symbol",       required=True, help="Ticker(s), e.g. 2330 or 2330,0050")
     ap.add_argument("--start",        default=None, help="Optional: Start date YYYY-MM-DD (default: random)")
     ap.add_argument("--duration",     type=int, default=365, help="Duration in days (default: 365)")
     ap.add_argument("--interval",     choices=["1m", "5m", "1h", "1d"], default="1d",
